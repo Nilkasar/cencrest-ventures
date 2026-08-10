@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cencrest — Design Bible v1.0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="crossorigin" />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Spectral:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{
+--paper:#F7F3EC;--paper-2:#EFE9DE;--bone:#E5DED1;--pebble:#C9C0AE;--smoke:#8A8270;--slate:#4A4538;--ink:#16140F;--ink-2:#1F1C15;
+--ember:#C2410C;--ember-2:#9A330A;--ember-tint:#F5E4D8;--success:#3F6B4F;--danger:#8A2B22;
+--font-display:"Fraunces",Georgia,serif;--font-sans:"Inter",-apple-system,sans-serif;--font-serif:"Spectral",Georgia,serif;--font-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+--s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-5:20px;--s-6:24px;--s-7:32px;--s-8:40px;--s-9:56px;--s-10:80px;--s-11:120px;--s-12:160px;
+--r-sm:4px;--r-md:8px;--r-lg:12px;--r-pill:999px;
+--shadow-1:0 1px 2px rgba(22,20,15,.04);--shadow-2:0 8px 24px -8px rgba(22,20,15,.08),0 1px 2px rgba(22,20,15,.04);
+--ease-out:cubic-bezier(.22,1,.36,1);
+}
+html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-sans);font-size:16px;line-height:1.45;letter-spacing:-.005em}
+a{color:var(--ink);text-decoration:none}
+a:hover{color:var(--ember)}
+::selection{background:var(--ember-tint)}
+@media(min-width:1201px){section{padding-left:max(300px,20vw)!important}}
+@media(max-width:1200px){#rail{display:none}section{padding-left:clamp(24px,6vw,120px)!important}}
+</style>
+</head>
+<body>
+
+<div id="rail" style="position:fixed;top:0;left:0;bottom:0;width:236px;background:var(--paper-2);border-right:1px solid var(--bone);padding:var(--s-8) var(--s-6);box-sizing:border-box;overflow-y:auto;z-index:20">
+  <div style="font-family:var(--font-display);font-weight:900;font-size:15px;letter-spacing:.04em;line-height:1.2">CENCREST</div>
+  <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--smoke);margin-top:var(--s-2)">Design Bible<br />v1.0 · Aug 2026</div>
+  <div style="height:1px;background:var(--bone);margin:var(--s-6) 0"></div>
+  <nav style="display:flex;flex-direction:column;gap:2px">
+    <a href="#cover" style="font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--smoke);padding:6px 0;display:flex;gap:10px"><span style="color:var(--pebble);min-width:18px">00</span>Front matter</a>
+    <a href="#part1" style="font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--smoke);padding:6px 0;display:flex;gap:10px"><span style="color:var(--pebble);min-width:18px">01</span>Brand identity</a>
+    <a href="#part2" style="font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--smoke);padding:6px 0;display:flex;gap:10px"><span style="color:var(--pebble);min-width:18px">02</span>Visual identity</a>
+    <a href="./index.html" style="font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ember);padding:12px 0;display:flex;gap:10px;border-top:1px solid var(--bone);margin-top:12px;">← Back to Site</a>
+  </nav>
+</div>
+
+<section id="cover" style="padding:clamp(56px,10vh,120px) clamp(24px,6vw,120px) var(--s-11) clamp(24px,20vw,300px);min-height:88vh;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--bone);padding-bottom:var(--s-4)">
+    <div style="font-family:var(--font-mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--smoke)">Vol. I · Founding Design Document</div>
+    <div style="font-family:var(--font-mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--smoke)">August 2026</div>
+  </div>
+
+  <div style="max-width:1000px;margin:var(--s-11) 0">
+    <div style="font-family:var(--font-mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ember);margin-bottom:var(--s-6)">Cencrest — Recommendation Intelligence</div>
+    <h1 style="font-family:var(--font-display);font-weight:900;font-size:clamp(48px,7.5vw,104px);line-height:1.02;letter-spacing:-.028em;margin:0;">The company that<br />shows you the sentence.</h1>
+    <p style="font-family:var(--font-serif);font-size:22px;line-height:1.6;color:var(--slate);max-width:640px;margin:var(--s-8) 0 0">A complete design, motion, and experience specification for the Cencrest website — brand identity through animation storyboard, written to be handed directly to the people who build it.</p>
+  </div>
+</section>
+
+<section id="part1" style="padding:var(--s-12) clamp(24px,6vw,120px) var(--s-12) clamp(24px,20vw,300px);border-top:1px solid var(--bone)">
+  <div style="max-width:940px">
+    <div style="margin-bottom:var(--s-10)">
+      <div style="font-family:var(--font-mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ember);margin-bottom:var(--s-4)">Part 01</div>
+      <h2 style="font-family:var(--font-display);font-weight:700;font-size:clamp(36px,5vw,60px);line-height:1.05;letter-spacing:-.025em;margin:0">Brand identity</h2>
+      <p style="font-family:var(--font-serif);font-size:20px;line-height:1.6;color:var(--slate);max-width:600px;margin:var(--s-5) 0 0">Cencrest is not a marketing agency with an AI angle. It is an instrument company. Everything downstream follows from holding that line.</p>
+    </div>
+
+    <div style="background:var(--ink);color:var(--paper);padding:var(--s-10);border-radius:var(--r-lg);margin-bottom:var(--s-11)">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--pebble);margin-bottom:var(--s-6)">The positioning sentence</div>
+      <p style="font-family:var(--font-display);font-weight:400;font-style:italic;font-size:clamp(26px,3.4vw,40px);line-height:1.25;letter-spacing:-.02em;margin:0">“You are being recommended against, thousands of times a day. We can show you the exact sentence — and the sources that wrote it.”</p>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>
