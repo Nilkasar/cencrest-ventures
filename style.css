@@ -429,18 +429,15 @@ a, [data-cta] {
 .nav-logo:hover { opacity: 0.85; color: var(--paper); }
 .nav-logo-mark {
   display: inline-block;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background-color: var(--paper);
-  background-image: url('./assets/logo.png');
-  background-repeat: no-repeat;
-  background-size: 195% auto;
-  background-position: 50% 26%;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.04), 0 4px 14px rgba(0,0,0,0.28);
-  transition: transform .3s var(--eo);
+  width: 46px;
+  height: 46px;
+  background: url('./assets/logo-mark-light.png') no-repeat center / contain;
+  transition: transform .3s var(--eo), filter .3s var(--eo);
 }
-.nav-logo:hover .nav-logo-mark { transform: scale(1.04); }
+.nav-logo:hover .nav-logo-mark {
+  transform: scale(1.06);
+  filter: drop-shadow(0 0 12px rgba(217,184,124,0.4));
+}
 .nav-logo-mark img { display: none; }
 .nav-logo-word {
   display: inline-flex;
@@ -2383,15 +2380,10 @@ footer {
 }
 .footer-logo-mark {
   display: inline-block;
-  width: 48px;
-  height: 48px;
-  border-radius: 10px;
-  background-color: var(--paper);
-  background-image: url('./assets/logo.png');
-  background-repeat: no-repeat;
-  background-size: 195% auto;
-  background-position: 50% 26%;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.04), 0 6px 18px rgba(0,0,0,0.32);
+  width: 60px;
+  height: 60px;
+  background: url('./assets/logo-mark-light.png') no-repeat center / contain;
+  opacity: 0.9;
 }
 .footer-logo-mark img { display: none; }
 .footer-logo-word {
