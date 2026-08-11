@@ -440,16 +440,15 @@ a, [data-cta] {
 .nav-logo:hover { opacity: 0.85; color: var(--paper); }
 .nav-logo-mark {
   display: inline-block;
-  width: 46px;
-  height: 46px;
-  background: url('./assets/logo-mark-light.png') no-repeat center / contain;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
   transition: transform .3s var(--eo), filter .3s var(--eo);
 }
 .nav-logo:hover .nav-logo-mark {
   transform: scale(1.06);
-  filter: drop-shadow(0 0 12px rgba(217,184,124,0.4));
+  filter: drop-shadow(0 0 12px rgba(194,65,12,0.5));
 }
-.nav-logo-mark img { display: none; }
 .nav-logo-word {
   display: inline-flex;
   flex-direction: column;
