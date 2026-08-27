@@ -1,0 +1,885 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ai_models {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider_id     String            @db.Uuid
+  name            String            @db.VarChar(100)
+  version         String?           @db.VarChar(50)
+  capabilities    Json?
+  is_active       Boolean?          @default(true)
+  created_at      DateTime          @default(now()) @db.Timestamp(6)
+  updated_at      DateTime          @default(now()) @db.Timestamp(6)
+  ai_providers    ai_providers      @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "ai_models_provider_id_ai_providers_id_fk")
+  evaluation_runs evaluation_runs[]
+  runs            runs[]
+
+  @@index([is_active], map: "idx_ai_models_active")
+  @@index([provider_id], map: "idx_ai_models_provider")
+}
+
+model ai_providers {
+  id         String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String      @unique(map: "ai_providers_name_unique") @db.VarChar(100)
+  type       String      @db.VarChar(50)
+  config     Json
+  is_active  Boolean?    @default(true)
+  created_at DateTime    @default(now()) @db.Timestamp(6)
+  updated_at DateTime    @default(now()) @db.Timestamp(6)
+  ai_models  ai_models[]
+
+  @@index([is_active], map: "idx_ai_providers_active")
+  @@index([type], map: "idx_ai_providers_type")
+}
+
+model analyses {
+  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  response_id           String                  @db.Uuid
+  brand_id              String                  @db.Uuid
+  status                run_status
+  started_at            DateTime?               @db.Timestamp(6)
+  completed_at          DateTime?               @db.Timestamp(6)
+  error_message         String?
+  metadata              Json?
+  created_at            DateTime                @default(now()) @db.Timestamp(6)
+  updated_at            DateTime                @default(now()) @db.Timestamp(6)
+  pipeline_version      String?                 @db.VarChar(50)
+  model_used            String?                 @db.VarChar(100)
+  prompt_used           String?
+  brands                brands                  @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "analyses_brand_id_brands_id_fk")
+  responses             responses               @relation(fields: [response_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "analyses_response_id_responses_id_fk")
+  analysis_findings     analysis_findings[]
+  category_associations category_associations[]
+  competitor_mentions   competitor_mentions[]
+  entities              entities[]
+  mentions              mentions[]
+  recommendations       recommendations[]
+
+  @@index([brand_id], map: "idx_analyses_brand")
+  @@index([response_id], map: "idx_analyses_response")
+  @@index([status], map: "idx_analyses_status")
+}
+
+model analysis_findings {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  analysis_id     String       @db.Uuid
+  finding_type    finding_type
+  entity_name     String?      @db.VarChar(255)
+  entity_type     String?      @db.VarChar(50)
+  sentiment       sentiment?
+  strength        String?      @db.VarChar(50)
+  position        Int?
+  total_positions Int?
+  context         String?
+  confidence      Decimal?     @db.Decimal(3, 2)
+  metadata        Json?
+  created_at      DateTime     @default(now()) @db.Timestamp(6)
+  analyses        analyses     @relation(fields: [analysis_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "analysis_findings_analysis_id_analyses_id_fk")
+
+  @@index([analysis_id], map: "idx_analysis_findings_analysis")
+  @@index([finding_type], map: "idx_analysis_findings_type")
+}
+
+model audiences {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id     String    @db.Uuid
+  name         String    @db.VarChar(255)
+  description  String?
+  demographics Json?
+  pain_points  String[]
+  goals        String[]
+  created_at   DateTime  @default(now()) @db.Timestamp(6)
+  updated_at   DateTime  @default(now()) @db.Timestamp(6)
+  deleted_at   DateTime? @db.Timestamp(6)
+  brands       brands    @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "audiences_brand_id_brands_id_fk")
+
+  @@index([brand_id], map: "idx_audiences_brand")
+}
+
+model audit_events {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id         String?        @db.Uuid
+  organization_id String?        @db.Uuid
+  action          String         @db.VarChar(100)
+  entity_type     String         @db.VarChar(100)
+  entity_id       String         @db.Uuid
+  old_value       Json?
+  new_value       Json?
+  ip_address      String?        @db.VarChar(45)
+  user_agent      String?
+  created_at      DateTime       @default(now()) @db.Timestamp(6)
+  organizations   organizations? @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "audit_events_organization_id_organizations_id_fk")
+  users           users?         @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "audit_events_user_id_users_id_fk")
+
+  @@index([action], map: "idx_audit_events_action")
+  @@index([created_at], map: "idx_audit_events_created_at")
+  @@index([entity_type, entity_id], map: "idx_audit_events_entity")
+  @@index([organization_id], map: "idx_audit_events_organization")
+  @@index([user_id], map: "idx_audit_events_user")
+}
+
+model background_jobs {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type          job_type
+  payload       Json
+  status        job_status? @default(pending)
+  priority      Int?        @default(0)
+  attempts      Int?        @default(0)
+  max_attempts  Int?        @default(3)
+  error_message String?
+  started_at    DateTime?   @db.Timestamp(6)
+  completed_at  DateTime?   @db.Timestamp(6)
+  created_at    DateTime    @default(now()) @db.Timestamp(6)
+  updated_at    DateTime    @default(now()) @db.Timestamp(6)
+
+  @@index([created_at], map: "idx_background_jobs_created_at")
+  @@index([priority], map: "idx_background_jobs_priority")
+  @@index([status], map: "idx_background_jobs_status")
+  @@index([type], map: "idx_background_jobs_type")
+}
+
+model brand_aliases {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id   String   @db.Uuid
+  alias      String   @db.VarChar(255)
+  type       String?  @db.VarChar(50)
+  is_primary Boolean? @default(false)
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  updated_at DateTime @default(now()) @db.Timestamp(6)
+  brands     brands   @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "brand_aliases_brand_id_brands_id_fk")
+
+  @@index([alias], map: "idx_brand_aliases_alias")
+  @@index([brand_id], map: "idx_brand_aliases_brand")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model brand_categories {
+  brand_id    String     @db.Uuid
+  category_id String     @db.Uuid
+  is_primary  Boolean?
+  created_at  DateTime   @default(now()) @db.Timestamp(6)
+  brands      brands     @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "brand_categories_brand_id_brands_id_fk")
+  categories  categories @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "brand_categories_category_id_categories_id_fk")
+
+  @@index([brand_id], map: "idx_brand_categories_brand")
+  @@index([category_id], map: "idx_brand_categories_category")
+  @@ignore
+}
+
+model brand_services {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id      String    @db.Uuid
+  name          String    @db.VarChar(255)
+  description   String?
+  category      String?   @db.VarChar(100)
+  pricing_model String?   @db.VarChar(50)
+  created_at    DateTime  @default(now()) @db.Timestamp(6)
+  updated_at    DateTime  @default(now()) @db.Timestamp(6)
+  deleted_at    DateTime? @db.Timestamp(6)
+  brands        brands    @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "brand_services_brand_id_brands_id_fk")
+
+  @@index([brand_id], map: "idx_brand_services_brand")
+}
+
+model brands {
+  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id       String                  @db.Uuid
+  name                  String                  @db.VarChar(255)
+  description           String?
+  website_url           String?                 @db.VarChar(500)
+  industry              String?                 @db.VarChar(100)
+  logo_url              String?                 @db.VarChar(500)
+  created_by            String                  @db.Uuid
+  created_at            DateTime                @default(now()) @db.Timestamp(6)
+  updated_at            DateTime                @default(now()) @db.Timestamp(6)
+  deleted_at            DateTime?               @db.Timestamp(6)
+  aliases               String[]
+  positioning           String?
+  value_proposition     String?
+  key_differentiators   String[]
+  analyses              analyses[]
+  audiences             audiences[]
+  brand_aliases         brand_aliases[]
+  brand_categories      brand_categories[]      @ignore
+  brand_services        brand_services[]
+  users                 users                   @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "brands_created_by_users_id_fk")
+  organizations         organizations           @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "brands_organization_id_organizations_id_fk")
+  category_associations category_associations[]
+  competitors           competitors[]
+  gap_analysis          gap_analysis[]
+  measurement_points    measurement_points[]
+  mentions              mentions[]
+  opportunities         opportunities[]
+  products              products[]
+  query_sets            query_sets[]
+  questions             questions[]
+  recommendations       recommendations[]
+  reports               reports[]
+  score_history         score_history[]
+  scores                scores[]
+
+  @@index([created_by], map: "idx_brands_creator")
+  @@index([industry], map: "idx_brands_industry")
+  @@index([organization_id], map: "idx_brands_organization")
+}
+
+model categories {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id  String             @db.Uuid
+  name             String             @db.VarChar(255)
+  parent_id        String?            @db.Uuid
+  description      String?
+  created_at       DateTime           @default(now()) @db.Timestamp(6)
+  brand_categories brand_categories[]      @ignore
+  organizations    organizations      @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "categories_organization_id_organizations_id_fk")
+  categories       categories?        @relation("categoriesTocategories", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "categories_parent_id_categories_id_fk")
+  other_categories categories[]       @relation("categoriesTocategories")
+
+  @@index([organization_id], map: "idx_categories_organization")
+  @@index([parent_id], map: "idx_categories_parent")
+}
+
+model category_associations {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  analysis_id      String           @db.Uuid
+  brand_id         String           @db.Uuid
+  category         String           @db.VarChar(255)
+  association_type association_type
+  confidence       Decimal?         @db.Decimal(3, 2)
+  created_at       DateTime         @default(now()) @db.Timestamp(6)
+  analyses         analyses         @relation(fields: [analysis_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "category_associations_analysis_id_analyses_id_fk")
+  brands           brands           @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "category_associations_brand_id_brands_id_fk")
+
+  @@index([analysis_id], map: "idx_category_associations_analysis")
+  @@index([brand_id], map: "idx_category_associations_brand")
+  @@index([category], map: "idx_category_associations_category")
+}
+
+model competitor_mentions {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  analysis_id   String       @db.Uuid
+  competitor_id String       @db.Uuid
+  mention_type  mention_type
+  sentiment     sentiment?
+  position      Int?
+  context       String?
+  confidence    Decimal?     @db.Decimal(3, 2)
+  created_at    DateTime     @default(now()) @db.Timestamp(6)
+  analyses      analyses     @relation(fields: [analysis_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "competitor_mentions_analysis_id_analyses_id_fk")
+  competitors   competitors  @relation(fields: [competitor_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "competitor_mentions_competitor_id_competitors_id_fk")
+
+  @@index([analysis_id], map: "idx_competitor_mentions_analysis")
+  @@index([competitor_id], map: "idx_competitor_mentions_competitor")
+}
+
+model competitors {
+  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id            String                @db.Uuid
+  name                String                @db.VarChar(255)
+  website_url         String?               @db.VarChar(500)
+  description         String?
+  competition_type    competition_type?
+  created_at          DateTime              @default(now()) @db.Timestamp(6)
+  updated_at          DateTime              @default(now()) @db.Timestamp(6)
+  deleted_at          DateTime?             @db.Timestamp(6)
+  competitor_mentions competitor_mentions[]
+  brands              brands                @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "competitors_brand_id_brands_id_fk")
+  gap_analysis        gap_analysis[]
+
+  @@index([brand_id], map: "idx_competitors_brand")
+}
+
+model entities {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  analysis_id     String   @db.Uuid
+  name            String   @db.VarChar(255)
+  type            String   @db.VarChar(50)
+  normalized_name String?  @db.VarChar(255)
+  confidence      Decimal? @db.Decimal(3, 2)
+  metadata        Json?
+  created_at      DateTime @default(now()) @db.Timestamp(6)
+  analyses        analyses @relation(fields: [analysis_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "entities_analysis_id_analyses_id_fk")
+
+  @@index([analysis_id], map: "idx_entities_analysis")
+  @@index([name], map: "idx_entities_name")
+}
+
+model evaluation_datasets {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String             @db.VarChar(255)
+  description      String?
+  category         String             @db.VarChar(50)
+  question_count   Int?               @default(0)
+  created_at       DateTime           @default(now()) @db.Timestamp(6)
+  evaluation_items evaluation_items[]
+  evaluation_runs  evaluation_runs[]
+
+  @@index([category], map: "idx_evaluation_datasets_category")
+}
+
+model evaluation_items {
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  dataset_id          String              @db.Uuid
+  input_text          String
+  expected_output     Json
+  difficulty          String?             @default("medium") @db.VarChar(20)
+  created_at          DateTime            @default(now()) @db.Timestamp(6)
+  evaluation_datasets evaluation_datasets @relation(fields: [dataset_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "evaluation_items_dataset_id_evaluation_datasets_id_fk")
+
+  @@index([dataset_id], map: "idx_evaluation_items_dataset")
+}
+
+model evaluation_runs {
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  dataset_id          String              @db.Uuid
+  prompt_version_id   String?             @db.Uuid
+  model_id            String?             @db.Uuid
+  accuracy            Decimal?            @db.Decimal(5, 2)
+  precision_score     Decimal?            @db.Decimal(5, 2)
+  recall_score        Decimal?            @db.Decimal(5, 2)
+  f1_score            Decimal?            @db.Decimal(5, 2)
+  results             Json?
+  started_at          DateTime?           @db.Timestamp(6)
+  completed_at        DateTime?           @db.Timestamp(6)
+  created_at          DateTime            @default(now()) @db.Timestamp(6)
+  evaluation_datasets evaluation_datasets @relation(fields: [dataset_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "evaluation_runs_dataset_id_evaluation_datasets_id_fk")
+  ai_models           ai_models?          @relation(fields: [model_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "evaluation_runs_model_id_ai_models_id_fk")
+  prompt_versions     prompt_versions?    @relation(fields: [prompt_version_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "evaluation_runs_prompt_version_id_prompt_versions_id_fk")
+
+  @@index([dataset_id], map: "idx_evaluation_runs_dataset")
+  @@index([model_id], map: "idx_evaluation_runs_model")
+  @@index([prompt_version_id], map: "idx_evaluation_runs_prompt_version")
+}
+
+model gap_analysis {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id           String          @db.Uuid
+  gap_type           gap_type
+  category           String?         @db.VarChar(255)
+  intent_id          String?         @db.Uuid
+  competitor_id      String?         @db.Uuid
+  description        String?
+  severity           Decimal?        @db.Decimal(3, 2)
+  evidence           Json?
+  affected_questions Int?            @default(0)
+  detected_at        DateTime?       @db.Timestamp(6)
+  status             gap_status?     @default(open)
+  created_at         DateTime        @default(now()) @db.Timestamp(6)
+  updated_at         DateTime        @default(now()) @db.Timestamp(6)
+  brands             brands          @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "gap_analysis_brand_id_brands_id_fk")
+  competitors        competitors?    @relation(fields: [competitor_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "gap_analysis_competitor_id_competitors_id_fk")
+  intents            intents?        @relation(fields: [intent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "gap_analysis_intent_id_intents_id_fk")
+  opportunities      opportunities[]
+
+  @@index([brand_id], map: "idx_gap_analysis_brand")
+  @@index([category], map: "idx_gap_analysis_category")
+  @@index([status], map: "idx_gap_analysis_status")
+  @@index([gap_type], map: "idx_gap_analysis_type")
+}
+
+model intents {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String           @db.Uuid
+  name            String           @db.VarChar(255)
+  description     String?
+  category        intent_category?
+  examples        String[]
+  created_at      DateTime         @default(now()) @db.Timestamp(6)
+  updated_at      DateTime         @default(now()) @db.Timestamp(6)
+  deleted_at      DateTime?        @db.Timestamp(6)
+  gap_analysis    gap_analysis[]
+  organizations   organizations    @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "intents_organization_id_organizations_id_fk")
+  questions       questions[]
+
+  @@index([category], map: "idx_intents_category")
+  @@index([organization_id], map: "idx_intents_organization")
+}
+
+model measurement_annotations {
+  id                   String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  measurement_point_id String             @db.Uuid
+  text                 String
+  annotation_type      String?            @default("note") @db.VarChar(50)
+  created_at           DateTime           @default(now()) @db.Timestamp(6)
+  measurement_points   measurement_points @relation(fields: [measurement_point_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "measurement_annotations_measurement_point_id_measurement_points")
+
+  @@index([measurement_point_id], map: "idx_measurement_annotations_point")
+}
+
+model measurement_points {
+  id                      String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id                String                    @db.Uuid
+  name                    String                    @db.VarChar(255)
+  batch_run_id            String?                   @db.Uuid
+  overall_score           Decimal?                  @db.Decimal(5, 2)
+  visibility_score        Decimal?                  @db.Decimal(5, 2)
+  sentiment_score         Decimal?                  @db.Decimal(5, 2)
+  recommendation_score    Decimal?                  @db.Decimal(5, 2)
+  competitor_count        Int?
+  question_count          Int?
+  metadata                Json?
+  measured_at             DateTime?                 @db.Timestamp(6)
+  created_at              DateTime                  @default(now()) @db.Timestamp(6)
+  measurement_annotations measurement_annotations[]
+  brands                  brands                    @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "measurement_points_brand_id_brands_id_fk")
+
+  @@index([brand_id], map: "idx_measurement_points_brand")
+  @@index([measured_at], map: "idx_measurement_points_measured_at")
+}
+
+model memberships {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id         String        @db.Uuid
+  organization_id String        @db.Uuid
+  role            role
+  created_at      DateTime      @default(now()) @db.Timestamp(6)
+  updated_at      DateTime      @default(now()) @db.Timestamp(6)
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "memberships_organization_id_organizations_id_fk")
+  users           users         @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "memberships_user_id_users_id_fk")
+
+  @@index([organization_id], map: "idx_memberships_organization")
+  @@index([user_id], map: "idx_memberships_user")
+}
+
+model mentions {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  analysis_id String     @db.Uuid
+  brand_id    String     @db.Uuid
+  entity_name String     @db.VarChar(255)
+  entity_type String     @db.VarChar(50)
+  sentiment   sentiment?
+  confidence  Decimal?   @db.Decimal(3, 2)
+  context     String?
+  position    Int?
+  created_at  DateTime   @default(now()) @db.Timestamp(6)
+  analyses    analyses   @relation(fields: [analysis_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "mentions_analysis_id_analyses_id_fk")
+  brands      brands     @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "mentions_brand_id_brands_id_fk")
+
+  @@index([analysis_id], map: "idx_mentions_analysis")
+  @@index([brand_id], map: "idx_mentions_brand")
+  @@index([sentiment], map: "idx_mentions_sentiment")
+}
+
+model opportunities {
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id           String              @db.Uuid
+  gap_id             String?             @db.Uuid
+  title              String              @db.VarChar(255)
+  description        String?
+  action_text        String?
+  action_type        action_type?
+  effort_level       effort_level?
+  expected_impact    Decimal?            @db.Decimal(3, 2)
+  impact_description String?
+  priority_order     Int?
+  status             opportunity_status? @default(new)
+  evidence           Json?
+  created_at         DateTime            @default(now()) @db.Timestamp(6)
+  updated_at         DateTime            @default(now()) @db.Timestamp(6)
+  brands             brands              @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "opportunities_brand_id_brands_id_fk")
+  gap_analysis       gap_analysis?       @relation(fields: [gap_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "opportunities_gap_id_gap_analysis_id_fk")
+
+  @@index([brand_id], map: "idx_opportunities_brand")
+  @@index([gap_id], map: "idx_opportunities_gap")
+  @@index([priority_order], map: "idx_opportunities_priority")
+  @@index([status], map: "idx_opportunities_status")
+}
+
+model organizations {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String         @db.VarChar(255)
+  slug         String         @unique(map: "organizations_slug_unique") @db.VarChar(255)
+  created_by   String         @db.Uuid
+  created_at   DateTime       @default(now()) @db.Timestamp(6)
+  updated_at   DateTime       @default(now()) @db.Timestamp(6)
+  deleted_at   DateTime?      @db.Timestamp(6)
+  audit_events audit_events[]
+  brands       brands[]
+  categories   categories[]
+  intents      intents[]
+  memberships  memberships[]
+  users        users          @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "organizations_created_by_users_id_fk")
+}
+
+model products {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id    String    @db.Uuid
+  name        String    @db.VarChar(255)
+  description String?
+  category    String?   @db.VarChar(100)
+  price_range String?   @db.VarChar(50)
+  is_primary  Boolean?  @default(false)
+  created_at  DateTime  @default(now()) @db.Timestamp(6)
+  updated_at  DateTime  @default(now()) @db.Timestamp(6)
+  deleted_at  DateTime? @db.Timestamp(6)
+  brands      brands    @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "products_brand_id_brands_id_fk")
+
+  @@index([brand_id], map: "idx_products_brand")
+}
+
+model prompt_templates {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String            @db.VarChar(255)
+  description     String?
+  category        String            @db.VarChar(50)
+  is_active       Boolean?          @default(true)
+  created_at      DateTime          @default(now()) @db.Timestamp(6)
+  updated_at      DateTime          @default(now()) @db.Timestamp(6)
+  prompt_versions prompt_versions[]
+
+  @@index([is_active], map: "idx_prompt_templates_active")
+  @@index([category], map: "idx_prompt_templates_category")
+}
+
+model prompt_versions {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  template_id       String            @db.Uuid
+  version           Int
+  content           String
+  model             String?           @db.VarChar(100)
+  temperature       Decimal?          @default(0.7) @db.Decimal(3, 2)
+  max_tokens        Int?              @default(2000)
+  is_active         Boolean?          @default(true)
+  performance_score Decimal?          @db.Decimal(3, 2)
+  created_at        DateTime          @default(now()) @db.Timestamp(6)
+  evaluation_runs   evaluation_runs[]
+  prompt_templates  prompt_templates  @relation(fields: [template_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "prompt_versions_template_id_prompt_templates_id_fk")
+
+  @@unique([template_id, version], map: "prompt_versions_template_id_version_unique")
+  @@index([is_active], map: "idx_prompt_versions_active")
+  @@index([template_id], map: "idx_prompt_versions_template")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model query_set_questions {
+  query_set_id String     @db.Uuid
+  question_id  String     @db.Uuid
+  query_sets   query_sets @relation(fields: [query_set_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "query_set_questions_query_set_id_query_sets_id_fk")
+  questions    questions  @relation(fields: [question_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "query_set_questions_question_id_questions_id_fk")
+
+  @@index([question_id], map: "idx_query_set_questions_question")
+  @@ignore
+}
+
+model query_sets {
+  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id            String                @db.Uuid
+  name                String                @db.VarChar(255)
+  description         String?
+  created_by          String                @db.Uuid
+  created_at          DateTime              @default(now()) @db.Timestamp(6)
+  updated_at          DateTime              @default(now()) @db.Timestamp(6)
+  deleted_at          DateTime?             @db.Timestamp(6)
+  query_set_questions query_set_questions[]  @ignore
+  brands              brands                @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "query_sets_brand_id_brands_id_fk")
+  users               users                 @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "query_sets_created_by_users_id_fk")
+
+  @@index([brand_id], map: "idx_query_sets_brand")
+}
+
+model questions {
+  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id            String                @db.Uuid
+  intent_id           String?               @db.Uuid
+  content             String
+  type                question_type?
+  tags                String[]
+  version             Int?                  @default(1)
+  created_by          String                @db.Uuid
+  created_at          DateTime              @default(now()) @db.Timestamp(6)
+  updated_at          DateTime              @default(now()) @db.Timestamp(6)
+  deleted_at          DateTime?             @db.Timestamp(6)
+  query_set_questions query_set_questions[]  @ignore
+  brands              brands                @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "questions_brand_id_brands_id_fk")
+  users               users                 @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "questions_created_by_users_id_fk")
+  intents             intents?              @relation(fields: [intent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "questions_intent_id_intents_id_fk")
+  runs                runs[]
+
+  @@index([brand_id], map: "idx_questions_brand")
+  @@index([intent_id], map: "idx_questions_intent")
+  @@index([type], map: "idx_questions_type")
+}
+
+model recommendations {
+  id                      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  analysis_id             String   @db.Uuid
+  brand_id                String   @db.Uuid
+  is_recommended          Boolean
+  recommendation_strength String?  @db.VarChar(50)
+  position                Int?
+  context                 String?
+  confidence              Decimal? @db.Decimal(3, 2)
+  created_at              DateTime @default(now()) @db.Timestamp(6)
+  analyses                analyses @relation(fields: [analysis_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "recommendations_analysis_id_analyses_id_fk")
+  brands                  brands   @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "recommendations_brand_id_brands_id_fk")
+
+  @@index([analysis_id], map: "idx_recommendations_analysis")
+  @@index([brand_id], map: "idx_recommendations_brand")
+  @@index([is_recommended], map: "idx_recommendations_is_recommended")
+}
+
+model refresh_tokens {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String    @db.Uuid
+  token      String    @unique @db.VarChar(500)
+  expires_at DateTime  @db.Timestamp(6)
+  created_at DateTime  @default(now()) @db.Timestamp(6)
+  revoked_at DateTime? @db.Timestamp(6)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([expires_at], map: "idx_refresh_tokens_expires")
+  @@index([token], map: "idx_refresh_tokens_token")
+  @@index([user_id], map: "idx_refresh_tokens_user")
+}
+
+model reports {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id     String     @db.Uuid
+  name         String     @db.VarChar(255)
+  type         String     @db.VarChar(50)
+  format       String     @db.VarChar(20)
+  status       run_status
+  file_path    String?    @db.VarChar(500)
+  metadata     Json?
+  created_by   String     @db.Uuid
+  created_at   DateTime   @default(now()) @db.Timestamp(6)
+  completed_at DateTime?  @db.Timestamp(6)
+  brands       brands     @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reports_brand_id_brands_id_fk")
+  users        users      @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reports_created_by_users_id_fk")
+
+  @@index([brand_id], map: "idx_reports_brand")
+  @@index([type], map: "idx_reports_type")
+}
+
+model responses {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  run_id        String     @db.Uuid
+  content       String
+  tokens_input  Int?
+  tokens_output Int?
+  duration_ms   Int?
+  raw_response  Json?
+  created_at    DateTime   @default(now()) @db.Timestamp(6)
+  analyses      analyses[]
+  runs          runs       @relation(fields: [run_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "responses_run_id_runs_id_fk")
+
+  @@index([run_id], map: "idx_responses_run")
+}
+
+model runs {
+  id                 String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  question_id        String      @db.Uuid
+  model_id           String      @db.Uuid
+  status             run_status
+  started_at         DateTime?   @db.Timestamp(6)
+  completed_at       DateTime?   @db.Timestamp(6)
+  error_message      String?
+  metadata           Json?
+  created_at         DateTime    @default(now()) @db.Timestamp(6)
+  updated_at         DateTime    @default(now()) @db.Timestamp(6)
+  batch_id           String?     @db.Uuid
+  prompt_template_id String?     @db.Uuid
+  temperature        Decimal?    @db.Decimal(3, 2)
+  responses          responses[]
+  ai_models          ai_models   @relation(fields: [model_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "runs_model_id_ai_models_id_fk")
+  questions          questions   @relation(fields: [question_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "runs_question_id_questions_id_fk")
+
+  @@index([batch_id], map: "idx_runs_batch")
+  @@index([model_id], map: "idx_runs_model")
+  @@index([question_id], map: "idx_runs_question")
+  @@index([status], map: "idx_runs_status")
+}
+
+model score_history {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id     String   @db.Uuid
+  score_type   String   @db.VarChar(50)
+  value        Decimal  @db.Decimal(5, 2)
+  period_start DateTime @db.Timestamp(6)
+  period_end   DateTime @db.Timestamp(6)
+  created_at   DateTime @default(now()) @db.Timestamp(6)
+  question_id  String?  @db.Uuid
+  category     String?  @db.VarChar(100)
+  brands       brands   @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "score_history_brand_id_brands_id_fk")
+
+  @@index([brand_id], map: "idx_score_history_brand")
+  @@index([period_start], map: "idx_score_history_period")
+  @@index([score_type], map: "idx_score_history_type")
+}
+
+model scores {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id      String   @db.Uuid
+  score_type    String   @db.VarChar(50)
+  value         Decimal  @db.Decimal(5, 2)
+  metadata      Json?
+  calculated_at DateTime @default(now()) @db.Timestamp(6)
+  created_at    DateTime @default(now()) @db.Timestamp(6)
+  question_id   String?  @db.Uuid
+  category      String?  @db.VarChar(100)
+  confidence    Decimal? @db.Decimal(3, 2)
+  brands        brands   @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "scores_brand_id_brands_id_fk")
+
+  @@index([brand_id], map: "idx_scores_brand")
+  @@index([category], map: "idx_scores_category")
+  @@index([score_type], map: "idx_scores_type")
+}
+
+model users {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email          String           @unique(map: "users_email_unique") @db.VarChar(255)
+  password_hash  String           @db.VarChar(255)
+  name           String           @db.VarChar(255)
+  email_verified Boolean?         @default(false)
+  last_login_at  DateTime?        @db.Timestamp(6)
+  created_at     DateTime         @default(now()) @db.Timestamp(6)
+  updated_at     DateTime         @default(now()) @db.Timestamp(6)
+  deleted_at     DateTime?        @db.Timestamp(6)
+  audit_events   audit_events[]
+  brands         brands[]
+  memberships    memberships[]
+  organizations  organizations[]
+  query_sets     query_sets[]
+  questions      questions[]
+  refresh_tokens refresh_tokens[]
+  reports        reports[]
+
+  @@index([email], map: "idx_users_email")
+}
+
+model form_submissions {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  form_id    String   @db.VarChar(50)
+  email      String   @db.VarChar(255)
+  payload    Json     @default("{}")
+  created_at DateTime @default(now()) @db.Timestamp(6)
+
+  @@index([created_at], map: "idx_form_submissions_created")
+  @@index([email], map: "idx_form_submissions_email")
+  @@index([form_id], map: "idx_form_submissions_form_id")
+}
+
+enum action_type {
+  content
+  seo
+  pr
+  product
+  positioning
+  technical
+}
+
+enum association_type {
+  direct
+  implied
+  none
+}
+
+enum competition_type {
+  direct
+  indirect
+  aspirational
+}
+
+enum effort_level {
+  low
+  medium
+  high
+}
+
+enum finding_type {
+  mention
+  recommendation
+  competitor_mention
+  category_association
+  evidence
+  citation
+  comparison
+  alternative
+  issue
+}
+
+enum gap_status {
+  open
+  acknowledged
+  addressed
+  dismissed
+}
+
+enum gap_type {
+  missing_association
+  competitor_dominance
+  weak_category
+  weak_intent
+  content_gap
+  positioning_gap
+}
+
+enum intent_category {
+  informational
+  transactional
+  navigational
+  commercial
+}
+
+enum job_status {
+  pending
+  running
+  completed
+  failed
+}
+
+enum job_type {
+  analysis
+  batch_run
+  score_calculation
+  report_generation
+}
+
+enum mention_type {
+  recommended
+  mentioned
+  compared
+  alternative
+}
+
+enum opportunity_status {
+  new
+  in_progress
+  completed
+  dismissed
+}
+
+enum question_type {
+  who
+  what
+  how
+  best
+  compare
+  other
+}
+
+enum role {
+  owner
+  admin
+  member
+  viewer
+}
+
+enum run_status {
+  pending
+  running
+  completed
+  failed
+}
+
+enum sentiment {
+  positive
+  neutral
+  negative
+}

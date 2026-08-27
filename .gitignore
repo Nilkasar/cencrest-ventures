@@ -47,3 +47,5 @@ coverage/
 
 # Local development only
 graphify-out/
+api/node_modules/
+api/.env
