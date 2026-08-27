@@ -131,11 +131,30 @@ Format: ADR-NNN | Decision | Status | Context | Options | Decision | Consequence
 
 ---
 
+## ADR-008: Backend Language — Node.js / TypeScript
+
+**Status**: DECIDED  
+**Date**: 2026-08-27
+
+**Context**: BeBest requires an API server, background job runner, and AI orchestration layer. Two primary options evaluated: Node.js/TypeScript (Hono or Express) and Python (FastAPI). Decision required before Epic 1.
+
+**Decision**: Node.js with TypeScript
+
+**Consequences**:
+- Single language across backend, tooling, and (eventual) frontend — no context switching
+- Hono selected as the web framework (fast, lightweight, Cloudflare/Vercel/Node compatible)
+- Drizzle ORM (D-O13) aligns naturally with TypeScript-first approach
+- pg-boss background job queue (already installed in bebest DB) has a native Node.js client
+- All existing local tooling (Node 24.12, npm 11.6, opencode.json) already configured for Node
+- Qwen2.5-Coder 7B is well-trained on TypeScript — local AI implementation works well
+
+---
+
 ## OPEN DECISIONS (require resolution before Phase 1)
 
 | # | Decision | Options | Deadline |
 |---|---|---|---|
-| D-O01 | Backend language | Node.js (Hono/Express) vs Python (FastAPI) | Before Epic 1 |
+| D-O01 | Backend language | ~~Node.js (Hono/Express) vs Python (FastAPI)~~ | **DECIDED: Node.js/TypeScript** |
 | D-O02 | Frontend framework for customer portal | Static HTML extend vs React/Next.js vs SvelteKit | Before Epic 1 |
 | D-O03 | Hosting model | Vercel Functions vs dedicated VPS vs hybrid | Before Epic 1 |
 | D-O04 | Auth provider | Custom JWT vs Clerk vs Auth.js vs Supabase Auth | Before Epic 3 |
