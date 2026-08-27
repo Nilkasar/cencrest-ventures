@@ -150,22 +150,71 @@ Format: ADR-NNN | Decision | Status | Context | Options | Decision | Consequence
 
 ---
 
+## ADR-009: ORM — Prisma
+
+**Status**: DECIDED  
+**Date**: 2026-08-27
+
+**Decision**: Prisma
+
+**Consequences**:
+- Schema-first: `schema.prisma` is the source of truth; migrations generated automatically
+- Strong TypeScript type generation from schema — no manual type writing
+- Prisma Client is well-maintained with excellent Node.js support
+- Row-level security must be implemented at application layer (Prisma does not manage RLS policies) — RLS policies written in raw SQL in migration files
+- Existing 41-table schema must be introspected into schema.prisma via `prisma db pull` in Epic 1
+
+---
+
+## ADR-010: Email Delivery — Resend
+
+**Status**: DECIDED  
+**Date**: 2026-08-27
+
+**Decision**: Resend
+
+**Consequences**:
+- Simple REST API + official Node.js SDK (`resend` npm package)
+- React Email templates supported — enables well-designed transactional email
+- Generous free tier (3,000 emails/month) — sufficient for early development and launch
+- Domain verification required before sending from `@bebestwith.ai`
+- RESEND_API_KEY must be in .env.local (never committed)
+
+---
+
+## ADR-011: Managed PostgreSQL — Supabase
+
+**Status**: DECIDED  
+**Date**: 2026-08-27
+
+**Decision**: Supabase (for staging and production)
+
+**Consequences**:
+- Local development continues to use PostgreSQL 16 on port 5434 (`/Users/nilesh/bebest-pgdata`) — no change
+- Supabase provides managed PostgreSQL with built-in RLS, storage, and auth (auth not used — see D-O04)
+- Free tier (500 MB, 2 projects) sufficient for staging
+- Production project requires paid plan
+- DATABASE_URL for staging/prod comes from Supabase dashboard — stored in environment only, never committed
+- Prisma connects to Supabase via the direct connection string (not the pooler) for migrations; pooler for runtime
+
+---
+
 ## OPEN DECISIONS (require resolution before Phase 1)
 
 | # | Decision | Options | Deadline |
 |---|---|---|---|
-| D-O01 | Backend language | ~~Node.js (Hono/Express) vs Python (FastAPI)~~ | **DECIDED: Node.js/TypeScript** |
+| D-O01 | Backend language | ~~Node.js vs Python~~ | **DECIDED: Node.js/TypeScript (ADR-008)** |
 | D-O02 | Frontend framework for customer portal | Static HTML extend vs React/Next.js vs SvelteKit | Before Epic 1 |
 | D-O03 | Hosting model | Vercel Functions vs dedicated VPS vs hybrid | Before Epic 1 |
 | D-O04 | Auth provider | Custom JWT vs Clerk vs Auth.js vs Supabase Auth | Before Epic 3 |
 | D-O05 | Queue system | pg-job-table vs Vercel Queues vs BullMQ/Redis vs Inngest | Before Epic 9 |
 | D-O06 | Cache layer | None initially vs Redis vs pg-based vs Vercel KV | Before Epic 9 |
-| D-O07 | Email delivery | Resend vs Postmark vs SendGrid vs SES | Before Epic 1 |
+| D-O07 | Email delivery | ~~Resend vs Postmark vs SendGrid vs SES~~ | **DECIDED: Resend (ADR-010)** |
 | D-O08 | File storage (for reports) | Vercel Blob vs S3 vs Cloudflare R2 | Before Epic 24 |
 | D-O09 | Payment provider | Stripe vs Paddle vs Lemon Squeezy | Before Epic 26 |
 | D-O10 | Form backend (urgent — leads being lost) | Resend+Airtable vs Typeform embed vs custom API | URGENT |
-| D-O11 | Managed PostgreSQL | Supabase vs Neon vs Railway vs self-hosted | Before Epic 1 |
+| D-O11 | Managed PostgreSQL | ~~Supabase vs Neon vs Railway vs self-hosted~~ | **DECIDED: Supabase (ADR-011)** |
 | D-O12 | Legal review of AI provider ToS | N/A | Before Phase 3 |
-| D-O13 | ORM | Drizzle vs Prisma vs Knex vs SQLAlchemy | Before Epic 1 |
+| D-O13 | ORM | ~~Drizzle vs Prisma vs Knex vs SQLAlchemy~~ | **DECIDED: Prisma (ADR-009)** |
 | D-O14 | Error tracking | Sentry vs Bugsnag vs Honeybadger | Before Epic 1 |
 | D-O15 | Analytics | Vercel Analytics vs Plausible vs PostHog | Before Epic 1 |
