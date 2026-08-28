@@ -823,6 +823,13 @@ model opportunities {
   evidence           Json?
   created_at         DateTime            @default(now()) @db.Timestamp(6)
   updated_at         DateTime            @default(now()) @db.Timestamp(6)
+  keyword_or_query   String?             @db.VarChar(500)
+  seo_gap_score      Decimal             @default(0) @db.Decimal(5, 2)
+  geo_gap_score      Decimal             @default(0) @db.Decimal(5, 2)
+  unified_score      Decimal             @default(0) @db.Decimal(5, 2)
+  volume             Int?
+  difficulty         Int?                @db.SmallInt
+  priority_tier      priority_tier       @default(P3)
   brands             brands              @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "opportunities_brand_id_brands_id_fk")
   gap_analysis       gap_analysis?       @relation(fields: [gap_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "opportunities_gap_id_gap_analysis_id_fk")
 
@@ -830,6 +837,7 @@ model opportunities {
   @@index([gap_id], map: "idx_opportunities_gap")
   @@index([priority_order], map: "idx_opportunities_priority")
   @@index([status], map: "idx_opportunities_status")
+  @@index([brand_id, priority_tier], map: "idx_opportunities_tier")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1516,6 +1524,12 @@ enum opportunity_status {
   in_progress
   completed
   dismissed
+}
+
+enum priority_tier {
+  P1
+  P2
+  P3
 }
 
 enum query_generated_by {
