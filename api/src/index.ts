@@ -11,6 +11,9 @@ import brands from './routes/brands.js'
 import crawl from './routes/crawl.js'
 import keywords from './routes/keywords.js'
 import journeys from './routes/journeys.js'
+import integrations from './routes/integrations.js'
+import billing from './routes/billing.js'
+import ai from './routes/ai.js'
 
 const app = new Hono()
 
@@ -32,6 +35,9 @@ app.route('/api/orgs/:slug/brands', brands)
 app.route('/api/orgs/:slug/brands/:brandId/crawl', crawl)
 app.route('/api/orgs/:slug/brands/:brandId/keywords', keywords)
 app.route('/api/orgs/:slug/brands/:brandId/journeys', journeys)
+app.route('/api/orgs/:slug/integrations', integrations)
+app.route('/api/orgs/:slug/billing', billing)
+app.route('/api/orgs/:slug/ai', ai)
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404))
 app.onError((err, c) => {

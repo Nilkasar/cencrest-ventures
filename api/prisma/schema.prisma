@@ -38,6 +38,22 @@ model ai_providers {
   @@index([type], map: "idx_ai_providers_type")
 }
 
+model ai_usage {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String        @db.Uuid
+  provider_name   String        @db.VarChar(50)
+  model           String        @db.VarChar(100)
+  tokens_in       Int           @default(0)
+  tokens_out      Int           @default(0)
+  cost_usd        Decimal       @default(0) @db.Decimal(10, 6)
+  latency_ms      Int?
+  finish_reason   String?       @db.VarChar(50)
+  recorded_at     DateTime      @default(now()) @db.Timestamptz(6)
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organization_id, recorded_at], map: "idx_ai_usage_org_date")
+}
+
 model analyses {
   id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   response_id           String                  @db.Uuid
@@ -484,6 +500,22 @@ model gsc_connections {
   brands            brands    @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
+model integrations {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id    String               @db.Uuid
+  integration_type   integration_type
+  config_enc         Json                 @default("{}")
+  status             integration_status   @default(disconnected)
+  last_synced_at     DateTime?            @db.Timestamptz(6)
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime             @default(now()) @db.Timestamptz(6)
+  organizations      organizations        @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  webhook_deliveries webhook_deliveries[]
+
+  @@unique([organization_id, integration_type])
+  @@index([organization_id], map: "idx_integrations_org")
+}
+
 model intents {
   id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organization_id String           @db.Uuid
@@ -654,21 +686,43 @@ model opportunities {
   @@index([status], map: "idx_opportunities_status")
 }
 
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model org_ai_providers {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String        @db.Uuid
+  provider_name   String        @db.VarChar(50)
+  model           String        @db.VarChar(100)
+  api_key_enc     String?
+  is_active       Boolean       @default(true)
+  priority        Int           @default(1) @db.SmallInt
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime      @default(now()) @db.Timestamptz(6)
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([organization_id, provider_name])
+  @@index([organization_id], map: "idx_org_ai_providers_org")
+}
+
 model organizations {
-  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name         String         @db.VarChar(255)
-  slug         String         @unique(map: "organizations_slug_unique") @db.VarChar(255)
-  created_by   String         @db.Uuid
-  created_at   DateTime       @default(now()) @db.Timestamp(6)
-  updated_at   DateTime       @default(now()) @db.Timestamp(6)
-  deleted_at   DateTime?      @db.Timestamp(6)
-  audit_events audit_events[]
-  brands       brands[]
-  categories   categories[]
-  intents      intents[]
-  invitations  invitations[]
-  memberships  memberships[]
-  users        users          @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "organizations_created_by_users_id_fk")
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String             @db.VarChar(255)
+  slug             String             @unique(map: "organizations_slug_unique") @db.VarChar(255)
+  created_by       String             @db.Uuid
+  created_at       DateTime           @default(now()) @db.Timestamp(6)
+  updated_at       DateTime           @default(now()) @db.Timestamp(6)
+  deleted_at       DateTime?          @db.Timestamp(6)
+  ai_usage         ai_usage[]
+  audit_events     audit_events[]
+  brands           brands[]
+  categories       categories[]
+  integrations     integrations[]
+  intents          intents[]
+  invitations      invitations[]
+  memberships      memberships[]
+  org_ai_providers org_ai_providers[]
+  users            users              @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "organizations_created_by_users_id_fk")
+  subscriptions    subscriptions?
+  usage_records    usage_records[]
 }
 
 model page_issues {
@@ -961,6 +1015,33 @@ model sessions {
   @@index([user_id], map: "idx_sessions_user")
 }
 
+model subscriptions {
+  id                     String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id        String              @unique @db.Uuid
+  stripe_customer_id     String?             @unique @db.VarChar(255)
+  stripe_subscription_id String?             @unique @db.VarChar(255)
+  plan                   String              @default("free") @db.VarChar(50)
+  status                 subscription_status @default(active)
+  current_period_start   DateTime?           @db.Timestamptz(6)
+  current_period_end     DateTime?           @db.Timestamptz(6)
+  created_at             DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime            @default(now()) @db.Timestamptz(6)
+  organizations          organizations       @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organization_id], map: "idx_subscriptions_org")
+}
+
+model usage_records {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String        @db.Uuid
+  metric          usage_metric
+  quantity        Int           @default(1)
+  recorded_at     DateTime      @default(now()) @db.Timestamptz(6)
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organization_id, metric, recorded_at], map: "idx_usage_records_org_month")
+}
+
 model users {
   id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email                 String                  @unique(map: "users_email_unique") @db.VarChar(255)
@@ -985,6 +1066,20 @@ model users {
   sessions              sessions[]
 
   @@index([email], map: "idx_users_email")
+}
+
+model webhook_deliveries {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  integration_id String       @db.Uuid
+  event_type     String       @db.VarChar(100)
+  payload        Json         @default("{}")
+  status_code    Int?
+  response_body  String?
+  attempt        Int          @default(1) @db.SmallInt
+  delivered_at   DateTime     @default(now()) @db.Timestamptz(6)
+  integrations   integrations @relation(fields: [integration_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([integration_id, delivered_at(sort: Desc)], map: "idx_webhook_deliveries_integ")
 }
 
 enum action_type {
@@ -1048,6 +1143,22 @@ enum gap_type {
   weak_intent
   content_gap
   positioning_gap
+}
+
+enum integration_status {
+  connected
+  disconnected
+  error
+}
+
+enum integration_type {
+  ga4
+  gsc
+  slack
+  hubspot
+  salesforce
+  zapier
+  webhook
 }
 
 enum intent_category {
@@ -1160,4 +1271,20 @@ enum sentiment {
   positive
   neutral
   negative
+}
+
+enum subscription_status {
+  active
+  past_due
+  canceled
+  trialing
+  incomplete
+}
+
+enum usage_metric {
+  prompt_runs
+  ai_tokens
+  crawl_pages
+  users
+  brands
 }
