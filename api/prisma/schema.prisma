@@ -124,6 +124,20 @@ model audit_events {
   @@index([user_id], map: "idx_audit_events_user")
 }
 
+model auth_events {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String?  @db.Uuid
+  event_type String   @db.VarChar(50)
+  ip_address String?  @db.VarChar(45)
+  user_agent String?
+  metadata   Json?
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  users      users?   @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([event_type], map: "idx_auth_events_type")
+  @@index([user_id], map: "idx_auth_events_user")
+}
+
 model background_jobs {
   id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   type          job_type
@@ -212,10 +226,12 @@ model brands {
   organizations         organizations           @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "brands_organization_id_organizations_id_fk")
   category_associations category_associations[]
   competitors           competitors[]
+  crawl_jobs            crawl_jobs[]
   gap_analysis          gap_analysis[]
   measurement_points    measurement_points[]
   mentions              mentions[]
   opportunities         opportunities[]
+  pages                 pages[]
   products              products[]
   query_sets            query_sets[]
   questions             questions[]
@@ -236,7 +252,7 @@ model categories {
   parent_id        String?            @db.Uuid
   description      String?
   created_at       DateTime           @default(now()) @db.Timestamp(6)
-  brand_categories brand_categories[]      @ignore
+  brand_categories brand_categories[] @ignore
   organizations    organizations      @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "categories_organization_id_organizations_id_fk")
   categories       categories?        @relation("categoriesTocategories", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "categories_parent_id_categories_id_fk")
   other_categories categories[]       @relation("categoriesTocategories")
@@ -293,6 +309,23 @@ model competitors {
   gap_analysis        gap_analysis[]
 
   @@index([brand_id], map: "idx_competitors_brand")
+}
+
+model crawl_jobs {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id      String       @db.Uuid
+  status        crawl_status @default(pending)
+  pages_crawled Int          @default(0)
+  pages_found   Int          @default(0)
+  error_message String?
+  started_at    DateTime?    @db.Timestamptz(6)
+  completed_at  DateTime?    @db.Timestamptz(6)
+  created_at    DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime     @default(now()) @db.Timestamptz(6)
+  brands        brands       @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  pages         pages[]
+
+  @@index([brand_id], map: "idx_crawl_jobs_brand")
 }
 
 model entities {
@@ -357,6 +390,18 @@ model evaluation_runs {
   @@index([prompt_version_id], map: "idx_evaluation_runs_prompt_version")
 }
 
+model form_submissions {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  form_id    String   @db.VarChar(50)
+  email      String   @db.VarChar(255)
+  payload    Json     @default("{}")
+  created_at DateTime @default(now()) @db.Timestamp(6)
+
+  @@index([created_at], map: "idx_form_submissions_created")
+  @@index([email], map: "idx_form_submissions_email")
+  @@index([form_id], map: "idx_form_submissions_form_id")
+}
+
 model gap_analysis {
   id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   brand_id           String          @db.Uuid
@@ -399,6 +444,36 @@ model intents {
 
   @@index([category], map: "idx_intents_category")
   @@index([organization_id], map: "idx_intents_organization")
+}
+
+model invitations {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String        @db.Uuid
+  invited_by      String        @db.Uuid
+  email           String        @db.VarChar(255)
+  role            role          @default(member)
+  token_hash      String        @unique @db.VarChar(255)
+  expires_at      DateTime      @db.Timestamp(6)
+  accepted_at     DateTime?     @db.Timestamp(6)
+  created_at      DateTime      @default(now()) @db.Timestamp(6)
+  users           users         @relation(fields: [invited_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([email], map: "idx_invitations_email")
+  @@index([organization_id], map: "idx_invitations_org")
+  @@index([token_hash], map: "idx_invitations_token")
+}
+
+model magic_link_tokens {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email      String    @db.VarChar(255)
+  token_hash String    @unique @db.VarChar(255)
+  expires_at DateTime  @db.Timestamp(6)
+  used_at    DateTime? @db.Timestamp(6)
+  created_at DateTime  @default(now()) @db.Timestamp(6)
+
+  @@index([email], map: "idx_mlt_email")
+  @@index([token_hash], map: "idx_mlt_token")
 }
 
 model measurement_annotations {
@@ -508,6 +583,55 @@ model organizations {
   users        users          @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "organizations_created_by_users_id_fk")
 }
 
+model page_issues {
+  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  page_id    String         @db.Uuid
+  issue_type issue_type
+  severity   issue_severity
+  detail     String?
+  created_at DateTime       @default(now()) @db.Timestamptz(6)
+  pages      pages          @relation(fields: [page_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([page_id], map: "idx_page_issues_page")
+}
+
+model pages {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  crawl_job_id     String        @db.Uuid
+  brand_id         String        @db.Uuid
+  url              String        @db.VarChar(2048)
+  title            String?       @db.VarChar(500)
+  meta_description String?
+  h1               String?       @db.VarChar(500)
+  canonical        String?       @db.VarChar(2048)
+  status_code      Int?
+  word_count       Int           @default(0)
+  load_ms          Int?
+  internal_links   Int           @default(0)
+  external_links   Int           @default(0)
+  schema_types     String[]      @default([])
+  crawled_at       DateTime      @default(now()) @db.Timestamptz(6)
+  page_issues      page_issues[]
+  brands           brands        @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  crawl_jobs       crawl_jobs    @relation(fields: [crawl_job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([brand_id], map: "idx_pages_brand")
+  @@index([crawl_job_id], map: "idx_pages_crawl_job")
+}
+
+model password_reset_tokens {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String    @db.Uuid
+  token_hash String    @unique @db.VarChar(255)
+  expires_at DateTime  @db.Timestamp(6)
+  used_at    DateTime? @db.Timestamp(6)
+  created_at DateTime  @default(now()) @db.Timestamp(6)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([token_hash], map: "idx_prt_token")
+  @@index([user_id], map: "idx_prt_user")
+}
+
 model products {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   brand_id    String    @db.Uuid
@@ -577,7 +701,7 @@ model query_sets {
   created_at          DateTime              @default(now()) @db.Timestamp(6)
   updated_at          DateTime              @default(now()) @db.Timestamp(6)
   deleted_at          DateTime?             @db.Timestamp(6)
-  query_set_questions query_set_questions[]  @ignore
+  query_set_questions query_set_questions[] @ignore
   brands              brands                @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "query_sets_brand_id_brands_id_fk")
   users               users                 @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "query_sets_created_by_users_id_fk")
 
@@ -596,7 +720,7 @@ model questions {
   created_at          DateTime              @default(now()) @db.Timestamp(6)
   updated_at          DateTime              @default(now()) @db.Timestamp(6)
   deleted_at          DateTime?             @db.Timestamp(6)
-  query_set_questions query_set_questions[]  @ignore
+  query_set_questions query_set_questions[] @ignore
   brands              brands                @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "questions_brand_id_brands_id_fk")
   users               users                 @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "questions_created_by_users_id_fk")
   intents             intents?              @relation(fields: [intent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "questions_intent_id_intents_id_fk")
@@ -732,6 +856,22 @@ model scores {
   @@index([score_type], map: "idx_scores_type")
 }
 
+model sessions {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id      String   @db.Uuid
+  token_hash   String   @unique @db.VarChar(255)
+  expires_at   DateTime @db.Timestamp(6)
+  last_seen_at DateTime @default(now()) @db.Timestamp(6)
+  ip_address   String?  @db.VarChar(45)
+  user_agent   String?
+  created_at   DateTime @default(now()) @db.Timestamp(6)
+  users        users    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([expires_at], map: "idx_sessions_expires")
+  @@index([token_hash], map: "idx_sessions_token")
+  @@index([user_id], map: "idx_sessions_user")
+}
+
 model users {
   id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email                 String                  @unique(map: "users_email_unique") @db.VarChar(255)
@@ -758,91 +898,6 @@ model users {
   @@index([email], map: "idx_users_email")
 }
 
-model form_submissions {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  form_id    String   @db.VarChar(50)
-  email      String   @db.VarChar(255)
-  payload    Json     @default("{}")
-  created_at DateTime @default(now()) @db.Timestamp(6)
-
-  @@index([created_at], map: "idx_form_submissions_created")
-  @@index([email], map: "idx_form_submissions_email")
-  @@index([form_id], map: "idx_form_submissions_form_id")
-}
-
-model invitations {
-  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organization_id String        @db.Uuid
-  invited_by      String        @db.Uuid
-  email           String        @db.VarChar(255)
-  role            role          @default(member)
-  token_hash      String        @unique @db.VarChar(255)
-  expires_at      DateTime      @db.Timestamp(6)
-  accepted_at     DateTime?     @db.Timestamp(6)
-  created_at      DateTime      @default(now()) @db.Timestamp(6)
-  users           users         @relation(fields: [invited_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([email], map: "idx_invitations_email")
-  @@index([organization_id], map: "idx_invitations_org")
-  @@index([token_hash], map: "idx_invitations_token")
-}
-
-model auth_events {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id    String?  @db.Uuid
-  event_type String   @db.VarChar(50)
-  ip_address String?  @db.VarChar(45)
-  user_agent String?
-  metadata   Json?
-  created_at DateTime @default(now()) @db.Timestamp(6)
-  users      users?   @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([event_type], map: "idx_auth_events_type")
-  @@index([user_id], map: "idx_auth_events_user")
-}
-
-model magic_link_tokens {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email      String    @db.VarChar(255)
-  token_hash String    @unique @db.VarChar(255)
-  expires_at DateTime  @db.Timestamp(6)
-  used_at    DateTime? @db.Timestamp(6)
-  created_at DateTime  @default(now()) @db.Timestamp(6)
-
-  @@index([email], map: "idx_mlt_email")
-  @@index([token_hash], map: "idx_mlt_token")
-}
-
-model password_reset_tokens {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id    String    @db.Uuid
-  token_hash String    @unique @db.VarChar(255)
-  expires_at DateTime  @db.Timestamp(6)
-  used_at    DateTime? @db.Timestamp(6)
-  created_at DateTime  @default(now()) @db.Timestamp(6)
-  users      users     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([token_hash], map: "idx_prt_token")
-  @@index([user_id], map: "idx_prt_user")
-}
-
-model sessions {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id      String   @db.Uuid
-  token_hash   String   @unique @db.VarChar(255)
-  expires_at   DateTime @db.Timestamp(6)
-  last_seen_at DateTime @default(now()) @db.Timestamp(6)
-  ip_address   String?  @db.VarChar(45)
-  user_agent   String?
-  created_at   DateTime @default(now()) @db.Timestamp(6)
-  users        users    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([expires_at], map: "idx_sessions_expires")
-  @@index([token_hash], map: "idx_sessions_token")
-  @@index([user_id], map: "idx_sessions_user")
-}
-
 enum action_type {
   content
   seo
@@ -862,6 +917,14 @@ enum competition_type {
   direct
   indirect
   aspirational
+}
+
+enum crawl_status {
+  pending
+  running
+  completed
+  failed
+  cancelled
 }
 
 enum effort_level {
@@ -903,6 +966,27 @@ enum intent_category {
   transactional
   navigational
   commercial
+}
+
+enum issue_severity {
+  critical
+  warning
+  info
+}
+
+enum issue_type {
+  missing_title
+  missing_meta
+  duplicate_title
+  missing_canonical
+  broken_link
+  redirect_chain
+  missing_alt
+  missing_h1
+  title_too_long
+  meta_too_long
+  thin_content
+  noindex
 }
 
 enum job_status {
