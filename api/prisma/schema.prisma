@@ -302,6 +302,7 @@ model brands {
   competitors            competitors[]
   crawl_jobs             crawl_jobs[]
   gap_analysis           gap_analysis[]
+  geo_gaps               geo_gaps[]
   gsc_connections        gsc_connections?
   keyword_clusters       keyword_clusters[]
   keywords               keywords[]
@@ -340,6 +341,7 @@ model buyer_journeys {
   ai_responses   ai_responses[]
   brands         brands             @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   products       products?          @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+  geo_gaps       geo_gaps[]
   prompt_jobs    prompt_jobs[]
   share_of_voice share_of_voice[]
 
@@ -586,6 +588,27 @@ model gap_analysis {
   @@index([category], map: "idx_gap_analysis_category")
   @@index([status], map: "idx_gap_analysis_status")
   @@index([gap_type], map: "idx_gap_analysis_type")
+}
+
+model geo_gaps {
+  id                    String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id              String         @db.Uuid
+  query_id              String         @db.Uuid
+  provider_name         String?        @db.VarChar(50)
+  gap_type              geo_gap_type
+  severity              gap_severity   @default(medium)
+  root_cause_hypothesis String?
+  recommended_action    String?
+  business_impact_score Decimal        @default(0) @db.Decimal(8, 2)
+  dismissed_at          DateTime?      @db.Timestamptz(6)
+  created_at            DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime       @default(now()) @db.Timestamptz(6)
+  brands                brands         @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  buyer_journeys        buyer_journeys @relation(fields: [query_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([brand_id, query_id, provider_name, gap_type])
+  @@index([brand_id, dismissed_at, business_impact_score(sort: Desc)], map: "idx_geo_gaps_brand")
+  @@index([brand_id, gap_type], map: "idx_geo_gaps_type")
 }
 
 model gsc_connections {
@@ -1398,6 +1421,13 @@ enum finding_type {
   issue
 }
 
+enum gap_severity {
+  critical
+  high
+  medium
+  low
+}
+
 enum gap_status {
   open
   acknowledged
@@ -1412,6 +1442,13 @@ enum gap_type {
   weak_intent
   content_gap
   positioning_gap
+}
+
+enum geo_gap_type {
+  no_mention
+  low_sentiment
+  no_citation
+  competitor_only
 }
 
 enum integration_status {
