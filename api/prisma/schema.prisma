@@ -54,19 +54,21 @@ model ai_providers {
 }
 
 model ai_responses {
-  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  prompt_job_id  String         @db.Uuid
-  query_id       String         @db.Uuid
-  provider_name  String         @db.VarChar(50)
-  model          String         @db.VarChar(100)
-  prompt_text    String
-  response_text  String
-  tokens_in      Int            @default(0)
-  tokens_out     Int            @default(0)
-  latency_ms     Int?
-  created_at     DateTime       @default(now()) @db.Timestamptz(6)
-  prompt_jobs    prompt_jobs    @relation(fields: [prompt_job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  buyer_journeys buyer_journeys @relation(fields: [query_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  prompt_job_id       String                @db.Uuid
+  query_id            String                @db.Uuid
+  provider_name       String                @db.VarChar(50)
+  model               String                @db.VarChar(100)
+  prompt_text         String
+  response_text       String
+  tokens_in           Int                   @default(0)
+  tokens_out          Int                   @default(0)
+  latency_ms          Int?
+  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+  prompt_jobs         prompt_jobs           @relation(fields: [prompt_job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  buyer_journeys      buyer_journeys        @relation(fields: [query_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  citations           citations[]
+  mention_extractions mention_extractions[]
 
   @@index([prompt_job_id], map: "idx_ai_responses_job")
   @@index([query_id], map: "idx_ai_responses_query")
@@ -314,6 +316,7 @@ model brands {
   reports                reports[]
   score_history          score_history[]
   scores                 scores[]
+  visibility_scores      visibility_scores[]
 
   @@index([created_by], map: "idx_brands_creator")
   @@index([industry], map: "idx_brands_industry")
@@ -371,6 +374,19 @@ model category_associations {
   @@index([analysis_id], map: "idx_category_associations_analysis")
   @@index([brand_id], map: "idx_category_associations_brand")
   @@index([category], map: "idx_category_associations_category")
+}
+
+model citations {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  response_id     String        @db.Uuid
+  url             String?       @db.VarChar(2048)
+  domain          String?       @db.VarChar(255)
+  citation_type   citation_type @default(implicit)
+  context_snippet String?
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  ai_responses    ai_responses  @relation(fields: [response_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([response_id], map: "idx_citations_response")
 }
 
 model competitor_mentions {
@@ -705,6 +721,22 @@ model memberships {
   @@index([user_id], map: "idx_memberships_user")
 }
 
+model mention_extractions {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  response_id       String        @db.Uuid
+  entity_name       String        @db.VarChar(255)
+  entity_type       entity_type
+  mention_count     Int           @default(0)
+  first_mention_pos Int?
+  sentiment         sentiment_val @default(neutral)
+  sentiment_score   Decimal?      @db.Decimal(4, 3)
+  is_recommended    Boolean       @default(false)
+  created_at        DateTime      @default(now()) @db.Timestamptz(6)
+  ai_responses      ai_responses  @relation(fields: [response_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([response_id], map: "idx_mention_extractions_response")
+}
+
 model mentions {
   id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   analysis_id String     @db.Uuid
@@ -722,6 +754,35 @@ model mentions {
   @@index([analysis_id], map: "idx_mentions_analysis")
   @@index([brand_id], map: "idx_mentions_brand")
   @@index([sentiment], map: "idx_mentions_sentiment")
+}
+
+model notification_preferences {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id           String            @db.Uuid
+  notification_type notification_type
+  channel           notif_channel
+  enabled           Boolean           @default(true)
+  users             users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, notification_type, channel])
+  @@index([user_id], map: "idx_notif_prefs_user")
+}
+
+model notifications {
+  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id       String            @db.Uuid
+  org_id        String            @db.Uuid
+  type          notification_type
+  title         String            @db.VarChar(255)
+  body          String?
+  action_url    String?           @db.VarChar(500)
+  read_at       DateTime?         @db.Timestamptz(6)
+  created_at    DateTime          @default(now()) @db.Timestamptz(6)
+  organizations organizations     @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users         users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([org_id], map: "idx_notifications_org")
+  @@index([user_id, read_at, created_at(sort: Desc)], map: "idx_notifications_user")
 }
 
 model opportunities {
@@ -786,6 +847,7 @@ model organizations {
   intents          intents[]
   invitations      invitations[]
   memberships      memberships[]
+  notifications    notifications[]
   org_ai_providers org_ai_providers[]
   users            users              @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "organizations_created_by_users_id_fk")
   subscriptions    subscriptions?
@@ -877,19 +939,20 @@ model prompt_jobs {
 }
 
 model prompt_runs {
-  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  brand_id          String        @db.Uuid
-  trigger           run_trigger   @default(manual)
-  status            run_status    @default(queued)
-  total_prompts     Int           @default(0)
-  completed_prompts Int           @default(0)
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id          String              @db.Uuid
+  trigger           run_trigger         @default(manual)
+  status            run_status          @default(queued)
+  total_prompts     Int                 @default(0)
+  completed_prompts Int                 @default(0)
   error_message     String?
-  started_at        DateTime?     @db.Timestamptz(6)
-  completed_at      DateTime?     @db.Timestamptz(6)
-  created_at        DateTime      @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime      @default(now()) @db.Timestamptz(6)
+  started_at        DateTime?           @db.Timestamptz(6)
+  completed_at      DateTime?           @db.Timestamptz(6)
+  created_at        DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime            @default(now()) @db.Timestamptz(6)
   prompt_jobs       prompt_jobs[]
-  brands            brands        @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  brands            brands              @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  visibility_scores visibility_scores[]
 
   @@index([brand_id], map: "idx_prompt_runs_brand")
 }
@@ -1146,30 +1209,49 @@ model usage_records {
 }
 
 model users {
-  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email                 String                  @unique(map: "users_email_unique") @db.VarChar(255)
-  password_hash         String                  @db.VarChar(255)
-  name                  String                  @db.VarChar(255)
-  email_verified        Boolean?                @default(false)
-  last_login_at         DateTime?               @db.Timestamp(6)
-  created_at            DateTime                @default(now()) @db.Timestamp(6)
-  updated_at            DateTime                @default(now()) @db.Timestamp(6)
-  deleted_at            DateTime?               @db.Timestamp(6)
-  audit_events          audit_events[]
-  auth_events           auth_events[]
-  brands                brands[]
-  crm_notes             crm_notes[]
-  invitations           invitations[]
-  memberships           memberships[]
-  organizations         organizations[]
-  password_reset_tokens password_reset_tokens[]
-  query_sets            query_sets[]
-  questions             questions[]
-  refresh_tokens        refresh_tokens[]
-  reports               reports[]
-  sessions              sessions[]
+  id                       String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                    String                     @unique(map: "users_email_unique") @db.VarChar(255)
+  password_hash            String                     @db.VarChar(255)
+  name                     String                     @db.VarChar(255)
+  email_verified           Boolean?                   @default(false)
+  last_login_at            DateTime?                  @db.Timestamp(6)
+  created_at               DateTime                   @default(now()) @db.Timestamp(6)
+  updated_at               DateTime                   @default(now()) @db.Timestamp(6)
+  deleted_at               DateTime?                  @db.Timestamp(6)
+  audit_events             audit_events[]
+  auth_events              auth_events[]
+  brands                   brands[]
+  crm_notes                crm_notes[]
+  invitations              invitations[]
+  memberships              memberships[]
+  notification_preferences notification_preferences[]
+  notifications            notifications[]
+  organizations            organizations[]
+  password_reset_tokens    password_reset_tokens[]
+  query_sets               query_sets[]
+  questions                questions[]
+  refresh_tokens           refresh_tokens[]
+  reports                  reports[]
+  sessions                 sessions[]
 
   @@index([email], map: "idx_users_email")
+}
+
+model visibility_scores {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id      String      @db.Uuid
+  provider_name String      @db.VarChar(50)
+  run_id        String      @db.Uuid
+  score         Decimal     @default(0) @db.Decimal(5, 2)
+  mention_rate  Decimal     @default(0) @db.Decimal(5, 4)
+  avg_sentiment Decimal?    @db.Decimal(4, 3)
+  avg_position  Decimal?    @db.Decimal(6, 2)
+  calculated_at DateTime    @default(now()) @db.Timestamptz(6)
+  brands        brands      @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  prompt_runs   prompt_runs @relation(fields: [run_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([brand_id, provider_name, run_id])
+  @@index([brand_id, calculated_at(sort: Desc)], map: "idx_visibility_scores_brand")
 }
 
 model webhook_deliveries {
@@ -1201,6 +1283,12 @@ enum association_type {
   none
 }
 
+enum citation_type {
+  link
+  named_source
+  implicit
+}
+
 enum competition_type {
   direct
   indirect
@@ -1219,6 +1307,12 @@ enum effort_level {
   low
   medium
   high
+}
+
+enum entity_type {
+  brand
+  competitor
+  product
 }
 
 enum finding_type {
@@ -1338,6 +1432,22 @@ enum mention_type {
   alternative
 }
 
+enum notif_channel {
+  email
+  in_app
+}
+
+enum notification_type {
+  run_complete
+  new_recommendations
+  competitor_alert
+  score_change
+  agent_action
+  report_ready
+  action_assigned
+  billing_alert
+}
+
 enum opportunity_status {
   new
   in_progress
@@ -1388,6 +1498,12 @@ enum run_trigger {
 }
 
 enum sentiment {
+  positive
+  neutral
+  negative
+}
+
+enum sentiment_val {
   positive
   neutral
   negative
