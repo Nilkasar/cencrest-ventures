@@ -591,20 +591,21 @@ model gap_analysis {
 }
 
 model geo_gaps {
-  id                    String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  brand_id              String         @db.Uuid
-  query_id              String         @db.Uuid
-  provider_name         String?        @db.VarChar(50)
+  id                    String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id              String            @db.Uuid
+  query_id              String            @db.Uuid
+  provider_name         String?           @db.VarChar(50)
   gap_type              geo_gap_type
-  severity              gap_severity   @default(medium)
+  severity              gap_severity      @default(medium)
   root_cause_hypothesis String?
   recommended_action    String?
-  business_impact_score Decimal        @default(0) @db.Decimal(8, 2)
-  dismissed_at          DateTime?      @db.Timestamptz(6)
-  created_at            DateTime       @default(now()) @db.Timestamptz(6)
-  updated_at            DateTime       @default(now()) @db.Timestamptz(6)
-  brands                brands         @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  buyer_journeys        buyer_journeys @relation(fields: [query_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  business_impact_score Decimal           @default(0) @db.Decimal(8, 2)
+  dismissed_at          DateTime?         @db.Timestamptz(6)
+  created_at            DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime          @default(now()) @db.Timestamptz(6)
+  brands                brands            @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  buyer_journeys        buyer_journeys    @relation(fields: [query_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  recommendations       recommendations[]
 
   @@unique([brand_id, query_id, provider_name, gap_type])
   @@index([brand_id, dismissed_at, business_impact_score(sort: Desc)], map: "idx_geo_gaps_brand")
@@ -855,6 +856,7 @@ model opportunities {
   priority_tier      priority_tier       @default(P3)
   brands             brands              @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "opportunities_brand_id_brands_id_fk")
   gap_analysis       gap_analysis?       @relation(fields: [gap_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "opportunities_gap_id_gap_analysis_id_fk")
+  recommendations    recommendations[]
 
   @@index([brand_id], map: "idx_opportunities_brand")
   @@index([gap_id], map: "idx_opportunities_gap")
@@ -1097,18 +1099,34 @@ model questions {
 }
 
 model recommendations {
-  id                      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  analysis_id             String   @db.Uuid
-  brand_id                String   @db.Uuid
+  id                      String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  analysis_id             String          @db.Uuid
+  brand_id                String          @db.Uuid
   is_recommended          Boolean
-  recommendation_strength String?  @db.VarChar(50)
+  recommendation_strength String?         @db.VarChar(50)
   position                Int?
   context                 String?
-  confidence              Decimal? @db.Decimal(3, 2)
-  created_at              DateTime @default(now()) @db.Timestamp(6)
-  analyses                analyses @relation(fields: [analysis_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "recommendations_analysis_id_analyses_id_fk")
-  brands                  brands   @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "recommendations_brand_id_brands_id_fk")
+  confidence              Decimal?        @db.Decimal(3, 2)
+  created_at              DateTime        @default(now()) @db.Timestamp(6)
+  opportunity_id          String?         @db.Uuid
+  gap_id                  String?         @db.Uuid
+  rec_type                rec_type?
+  title                   String?         @db.VarChar(500)
+  rationale               String?
+  expected_impact         String?         @db.VarChar(255)
+  effort_estimate         effort_estimate @default(medium)
+  roi_score               Decimal         @default(0) @db.Decimal(6, 2)
+  status                  rec_status      @default(active)
+  snoozed_until           DateTime?       @db.Timestamptz(6)
+  completed_at            DateTime?       @db.Timestamptz(6)
+  updated_at              DateTime        @default(now()) @db.Timestamptz(6)
+  analyses                analyses        @relation(fields: [analysis_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "recommendations_analysis_id_analyses_id_fk")
+  brands                  brands          @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "recommendations_brand_id_brands_id_fk")
+  geo_gaps                geo_gaps?       @relation(fields: [gap_id], references: [id], onUpdate: NoAction)
+  opportunities           opportunities?  @relation(fields: [opportunity_id], references: [id], onUpdate: NoAction)
 
+  @@index([brand_id, status, roi_score(sort: Desc)], map: "idx_rec_brand_status")
+  @@index([brand_id, rec_type, status], map: "idx_rec_type")
   @@index([analysis_id], map: "idx_recommendations_analysis")
   @@index([brand_id], map: "idx_recommendations_brand")
   @@index([is_recommended], map: "idx_recommendations_is_recommended")
@@ -1397,6 +1415,12 @@ enum crawl_status {
   cancelled
 }
 
+enum effort_estimate {
+  low
+  medium
+  high
+}
+
 enum effort_level {
   low
   medium
@@ -1581,6 +1605,22 @@ enum question_type {
   best
   compare
   other
+}
+
+enum rec_status {
+  active
+  dismissed
+  snoozed
+  completed
+}
+
+enum rec_type {
+  create_content
+  optimize_page
+  build_citation
+  earn_link
+  improve_entity
+  update_schema
 }
 
 enum risk_level {

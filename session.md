@@ -66,8 +66,8 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | 11 | Competitive Intelligence | ✅ Done | ✅ | Yes |
 | 12 | Unified SEO + GEO Opportunity Engine | ✅ Done | ✅ | Yes |
 | 13 | GEO Gap Engine | ✅ Done | ✅ | Yes |
-| 14 | Recommendation Engine | 🔄 In Progress | — | No |
-| 15 | Content Intelligence | ⏳ Blocked by 5,7,14 | — | No |
+| 14 | Recommendation Engine | ✅ Done | ✅ | Yes |
+| 15 | Content Intelligence | 🔄 In Progress | — | No |
 | 16 | Content Generation | ⏳ Blocked by 8,14,15 | — | No |
 | 17 | GEO Agent | ⏳ Blocked by 13,16 | — | No |
 | 18 | SEO Agent | ⏳ Blocked by 6,16 | — | No |
@@ -104,14 +104,15 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | Epics 11+28 (Competitive Intelligence, Snapshot) | 158 |
 | Epic 12 (Opportunity Engine) | 164 |
 | Epic 13 (GEO Gap Engine) | 171 |
-| Epic 14 (Recommendation Engine) | 🔄 in progress |
+| Epic 14 (Recommendation Engine) | 178 |
+| Epic 15 (Content Intelligence) | 🔄 in progress |
 
 ### Current batch
-- Epic 14 (Recommendation Engine) — 🔄 agent running
+- Epic 15 (Content Intelligence) — 🔄 agent running
 
-### Next after Epic 14
-- Epic 15 (Content Intelligence) — depends on 5 ✅ + 7 ✅ + 14
-- Epic 16 (Content Generation) — depends on 8 ✅ + 14 + 15 (15 and 16 can parallel after 14)
+### Next after Epic 15
+- Epic 16 (Content Generation) — depends on 8 ✅ + 14 ✅ + 15
+- After 16: Epics 17+18 open up in parallel (GEO Agent + SEO Agent)
 
 ### Known technical debt
 - DB migrations done via raw psql (not Prisma Migrate) — not reproducible without this exact DB
