@@ -61,11 +61,11 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | 6 | SEO Intelligence (Keywords) | ✅ Done | ✅ | Yes |
 | 7 | Intent & Query Intelligence | ✅ Done | ✅ | Yes |
 | 8 | AI Provider Abstraction | ✅ Done | ✅ | Yes |
-| 9 | AI Visibility Engine | 🔄 In Progress | — | No |
-| 10 | AI Response Intelligence | ⏳ Blocked by 9 | — | No |
-| 11 | Competitive Intelligence | ⏳ Blocked by 10 | — | No |
-| 12 | Unified SEO + GEO Opportunity Engine | ⏳ Blocked by 6,10,11 | — | No |
-| 13 | GEO Gap Engine | ⏳ Blocked by 10,12 | — | No |
+| 9 | AI Visibility Engine | ✅ Done | ✅ | Yes |
+| 10 | AI Response Intelligence | ✅ Done | ✅ | Yes |
+| 11 | Competitive Intelligence | ✅ Done | ✅ | Yes |
+| 12 | Unified SEO + GEO Opportunity Engine | ✅ Done | ✅ | Yes |
+| 13 | GEO Gap Engine | 🔄 In Progress | — | No |
 | 14 | Recommendation Engine | ⏳ Blocked by 12,13 | — | No |
 | 15 | Content Intelligence | ⏳ Blocked by 5,7,14 | — | No |
 | 16 | Content Generation | ⏳ Blocked by 8,14,15 | — | No |
@@ -77,10 +77,10 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | 22 | Measurement & Experimentation | ⏳ Blocked by 9,21 | — | No |
 | 23 | Continuous Learning Loop | ⏳ Blocked by 22 | — | No |
 | 24 | Reporting | ⏳ Blocked by 10,11,22 | — | No |
-| 25 | Notifications | ⏳ Blocked by 1,9 | — | No |
+| 25 | Notifications | ✅ Done | ✅ | Yes |
 | 26 | Billing | ✅ Done | ✅ | Yes |
-| 27 | CRM | 🔄 In Progress | — | No |
-| 28 | Free AI + SEO Snapshot | ⏳ Blocked by 5,9,10 | — | No |
+| 27 | CRM | ✅ Done | ✅ | Yes |
+| 28 | Free AI + SEO Snapshot | ✅ Done | ✅ | Yes |
 | 29 | Customer Success Automation | ⏳ Blocked by 23,27 | — | No |
 | 30 | Agency / Multi-client | ⏳ Blocked by 2,24 | — | No |
 | 31 | White Label | ⏳ Blocked by 30,24 | — | No |
@@ -90,7 +90,7 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | 35 | Autonomous Operations | ⏳ Blocked by 19,23,29 | — | No |
 | 36 | Production Hardening | ⏳ Blocked by all | — | No |
 
-### Test count per commit
+### Test count history
 | Commit | Tests |
 |--------|-------|
 | Epics 1-3 (Foundation, Orgs, Auth) | ~30 |
@@ -99,18 +99,22 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | Epic 6 (Keywords) | 60 |
 | Epic 7 (Journeys) | 70 |
 | Epics 8+26+32 (AI, Billing, Integrations) | 94 |
+| Epics 9+27 (Visibility Engine, CRM) | 115 |
+| Epics 10+25 (Response Intelligence, Notifications) | 138 |
+| Epics 11+28 (Competitive Intelligence, Snapshot) | 158 |
+| Epic 12 (Opportunity Engine) | 164 |
+| Epic 13 (GEO Gap Engine) | 🔄 in progress |
 
-### Current parallel batch
-- Epic 9 (AI Visibility Engine) — 🔄 running
-- Epic 27 (CRM) — 🔄 running
+### Current batch
+- Epic 13 (GEO Gap Engine) — 🔄 agent running
 
-### Next batch after current
-- Epic 10 (AI Response Intelligence) — unblocks after Epic 9
-- Epic 25 (Notifications) — unblocks after Epic 9
+### Next after Epic 13
+- Epic 14 (Recommendation Engine) — depends on 12 ✅ + 13
+- After 14: Epics 15, 16 open up in parallel
 
 ### Known technical debt
 - DB migrations done via raw psql (not Prisma Migrate) — not reproducible without this exact DB
-- Crawler uses `setImmediate` not pgboss queue
+- Crawler + prompt runner use `setImmediate` not pgboss queue
 - No CI/CD (no GitHub Actions)
 - API not yet deployed to Vercel
 - Marketing site apply form still uses `alert()` — all leads lost
