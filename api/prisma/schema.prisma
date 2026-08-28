@@ -7,6 +7,21 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model account_health {
+  id                   String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  org_id               String        @unique @db.Uuid
+  health_score         Int           @default(100) @db.SmallInt
+  prompt_runs_last_30d Int           @default(0)
+  logins_last_7d       Int           @default(0)
+  actions_completed    Int           @default(0)
+  risk_level           risk_level    @default(healthy)
+  calculated_at        DateTime      @default(now()) @db.Timestamptz(6)
+  organizations        organizations @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([risk_level], map: "idx_account_health_risk")
+}
+
 model ai_models {
   id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   provider_id     String            @db.Uuid
@@ -36,6 +51,25 @@ model ai_providers {
 
   @@index([is_active], map: "idx_ai_providers_active")
   @@index([type], map: "idx_ai_providers_type")
+}
+
+model ai_responses {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  prompt_job_id  String         @db.Uuid
+  query_id       String         @db.Uuid
+  provider_name  String         @db.VarChar(50)
+  model          String         @db.VarChar(100)
+  prompt_text    String
+  response_text  String
+  tokens_in      Int            @default(0)
+  tokens_out     Int            @default(0)
+  latency_ms     Int?
+  created_at     DateTime       @default(now()) @db.Timestamptz(6)
+  prompt_jobs    prompt_jobs    @relation(fields: [prompt_job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  buyer_journeys buyer_journeys @relation(fields: [query_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([prompt_job_id], map: "idx_ai_responses_job")
+  @@index([query_id], map: "idx_ai_responses_query")
 }
 
 model ai_usage {
@@ -273,6 +307,7 @@ model brands {
   opportunities          opportunities[]
   pages                  pages[]
   products               products[]
+  prompt_runs            prompt_runs[]
   query_sets             query_sets[]
   questions              questions[]
   recommendations        recommendations[]
@@ -297,8 +332,10 @@ model buyer_journeys {
   created_at   DateTime           @default(now()) @db.Timestamptz(6)
   updated_at   DateTime           @default(now()) @db.Timestamptz(6)
   deleted_at   DateTime?          @db.Timestamptz(6)
+  ai_responses ai_responses[]
   brands       brands             @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   products     products?          @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+  prompt_jobs  prompt_jobs[]
 
   @@index([brand_id], map: "idx_buyer_journeys_brand")
   @@index([brand_id, stage], map: "idx_buyer_journeys_stage")
@@ -385,6 +422,32 @@ model crawl_jobs {
   pages         pages[]
 
   @@index([brand_id], map: "idx_crawl_jobs_brand")
+}
+
+model crm_contacts {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  org_id        String        @db.Uuid
+  email         String        @db.VarChar(255)
+  name          String?       @db.VarChar(255)
+  role          String?       @db.VarChar(100)
+  source        String        @default("signup") @db.VarChar(50)
+  created_at    DateTime      @default(now()) @db.Timestamptz(6)
+  organizations organizations @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([org_id], map: "idx_crm_contacts_org")
+}
+
+model crm_notes {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  org_id        String        @db.Uuid
+  author_id     String        @db.Uuid
+  content       String
+  created_at    DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime      @default(now()) @db.Timestamptz(6)
+  users         users         @relation(fields: [author_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organizations organizations @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([org_id], map: "idx_crm_notes_org")
 }
 
 model entities {
@@ -698,6 +761,7 @@ model org_ai_providers {
   created_at      DateTime      @default(now()) @db.Timestamptz(6)
   updated_at      DateTime      @default(now()) @db.Timestamptz(6)
   organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  prompt_jobs     prompt_jobs[]
 
   @@unique([organization_id, provider_name])
   @@index([organization_id], map: "idx_org_ai_providers_org")
@@ -711,10 +775,13 @@ model organizations {
   created_at       DateTime           @default(now()) @db.Timestamp(6)
   updated_at       DateTime           @default(now()) @db.Timestamp(6)
   deleted_at       DateTime?          @db.Timestamp(6)
+  account_health   account_health?
   ai_usage         ai_usage[]
   audit_events     audit_events[]
   brands           brands[]
   categories       categories[]
+  crm_contacts     crm_contacts[]
+  crm_notes        crm_notes[]
   integrations     integrations[]
   intents          intents[]
   invitations      invitations[]
@@ -789,6 +856,42 @@ model products {
   brands         brands           @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "products_brand_id_brands_id_fk")
 
   @@index([brand_id], map: "idx_products_brand")
+}
+
+model prompt_jobs {
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  run_id           String            @db.Uuid
+  query_id         String            @db.Uuid
+  provider_id      String?           @db.Uuid
+  status           job_status        @default(queued)
+  attempts         Int               @default(0) @db.SmallInt
+  last_error       String?
+  queued_at        DateTime          @default(now()) @db.Timestamptz(6)
+  completed_at     DateTime?         @db.Timestamptz(6)
+  ai_responses     ai_responses[]
+  org_ai_providers org_ai_providers? @relation(fields: [provider_id], references: [id], onUpdate: NoAction)
+  buyer_journeys   buyer_journeys    @relation(fields: [query_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  prompt_runs      prompt_runs       @relation(fields: [run_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([run_id], map: "idx_prompt_jobs_run")
+}
+
+model prompt_runs {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id          String        @db.Uuid
+  trigger           run_trigger   @default(manual)
+  status            run_status    @default(queued)
+  total_prompts     Int           @default(0)
+  completed_prompts Int           @default(0)
+  error_message     String?
+  started_at        DateTime?     @db.Timestamptz(6)
+  completed_at      DateTime?     @db.Timestamptz(6)
+  created_at        DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime      @default(now()) @db.Timestamptz(6)
+  prompt_jobs       prompt_jobs[]
+  brands            brands        @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([brand_id], map: "idx_prompt_runs_brand")
 }
 
 model prompt_templates {
@@ -1055,6 +1158,7 @@ model users {
   audit_events          audit_events[]
   auth_events           auth_events[]
   brands                brands[]
+  crm_notes             crm_notes[]
   invitations           invitations[]
   memberships           memberships[]
   organizations         organizations[]
@@ -1194,6 +1298,8 @@ enum job_status {
   running
   completed
   failed
+  queued
+  complete
 }
 
 enum job_type {
@@ -1253,6 +1359,12 @@ enum question_type {
   other
 }
 
+enum risk_level {
+  healthy
+  at_risk
+  churning
+}
+
 enum role {
   owner
   admin
@@ -1265,6 +1377,14 @@ enum run_status {
   running
   completed
   failed
+  queued
+  complete
+  cancelled
+}
+
+enum run_trigger {
+  scheduled
+  manual
 }
 
 enum sentiment {
