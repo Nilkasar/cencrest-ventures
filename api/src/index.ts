@@ -5,6 +5,7 @@ import { requestLogger } from './middleware/logger.js'
 import health from './routes/health.js'
 import version from './routes/version.js'
 import forms from './routes/forms.js'
+import orgs from './routes/orgs.js'
 
 const app = new Hono()
 
@@ -20,6 +21,7 @@ app.use('*', requestLogger)
 app.route('/api/health', health)
 app.route('/api/version', version)
 app.route('/api/forms', forms)
+app.route('/api/orgs', orgs)
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404))
 app.onError((err, c) => {

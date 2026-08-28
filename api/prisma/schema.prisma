@@ -503,6 +503,7 @@ model organizations {
   brands       brands[]
   categories   categories[]
   intents      intents[]
+  invitations  invitations[]
   memberships  memberships[]
   users        users          @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "organizations_created_by_users_id_fk")
 }
@@ -743,6 +744,7 @@ model users {
   deleted_at     DateTime?        @db.Timestamp(6)
   audit_events   audit_events[]
   brands         brands[]
+  invitations    invitations[]
   memberships    memberships[]
   organizations  organizations[]
   query_sets     query_sets[]
@@ -763,6 +765,24 @@ model form_submissions {
   @@index([created_at], map: "idx_form_submissions_created")
   @@index([email], map: "idx_form_submissions_email")
   @@index([form_id], map: "idx_form_submissions_form_id")
+}
+
+model invitations {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String        @db.Uuid
+  invited_by      String        @db.Uuid
+  email           String        @db.VarChar(255)
+  role            role          @default(member)
+  token_hash      String        @unique @db.VarChar(255)
+  expires_at      DateTime      @db.Timestamp(6)
+  accepted_at     DateTime?     @db.Timestamp(6)
+  created_at      DateTime      @default(now()) @db.Timestamp(6)
+  users           users         @relation(fields: [invited_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([email], map: "idx_invitations_email")
+  @@index([organization_id], map: "idx_invitations_org")
+  @@index([token_hash], map: "idx_invitations_token")
 }
 
 enum action_type {
