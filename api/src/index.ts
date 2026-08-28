@@ -18,6 +18,8 @@ import runs from './routes/runs.js'
 import crm from './routes/crm.js'
 import analysis from './routes/analysis.js'
 import notifications from './routes/notifications.js'
+import competitive from './routes/competitive.js'
+import snapshots from './routes/snapshots.js'
 
 const app = new Hono()
 
@@ -46,6 +48,8 @@ app.route('/api/orgs/:slug/brands/:brandId/runs', runs)
 app.route('/api/admin/crm', crm)
 app.route('/api/orgs/:slug/brands/:brandId', analysis)
 app.route('/api/notifications', notifications)
+app.route('/api/orgs/:slug/brands/:brandId/competitive', competitive)
+app.route('/api/snapshots', snapshots)
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404))
 app.onError((err, c) => {
