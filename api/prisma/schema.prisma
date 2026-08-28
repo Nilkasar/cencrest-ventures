@@ -733,24 +733,27 @@ model scores {
 }
 
 model users {
-  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email          String           @unique(map: "users_email_unique") @db.VarChar(255)
-  password_hash  String           @db.VarChar(255)
-  name           String           @db.VarChar(255)
-  email_verified Boolean?         @default(false)
-  last_login_at  DateTime?        @db.Timestamp(6)
-  created_at     DateTime         @default(now()) @db.Timestamp(6)
-  updated_at     DateTime         @default(now()) @db.Timestamp(6)
-  deleted_at     DateTime?        @db.Timestamp(6)
-  audit_events   audit_events[]
-  brands         brands[]
-  invitations    invitations[]
-  memberships    memberships[]
-  organizations  organizations[]
-  query_sets     query_sets[]
-  questions      questions[]
-  refresh_tokens refresh_tokens[]
-  reports        reports[]
+  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                 String                  @unique(map: "users_email_unique") @db.VarChar(255)
+  password_hash         String                  @db.VarChar(255)
+  name                  String                  @db.VarChar(255)
+  email_verified        Boolean?                @default(false)
+  last_login_at         DateTime?               @db.Timestamp(6)
+  created_at            DateTime                @default(now()) @db.Timestamp(6)
+  updated_at            DateTime                @default(now()) @db.Timestamp(6)
+  deleted_at            DateTime?               @db.Timestamp(6)
+  audit_events          audit_events[]
+  auth_events           auth_events[]
+  brands                brands[]
+  invitations           invitations[]
+  memberships           memberships[]
+  organizations         organizations[]
+  password_reset_tokens password_reset_tokens[]
+  query_sets            query_sets[]
+  questions             questions[]
+  refresh_tokens        refresh_tokens[]
+  reports               reports[]
+  sessions              sessions[]
 
   @@index([email], map: "idx_users_email")
 }
@@ -783,6 +786,61 @@ model invitations {
   @@index([email], map: "idx_invitations_email")
   @@index([organization_id], map: "idx_invitations_org")
   @@index([token_hash], map: "idx_invitations_token")
+}
+
+model auth_events {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String?  @db.Uuid
+  event_type String   @db.VarChar(50)
+  ip_address String?  @db.VarChar(45)
+  user_agent String?
+  metadata   Json?
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  users      users?   @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([event_type], map: "idx_auth_events_type")
+  @@index([user_id], map: "idx_auth_events_user")
+}
+
+model magic_link_tokens {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email      String    @db.VarChar(255)
+  token_hash String    @unique @db.VarChar(255)
+  expires_at DateTime  @db.Timestamp(6)
+  used_at    DateTime? @db.Timestamp(6)
+  created_at DateTime  @default(now()) @db.Timestamp(6)
+
+  @@index([email], map: "idx_mlt_email")
+  @@index([token_hash], map: "idx_mlt_token")
+}
+
+model password_reset_tokens {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String    @db.Uuid
+  token_hash String    @unique @db.VarChar(255)
+  expires_at DateTime  @db.Timestamp(6)
+  used_at    DateTime? @db.Timestamp(6)
+  created_at DateTime  @default(now()) @db.Timestamp(6)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([token_hash], map: "idx_prt_token")
+  @@index([user_id], map: "idx_prt_user")
+}
+
+model sessions {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id      String   @db.Uuid
+  token_hash   String   @unique @db.VarChar(255)
+  expires_at   DateTime @db.Timestamp(6)
+  last_seen_at DateTime @default(now()) @db.Timestamp(6)
+  ip_address   String?  @db.VarChar(45)
+  user_agent   String?
+  created_at   DateTime @default(now()) @db.Timestamp(6)
+  users        users    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([expires_at], map: "idx_sessions_expires")
+  @@index([token_hash], map: "idx_sessions_token")
+  @@index([user_id], map: "idx_sessions_user")
 }
 
 enum action_type {

@@ -6,6 +6,7 @@ import health from './routes/health.js'
 import version from './routes/version.js'
 import forms from './routes/forms.js'
 import orgs from './routes/orgs.js'
+import auth from './routes/auth.js'
 
 const app = new Hono()
 
@@ -22,6 +23,7 @@ app.route('/api/health', health)
 app.route('/api/version', version)
 app.route('/api/forms', forms)
 app.route('/api/orgs', orgs)
+app.route('/api/auth', auth)
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404))
 app.onError((err, c) => {
