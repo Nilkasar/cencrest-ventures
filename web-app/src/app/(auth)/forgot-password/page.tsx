@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Loader2, CheckCircle } from 'lucide-react'
+import { Loader2, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api'
@@ -18,6 +18,7 @@ type FormData = z.infer<typeof schema>
 
 export default function ForgotPasswordPage() {
   const [success, setSuccess] = useState(false)
+  const [sentEmail, setSentEmail] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const {
@@ -30,112 +31,164 @@ export default function ForgotPasswordPage() {
     setError(null)
     try {
       await api.post('/api/auth/forgot-password', data)
+      setSentEmail(data.email)
       setSuccess(true)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Something went wrong. Try again.')
+      const msg = e instanceof Error ? e.message : 'Something went wrong. Try again.'
+      if (msg.toLowerCase().includes('404') || msg.toLowerCase().includes('not found')) {
+        setSentEmail(data.email)
+        setSuccess(true)
+      } else {
+        setError(msg)
+      }
     }
   }
 
   return (
-    <div className="w-full max-w-sm mx-auto">
-      <div className="bg-white/70 backdrop-blur-sm border border-[var(--border)] rounded-2xl p-8 shadow-sm">
-        <AnimatePresence mode="wait">
-          {success ? (
-            <motion.div
-              key="success"
-              className="flex flex-col items-center text-center gap-4 py-4"
-              initial={{ opacity: 0, scale: 0.92 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.92 }}
-              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+    <AnimatePresence mode="wait">
+      {success ? (
+        <motion.div
+          key="success"
+          initial={{ opacity: 0, scale: 0.94 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.94 }}
+          transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
+          className="text-center"
+          style={{ paddingTop: 12 }}
+        >
+          <motion.div
+            initial={{ scale: 0, rotate: -15 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: 'spring', stiffness: 280, damping: 22, delay: 0.1 }}
+            style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}
+          >
+            <CheckCircle2 size={40} strokeWidth={1.5} style={{ color: 'var(--success)' }} />
+          </motion.div>
+
+          <h1
+            className="font-display font-semibold"
+            style={{ fontSize: 24, color: 'var(--ink)', letterSpacing: '-0.02em', marginBottom: 8 }}
+          >
+            Check your inbox
+          </h1>
+          <p className="font-sans" style={{ fontSize: 14, color: 'var(--dim)', lineHeight: 1.65, marginBottom: 28 }}>
+            We sent a reset link to{' '}
+            <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{sentEmail}</span>.{' '}
+            Check your spam if you don&apos;t see it.
+          </p>
+
+          <div className="flex flex-col items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setSuccess(false)}
+              className="font-sans transition-colors cursor-pointer"
+              style={{
+                fontSize: 13,
+                color: 'var(--dim)',
+                background: 'none',
+                border: 'none',
+                padding: 0,
+              }}
             >
-              <motion.div
-                initial={{ scale: 0, rotate: -20 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ type: 'spring', stiffness: 300, damping: 20, delay: 0.1 }}
-              >
-                <CheckCircle size={48} className="text-[var(--success)]" strokeWidth={1.5} />
-              </motion.div>
-              <div>
-                <h2 className="font-display font-semibold text-[var(--ink)] text-xl mb-1">
-                  Check your inbox
-                </h2>
-                <p className="text-[var(--dim)] text-sm">
-                  We sent a reset link to your email. It expires in 30 minutes.
-                </p>
-              </div>
-              <Link
-                href="/login"
-                className="text-sm text-[var(--ember)] hover:underline cursor-pointer mt-2"
-              >
-                Back to sign in
-              </Link>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="form"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.25 }}
+              Send again
+            </button>
+            <Link
+              href="/login"
+              className="font-sans transition-colors cursor-pointer"
+              style={{ fontSize: 13, color: 'var(--ember)', fontWeight: 500 }}
             >
-              <h2 className="font-display font-semibold text-[var(--ink)] text-2xl mb-1">
-                Reset password
-              </h2>
-              <p className="text-[var(--dim)] text-sm mb-6">
-                Enter your email and we&apos;ll send a reset link.
-              </p>
+              ← Back to sign in
+            </Link>
+          </div>
+        </motion.div>
+      ) : (
+        <motion.div
+          key="form"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <h1
+            className="font-display font-semibold"
+            style={{ fontSize: 28, color: 'var(--ink)', letterSpacing: '-0.02em', marginBottom: 6 }}
+          >
+            Reset password
+          </h1>
+          <p className="font-sans" style={{ fontSize: 14, color: 'var(--dim)', marginBottom: 32 }}>
+            Enter your email and we&apos;ll send a reset link.
+          </p>
 
-              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                <div>
-                  <Input
-                    {...register('email')}
-                    type="email"
-                    placeholder="you@company.com"
-                    autoComplete="email"
-                    autoFocus
-                    disabled={isSubmitting}
-                    className="w-full"
-                  />
-                  {errors.email && (
-                    <p className="mt-1 text-xs text-[var(--danger)]">{errors.email.message}</p>
-                  )}
-                </div>
-
-                {error && (
-                  <div className="rounded-lg bg-[var(--danger)]/10 border border-[var(--danger)]/20 px-3 py-2 text-sm text-[var(--danger)]">
-                    {error}
-                  </div>
-                )}
-
-                <Button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="w-full bg-[var(--ember)] hover:bg-[var(--ember-light)] text-white font-medium cursor-pointer transition-colors"
-                >
-                  {isSubmitting ? (
-                    <span className="flex items-center gap-2">
-                      <Loader2 size={16} className="animate-spin" />
-                      Sending…
-                    </span>
-                  ) : (
-                    'Send reset link'
-                  )}
-                </Button>
-              </form>
-
-              <p className="mt-4 text-sm text-center">
-                <Link
-                  href="/login"
-                  className="text-[var(--dim)] hover:text-[var(--ember)] transition-colors cursor-pointer"
-                >
-                  Back to sign in
-                </Link>
-              </p>
-            </motion.div>
+          {error && (
+            <div
+              className="mb-5 px-4 py-3 rounded-lg font-sans"
+              style={{
+                borderLeft: '4px solid var(--danger)',
+                background: 'rgba(220,38,38,0.07)',
+                fontSize: 13,
+                color: 'var(--danger)',
+              }}
+            >
+              {error}
+            </div>
           )}
-        </AnimatePresence>
-      </div>
-    </div>
+
+          <form onSubmit={handleSubmit(onSubmit)}>
+            <div>
+              <label
+                htmlFor="email"
+                className="font-sans"
+                style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--dim)', marginBottom: 6 }}
+              >
+                Work email
+              </label>
+              <Input
+                id="email"
+                {...register('email')}
+                type="email"
+                placeholder="you@company.com"
+                autoComplete="email"
+                autoFocus
+                disabled={isSubmitting}
+                error={errors.email?.message}
+                className="w-full"
+              />
+            </div>
+
+            <div style={{ marginTop: 24 }}>
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                loading={isSubmitting}
+                className="w-full font-sans font-medium"
+                style={{ height: 42, fontSize: 14 }}
+              >
+                {isSubmitting ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Loader2 size={15} className="animate-spin" />
+                    Sending…
+                  </span>
+                ) : (
+                  'Send reset link'
+                )}
+              </Button>
+            </div>
+          </form>
+
+          <div
+            className="text-center"
+            style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)' }}
+          >
+            <Link
+              href="/login"
+              className="font-sans transition-colors cursor-pointer"
+              style={{ fontSize: 13, color: 'var(--dim)' }}
+            >
+              ← Back to sign in
+            </Link>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }

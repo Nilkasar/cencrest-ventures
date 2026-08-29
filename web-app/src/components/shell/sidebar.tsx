@@ -21,8 +21,6 @@ import {
   Settings,
   ChevronDown,
   X,
-  Menu,
-  User,
   Tag,
   Search,
   BookOpen,
@@ -33,15 +31,16 @@ import {
   Cpu,
   Layers,
   Play,
+  LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
+import { clearToken, getStoredUser } from '@/lib/auth-storage'
 
 interface NavItem {
   href: string
   label: string
-  icon: React.ComponentType<{ size?: number; className?: string }>
-  brandScoped?: boolean
+  icon: React.ComponentType<{ size?: number; className?: string; style?: React.CSSProperties }>
 }
 
 interface NavGroup {
@@ -122,25 +121,64 @@ function buildNavGroups(slug: string, brandId: string | null): NavGroup[] {
 
 function NavItemLink({ item, isActive }: { item: NavItem; isActive: boolean }) {
   const Icon = item.icon
+
   return (
     <Link
       href={item.href}
       className={cn(
-        'relative flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-150 cursor-pointer',
+        'group relative flex items-center gap-2.5 font-sans font-medium text-[13px] rounded-lg transition-all duration-[150ms]',
+        'no-underline',
         isActive
-          ? 'text-[var(--ember)] bg-[var(--surface)]'
-          : 'text-[var(--dim)] hover:text-[var(--ink)] hover:bg-[var(--surface)]'
+          ? 'bg-[rgba(194,65,12,0.15)] text-[var(--ember)]'
+          : 'text-[var(--dim)] hover:bg-white/5 hover:text-[var(--paper)]'
       )}
+      style={{
+        height: 36,
+        padding: '0 12px',
+        textDecoration: 'none',
+      }}
     >
-      {isActive && (
-        <motion.span
-          layoutId="nav-active"
-          className="absolute left-0 top-1 bottom-1 w-0.5 bg-[var(--ember)] rounded-full"
-        />
-      )}
-      <Icon size={15} className="shrink-0" />
-      <span>{item.label}</span>
+      <Icon
+        size={15}
+        style={{
+          flexShrink: 0,
+          color: 'inherit',
+          opacity: isActive ? 1 : undefined,
+          transition: 'opacity 150ms',
+        }}
+        className={cn(!isActive && 'opacity-60 group-hover:opacity-100')}
+      />
+      <span style={{ color: 'inherit' }}>{item.label}</span>
     </Link>
+  )
+}
+
+function PulseDot() {
+  return (
+    <span
+      style={{ position: 'relative', display: 'inline-flex', width: 8, height: 8, flexShrink: 0 }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: '50%',
+          background: 'var(--ember)',
+          opacity: 0.5,
+          animation: 'ping 1.6s cubic-bezier(0,0,0.2,1) infinite',
+        }}
+      />
+      <span
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: '50%',
+          background: 'var(--ember)',
+          display: 'inline-block',
+        }}
+      />
+      <style>{`@keyframes ping { 75%,100% { transform:scale(2); opacity:0 } }`}</style>
+    </span>
   )
 }
 
@@ -154,45 +192,143 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
   const brandId = currentBrand?.id ?? null
   const navGroups = buildNavGroups(slug, brandId)
 
+  const user = getStoredUser()
+  const userEmail = user?.email ?? ''
+  const initials = (user?.name ?? userEmail)
+    .split(' ')
+    .map((p) => p[0] ?? '')
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+
+  function handleLogout() {
+    clearToken()
+    window.location.href = '/login'
+  }
+
   return (
-    <div className="flex flex-col h-full">
-      {/* Top: brand selector */}
-      <div className="p-4 border-b border-[var(--border)]">
-        <div className="flex items-center justify-between">
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        background: '#0F0E0A',
+      }}
+    >
+      {/* Logo + close */}
+      <div
+        style={{
+          padding: '18px 16px 16px',
+          borderBottom: '1px solid rgba(255,255,255,0.07)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {/* Logo row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <span
+              className="font-display font-bold"
+              style={{ fontSize: 22, color: 'var(--paper)', letterSpacing: '-0.02em' }}
+            >
+              BeBest
+            </span>
+            <PulseDot />
+          </div>
+
+          {/* Brand / org selector */}
           <button
             onClick={() => setOrgOpen(!orgOpen)}
-            className="flex items-center gap-2 text-sm font-medium text-[var(--ink)] hover:text-[var(--ember)] transition-colors cursor-pointer"
+            className="font-sans hover:!text-[var(--paper)] transition-colors"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              color: 'var(--dim)',
+              fontSize: 13,
+            }}
           >
-            <span className="font-display font-semibold text-[var(--ember)] text-base">BeBest</span>
-            <span className="text-[var(--dim)] max-w-[120px] truncate">
+            <span
+              style={{
+                maxWidth: 148,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
               {currentOrg?.name ?? 'Select org'}
             </span>
-            <ChevronDown size={14} className={cn('transition-transform', orgOpen && 'rotate-180')} />
+            <ChevronDown
+              size={12}
+              style={{
+                flexShrink: 0,
+                transition: 'transform 200ms',
+                transform: orgOpen ? 'rotate(180deg)' : 'none',
+              }}
+            />
           </button>
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="p-1 text-[var(--dim)] hover:text-[var(--ink)] cursor-pointer lg:hidden"
-            >
-              <X size={18} />
-            </button>
-          )}
         </div>
+
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="lg:hidden cursor-pointer"
+            style={{
+              padding: 4,
+              background: 'none',
+              border: 'none',
+              color: 'var(--dim)',
+              cursor: 'pointer',
+            }}
+          >
+            <X size={17} />
+          </button>
+        )}
       </div>
 
       {/* Nav groups */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+      <nav
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '10px 8px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 18,
+        }}
+      >
         {navGroups.map((group) => (
           <div key={group.label}>
-            <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--dim)]">
+            <p
+              className="font-sans"
+              style={{
+                padding: '0 12px',
+                marginBottom: 4,
+                marginTop: 0,
+                fontSize: 10,
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                color: 'var(--dim)',
+              }}
+            >
               {group.label}
             </p>
-            <div className="space-y-0.5">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               {group.items.map((item) => (
                 <NavItemLink
                   key={item.href}
                   item={item}
-                  isActive={pathname === item.href || pathname.startsWith(item.href + '/')}
+                  isActive={
+                    pathname === item.href ||
+                    (item.href !== '#' && pathname.startsWith(item.href + '/'))
+                  }
                 />
               ))}
             </div>
@@ -201,64 +337,110 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
       </nav>
 
       {/* Bottom: user */}
-      <div className="p-4 border-t border-[var(--border)]">
-        <Link
-          href="/settings/profile"
-          className="flex items-center gap-2.5 hover:bg-[var(--surface)] rounded-md px-2 py-1.5 transition-colors cursor-pointer group"
+      <div
+        style={{
+          padding: '12px 10px',
+          borderTop: '1px solid rgba(255,255,255,0.07)',
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}
+      >
+        {/* Avatar */}
+        <div
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: '50%',
+            background: 'rgba(194,65,12,0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
         >
-          <div className="w-7 h-7 rounded-full bg-[var(--ember)]/20 flex items-center justify-center shrink-0">
-            <User size={14} className="text-[var(--ember)]" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-[var(--ink)] truncate">Account</p>
-            <p className="text-xs text-[var(--dim)] truncate">Settings</p>
-          </div>
-          <Settings size={13} className="text-[var(--dim)] opacity-0 group-hover:opacity-100 transition-opacity" />
-        </Link>
+          <span className="font-sans" style={{ fontSize: 11, fontWeight: 600, color: 'var(--ember)' }}>
+            {initials || '?'}
+          </span>
+        </div>
+
+        <p
+          className="font-sans"
+          style={{
+            fontSize: 12,
+            color: 'var(--dim)',
+            flex: 1,
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {userEmail || 'Account'}
+        </p>
+
+        <button
+          onClick={handleLogout}
+          title="Sign out"
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 4,
+            cursor: 'pointer',
+            color: 'var(--dim)',
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            borderRadius: 4,
+            transition: 'color 150ms',
+          }}
+          className="hover:!text-[var(--danger)]"
+        >
+          <LogOut size={14} />
+        </button>
       </div>
     </div>
   )
 }
 
 export function Sidebar() {
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const mobileOpen = useAppStore((s) => s.mobileSidebarOpen)
+  const closeMobileSidebar = useAppStore((s) => s.closeMobileSidebar)
 
   return (
     <>
-      {/* Mobile hamburger */}
-      <button
-        onClick={() => setMobileOpen(true)}
-        className="fixed top-4 left-4 z-40 p-2 rounded-md bg-[var(--paper)] border border-[var(--border)] shadow-sm lg:hidden cursor-pointer"
-      >
-        <Menu size={18} />
-      </button>
-
-      {/* Mobile drawer */}
+      {/* Mobile drawer overlay */}
       <AnimatePresence>
         {mobileOpen && (
           <>
             <motion.div
-              className="fixed inset-0 z-40 bg-[var(--ink)]/40 lg:hidden"
+              className="fixed inset-0 z-40 lg:hidden"
+              style={{ background: 'rgba(22,20,15,0.6)', backdropFilter: 'blur(2px)' }}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setMobileOpen(false)}
+              onClick={closeMobileSidebar}
             />
             <motion.aside
-              className="fixed left-0 top-0 bottom-0 z-50 w-60 bg-[var(--paper)] border-r border-[var(--border)] shadow-xl lg:hidden"
+              className="fixed left-0 top-0 bottom-0 z-50 lg:hidden"
+              style={{ width: 240, boxShadow: '4px 0 32px rgba(0,0,0,0.5)' }}
               initial={{ x: -240 }}
               animate={{ x: 0 }}
               exit={{ x: -240 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 32 }}
             >
-              <SidebarContent onClose={() => setMobileOpen(false)} />
+              <SidebarContent onClose={closeMobileSidebar} />
             </motion.aside>
           </>
         )}
       </AnimatePresence>
 
       {/* Desktop fixed sidebar */}
-      <aside className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 w-60 bg-[var(--paper)] border-r border-[var(--border)]">
+      <aside
+        className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0"
+        style={{ width: 240 }}
+      >
         <SidebarContent />
       </aside>
     </>

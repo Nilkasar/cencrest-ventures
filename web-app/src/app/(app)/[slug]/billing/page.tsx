@@ -9,6 +9,7 @@ import {
   Download,
   AlertTriangle,
   CheckCircle,
+  CheckCircle2,
   XCircle,
   Clock,
   ArrowUpRight,
@@ -109,6 +110,12 @@ const PLANS = [
   },
 ]
 
+const PLAN_FEATURES: Record<string, string[]> = {
+  starter: ['3 brands', '50 runs / month', '500 keywords', 'Weekly reports', 'Email support'],
+  growth: ['10 brands', '200 runs / month', '2,000 keywords', 'Daily reports', 'Priority support', 'API access'],
+  enterprise: ['Unlimited brands', 'Unlimited runs', 'Unlimited keywords', 'Real-time reports', 'Dedicated CSM', 'White-label', 'SLA guarantee'],
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function usagePct(r: UsageResource) {
   return r.limit === 0 ? 0 : Math.round((r.used / r.limit) * 100)
@@ -134,33 +141,6 @@ function StatusBadge({ status }: { status: 'paid' | 'pending' | 'failed' }) {
       {icon}
       {status.charAt(0).toUpperCase() + status.slice(1)}
     </Badge>
-  )
-}
-
-// ─── Usage Bar ───────────────────────────────────────────────────────────────
-function UsageBar({ label, resource }: { label: string; resource: UsageResource }) {
-  const pct = usagePct(resource)
-  const variant = pct >= 90 ? 'danger' : pct >= 80 ? 'default' : 'default'
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-sm font-sans">
-        <span className="text-paper/80">{label}</span>
-        <span className="text-paper font-medium font-mono text-xs">
-          {resource.used.toLocaleString()} / {resource.limit.toLocaleString()}
-        </span>
-      </div>
-      <div className="h-2 rounded-full bg-paper/20 overflow-hidden">
-        <motion.div
-          className={cn(
-            'h-full rounded-full',
-            pct >= 90 ? 'bg-danger' : pct >= 80 ? 'bg-warning' : 'bg-paper'
-          )}
-          initial={{ width: 0 }}
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
-        />
-      </div>
-    </div>
   )
 }
 
@@ -194,7 +174,7 @@ const invoiceColumns: Column<InvoiceRow>[] = [
         href={v as string}
         target="_blank"
         rel="noreferrer"
-        className="inline-flex items-center gap-1.5 text-xs text-dim hover:text-ember transition-colors font-sans"
+        className="inline-flex items-center gap-1.5 text-xs text-[var(--dim)] hover:text-[var(--ember)] transition-colors font-sans"
         onClick={(e) => e.stopPropagation()}
       >
         <Download className="h-3.5 w-3.5" />
@@ -226,12 +206,13 @@ export default function BillingPage() {
   })
 
   const invoiceData: InvoiceRow[] = billing?.invoices ?? []
+  const currentFeatures = billing?.plan.tier ? (PLAN_FEATURES[billing.plan.tier] ?? []) : []
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="max-w-4xl mx-auto space-y-8 pb-12">
       {/* Header */}
       <motion.div {...fadeUp(0)} className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-semibold text-ink">Billing &amp; Plan</h1>
+        <h1 className="font-display text-2xl font-semibold text-[var(--ink)]">Billing &amp; Plan</h1>
       </motion.div>
 
       {/* Usage alert banner */}
@@ -240,10 +221,10 @@ export default function BillingPage() {
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={spring}
-          className="flex items-start gap-3 px-4 py-3 rounded-lg bg-warning-muted border border-warning/30"
+          className="flex items-start gap-3 px-4 py-3 rounded-lg bg-[var(--warning)]/10 border border-[var(--warning)]/30"
         >
-          <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
-          <p className="text-sm text-ink font-sans">
+          <AlertTriangle className="h-4 w-4 text-[var(--warning)] shrink-0 mt-0.5" />
+          <p className="text-sm text-[var(--ink)] font-sans">
             You&apos;re approaching your plan limits. Upgrade to avoid service interruption.
           </p>
           <Button size="sm" className="ml-auto shrink-0">Upgrade</Button>
@@ -253,83 +234,95 @@ export default function BillingPage() {
       {/* Current plan card */}
       <motion.div {...fadeUp(1)}>
         {isLoading ? (
-          <div className="h-64 rounded-xl bg-surface border border-border animate-pulse" />
+          <div className="h-48 rounded-2xl bg-[var(--surface)] border border-[var(--border)] animate-pulse" />
         ) : billing ? (
-          <div
-            className="relative rounded-xl p-6 overflow-hidden"
-            style={{ background: 'linear-gradient(135deg, #C2410C 0%, #9a340a 60%, #7c2a08 100%)' }}
-          >
-            {/* Decorative orb */}
-            <div className="absolute -right-12 -top-12 w-48 h-48 rounded-full bg-paper/5 blur-2xl pointer-events-none" />
-            <div className="absolute right-6 bottom-6 w-32 h-32 rounded-full bg-paper/5 blur-xl pointer-events-none" />
-
-            <div className="relative flex flex-col md:flex-row md:items-start gap-6">
-              {/* Plan info */}
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <Badge variant="ember" size="sm" className="bg-paper/20 text-paper border-paper/30 border">
-                    Current Plan
-                  </Badge>
-                  <Badge variant="ember" size="sm" className="bg-paper/20 text-paper border-paper/30 border capitalize">
-                    {billing.plan.billing_period}
-                  </Badge>
-                </div>
-                <h2 className="font-display text-3xl font-semibold text-paper mt-2">
-                  {billing.plan.name}
-                </h2>
-                <p className="text-sm text-paper/70 mt-1 font-sans">
-                  Renews on {fmtDate(billing.plan.renewal_date)}
-                </p>
-
-                {/* Usage bars */}
-                <div className="mt-6 space-y-3 max-w-sm">
-                  <UsageBar label="Brands" resource={billing.usage.brands} />
-                  <UsageBar label="Runs this month" resource={billing.usage.runs} />
-                  <UsageBar label="Keywords tracked" resource={billing.usage.keywords} />
-                </div>
+          <div className="rounded-2xl border border-[var(--border)] bg-white/70 p-8 mb-6 flex flex-col md:flex-row gap-8">
+            {/* Left */}
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="font-display text-2xl font-semibold text-[var(--ink)]">{billing.plan.name}</span>
+                <Badge variant="ember" size="sm" className="capitalize">{billing.plan.tier}</Badge>
               </div>
-
-              {/* Actions */}
-              <div className="flex flex-col gap-2 shrink-0">
-                {billing.plan.tier !== 'enterprise' && (
-                  <Button className="bg-paper text-ember hover:bg-paper/90 border-0 font-semibold" size="md">
-                    <ArrowUpRight className="h-4 w-4" />
-                    Upgrade Plan
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="md"
-                  className="border-paper/30 text-paper hover:bg-paper/10 hover:border-paper/50"
-                >
-                  Manage Subscription
+              <p className="text-xs text-[var(--dim)] font-sans mb-4">
+                Renews on {fmtDate(billing.plan.renewal_date)} · {billing.plan.billing_period}
+              </p>
+              <ul className="space-y-2 mt-4">
+                {currentFeatures.map((f) => (
+                  <li key={f} className="flex items-center gap-2 text-sm text-[var(--ink)] font-sans">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: 'var(--success)' }} />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            {/* Right */}
+            <div className="ml-auto shrink-0 flex items-start">
+              {billing.plan.tier !== 'enterprise' && (
+                <Button>
+                  <ArrowUpRight className="h-4 w-4" />
+                  Upgrade Plan
                 </Button>
-              </div>
+              )}
             </div>
           </div>
         ) : null}
       </motion.div>
 
-      {/* Payment method */}
+      {/* Usage section */}
       <motion.div {...fadeUp(2)}>
+        <h2 className="font-display text-xl font-semibold text-[var(--ink)] mb-4">Usage this month</h2>
+        {isLoading ? (
+          <div className="space-y-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-10 rounded-md bg-[var(--surface)] animate-pulse" />
+            ))}
+          </div>
+        ) : billing ? (
+          <div className="space-y-5">
+            {[
+              { label: 'Brands', resource: billing.usage.brands },
+              { label: 'Runs', resource: billing.usage.runs },
+              { label: 'Keywords', resource: billing.usage.keywords },
+            ].map(({ label, resource }) => {
+              const pct = usagePct(resource)
+              const variant: 'danger' | 'warning' | 'default' =
+                pct > 90 ? 'danger' : pct > 70 ? 'warning' : 'default'
+              return (
+                <div key={label}>
+                  <div className="flex justify-between text-sm mb-1.5">
+                    <span className="text-[var(--ink)] font-sans">{label}</span>
+                    <span className="text-[var(--dim)] font-sans font-mono text-xs">
+                      {resource.used.toLocaleString()} of {resource.limit.toLocaleString()}
+                    </span>
+                  </div>
+                  <Progress value={pct} variant={variant} />
+                </div>
+              )
+            })}
+          </div>
+        ) : null}
+      </motion.div>
+
+      {/* Payment method */}
+      <motion.div {...fadeUp(3)}>
         <Card>
           <CardHeader>
             <CardTitle>Payment Method</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="h-12 rounded-md bg-surface animate-pulse" />
+              <div className="h-12 rounded-md bg-[var(--surface)] animate-pulse" />
             ) : billing?.payment_method ? (
               <div className="flex items-center gap-4">
-                <div className="w-12 h-8 rounded bg-surface border border-border flex items-center justify-center">
-                  <CreditCard className="h-4 w-4 text-dim" />
+                <div className="w-12 h-8 rounded bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center">
+                  <CreditCard className="h-4 w-4 text-[var(--dim)]" />
                 </div>
                 <div>
-                  <p className="text-sm font-sans font-medium text-ink">
+                  <p className="text-sm font-sans font-medium text-[var(--ink)]">
                     {billing.payment_method.brand}&ensp;
-                    <span className="font-mono text-dim">•••• {billing.payment_method.last4}</span>
+                    <span className="font-mono text-[var(--dim)]">•••• {billing.payment_method.last4}</span>
                   </p>
-                  <p className="text-xs text-dim mt-0.5">
+                  <p className="text-xs text-[var(--dim)] mt-0.5">
                     Expires {billing.payment_method.expiry}
                   </p>
                 </div>
@@ -338,14 +331,14 @@ export default function BillingPage() {
                 </Button>
               </div>
             ) : (
-              <p className="text-sm text-dim">No payment method on file.</p>
+              <p className="text-sm text-[var(--dim)]">No payment method on file.</p>
             )}
           </CardContent>
         </Card>
       </motion.div>
 
       {/* Invoices */}
-      <motion.div {...fadeUp(3)}>
+      <motion.div {...fadeUp(4)}>
         <Card>
           <CardHeader>
             <CardTitle>Invoices</CardTitle>
@@ -364,8 +357,8 @@ export default function BillingPage() {
       </motion.div>
 
       {/* Plan comparison */}
-      <motion.div {...fadeUp(4)}>
-        <h2 className="font-display text-xl font-semibold text-ink mb-4">Plans</h2>
+      <motion.div {...fadeUp(5)}>
+        <h2 className="font-display text-xl font-semibold text-[var(--ink)] mb-4">Plans</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {PLANS.map((plan, i) => {
             const isCurrent = billing?.plan.tier === plan.key
@@ -376,8 +369,8 @@ export default function BillingPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ ...spring, delay: 0.28 + i * 0.08 }}
                 className={cn(
-                  'relative flex flex-col rounded-xl border p-5 gap-4 bg-paper',
-                  isCurrent ? 'border-ember shadow-md' : 'border-border'
+                  'relative flex flex-col rounded-xl border p-5 gap-4 bg-[var(--paper)]',
+                  isCurrent ? 'border-[var(--ember)] shadow-md' : 'border-[var(--border)]'
                 )}
               >
                 {isCurrent && (
@@ -385,35 +378,27 @@ export default function BillingPage() {
                     <Badge variant="ember" size="sm">Current</Badge>
                   </div>
                 )}
-
-                {/* Plan header */}
                 <div className="flex items-center gap-2">
                   <div className={cn(
                     'w-8 h-8 rounded-lg flex items-center justify-center',
-                    isCurrent ? 'bg-ember text-paper' : 'bg-surface text-dim'
+                    isCurrent ? 'bg-[var(--ember)] text-[var(--paper)]' : 'bg-[var(--surface)] text-[var(--dim)]'
                   )}>
                     {plan.icon}
                   </div>
-                  <span className="font-display font-semibold text-ink">{plan.name}</span>
+                  <span className="font-display font-semibold text-[var(--ink)]">{plan.name}</span>
                 </div>
-
-                {/* Price */}
                 <div className="flex items-baseline gap-0.5">
-                  <span className="font-display text-3xl font-semibold text-ink">{plan.price}</span>
-                  {plan.period && <span className="text-sm text-dim font-sans">{plan.period}</span>}
+                  <span className="font-display text-3xl font-semibold text-[var(--ink)]">{plan.price}</span>
+                  {plan.period && <span className="text-sm text-[var(--dim)] font-sans">{plan.period}</span>}
                 </div>
-
-                {/* Features */}
                 <ul className="space-y-2 flex-1">
                   {plan.features.map((f) => (
-                    <li key={f} className="flex items-center gap-2 text-sm text-ink font-sans">
-                      <CheckCircle className="h-3.5 w-3.5 text-success shrink-0" />
+                    <li key={f} className="flex items-center gap-2 text-sm text-[var(--ink)] font-sans">
+                      <CheckCircle className="h-3.5 w-3.5 text-[var(--success)] shrink-0" />
                       {f}
                     </li>
                   ))}
                 </ul>
-
-                {/* CTA */}
                 <Button
                   variant={isCurrent ? 'ghost' : plan.ctaVariant}
                   size="md"

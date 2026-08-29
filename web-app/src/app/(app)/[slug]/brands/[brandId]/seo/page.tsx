@@ -3,13 +3,13 @@
 import { useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
-  Search, Upload, Plus, ChevronDown, BarChart2, Layers, AlertTriangle, GitCompare,
+  Search, Upload, Plus, BarChart2, Layers, AlertTriangle, GitCompare,
   TrendingUp, TrendingDown,
 } from 'lucide-react'
 import { api, routes } from '@/lib/api'
-import { cn, formatNumber, formatPercent, priorityColor } from '@/lib/utils'
+import { cn, formatNumber } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -39,6 +39,7 @@ interface KeywordCluster extends Record<string, unknown> {
   keyword_count: number
   avg_volume: number
   top_keyword?: string
+  pillar_topic?: string
 }
 
 interface GapKeyword extends Record<string, unknown> {
@@ -64,69 +65,83 @@ interface KeywordSummary {
   total: number
   avg_difficulty: number
   tracked: number
+  gaps?: number
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function intentVariant(intent: string): 'info' | 'warning' | 'success' | 'default' {
+function intentVariant(intent: string): 'info' | 'warning' | 'success' | 'outline' {
   switch (intent) {
     case 'informational': return 'info'
     case 'commercial': return 'warning'
     case 'transactional': return 'success'
-    default: return 'default'
+    default: return 'outline'
   }
 }
 
 function difficultyVariant(d: number): 'success' | 'warning' | 'danger' {
-  if (d < 40) return 'success'
-  if (d < 70) return 'warning'
+  if (d <= 30) return 'success'
+  if (d <= 60) return 'warning'
   return 'danger'
 }
 
+function difficultyColorClass(d: number): string {
+  if (d <= 30) return 'text-[var(--success)]'
+  if (d <= 60) return 'text-[var(--warning)]'
+  return 'text-[var(--danger)]'
+}
+
 function difficultyLabel(d: number) {
-  if (d < 40) return 'Low'
-  if (d < 70) return 'Medium'
+  if (d <= 30) return 'Low'
+  if (d <= 60) return 'Medium'
   return 'High'
 }
 
-// ── Stat Row ───────────────────────────────────────────────────────────────
+// ── Summary Row ────────────────────────────────────────────────────────────
 
-function StatRow({ summary, loading }: { summary?: KeywordSummary; loading: boolean }) {
-  if (loading) return (
-    <div className="grid grid-cols-3 gap-4 mb-6">
-      {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}
-    </div>
-  )
+function SummaryRow({ summary, loading }: { summary?: KeywordSummary; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+      </div>
+    )
+  }
+
+  const avgDiff = summary?.avg_difficulty ?? 0
 
   return (
     <div className="grid grid-cols-3 gap-4 mb-6">
-      {[
-        { label: 'Total Keywords', value: formatNumber(summary?.total ?? 0) },
-        { label: 'Tracked', value: formatNumber(summary?.tracked ?? 0) },
-      ].map((s) => (
-        <motion.div
-          key={s.label}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-surface border border-border rounded-lg p-4"
-        >
-          <p className="text-xs text-dim font-sans uppercase tracking-wide mb-1">{s.label}</p>
-          <p className="font-display text-2xl font-semibold text-ink">{s.value}</p>
-        </motion.div>
-      ))}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-xl border border-[var(--border)] bg-white/60 px-5 py-4"
+      >
+        <p className="text-xs text-[var(--dim)] font-sans uppercase tracking-wide mb-1">Total Keywords</p>
+        <p className="font-display text-2xl font-semibold text-[var(--ink)]">{formatNumber(summary?.total ?? 0)}</p>
+      </motion.div>
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05 }}
+        className="rounded-xl border border-[var(--border)] bg-white/60 px-5 py-4"
+      >
+        <p className="text-xs text-[var(--dim)] font-sans uppercase tracking-wide mb-1">Avg Difficulty</p>
+        <div className="flex items-center gap-3">
+          <p className={cn('font-display text-2xl font-bold', difficultyColorClass(avgDiff))}>{avgDiff}</p>
+          <div className="flex-1">
+            <Progress value={avgDiff} variant={difficultyVariant(avgDiff)} />
+          </div>
+        </div>
+      </motion.div>
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="bg-surface border border-border rounded-lg p-4"
+        className="rounded-xl border border-[var(--border)] bg-white/60 px-5 py-4"
       >
-        <p className="text-xs text-dim font-sans uppercase tracking-wide mb-1">Avg Difficulty</p>
-        <div className="flex items-center gap-3">
-          <p className="font-display text-2xl font-semibold text-ink">{summary?.avg_difficulty ?? 0}</p>
-          <div className="flex-1">
-            <Progress value={summary?.avg_difficulty ?? 0} variant={difficultyVariant(summary?.avg_difficulty ?? 0)} />
-          </div>
-        </div>
+        <p className="text-xs text-[var(--dim)] font-sans uppercase tracking-wide mb-1">Keyword Gaps</p>
+        <p className="font-display text-2xl font-semibold text-[var(--ink)]">{formatNumber(summary?.gaps ?? 0)}</p>
       </motion.div>
     </div>
   )
@@ -140,6 +155,9 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
   const [intent, setIntent] = useState<string>('all')
   const [showAddModal, setShowAddModal] = useState(false)
   const [newKeyword, setNewKeyword] = useState('')
+  const [newVolume, setNewVolume] = useState('')
+  const [newDifficulty, setNewDifficulty] = useState('')
+  const [newIntent, setNewIntent] = useState('informational')
   const fileRef = useRef<HTMLInputElement>(null)
   const qc = useQueryClient()
 
@@ -154,13 +172,20 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
   })
 
   const addMutation = useMutation({
-    mutationFn: (keyword: string) => api.post(routes.keywords(slug, brandId), { keyword }),
+    mutationFn: (payload: { keyword: string; volume?: number; difficulty?: number; intent?: string }) =>
+      api.post(routes.keywords(slug, brandId), payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['keywords', slug, brandId] })
+      qc.invalidateQueries({ queryKey: ['keywords-summary', slug, brandId] })
       setNewKeyword('')
+      setNewVolume('')
+      setNewDifficulty('')
+      setNewIntent('informational')
       setShowAddModal(false)
     },
   })
+
+  const maxVolume = Math.max(...keywords.map((k) => k.volume), 1)
 
   const filtered = keywords.filter((k) => {
     const matchSearch = k.keyword.toLowerCase().includes(search.toLowerCase())
@@ -173,21 +198,35 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
     {
       key: 'keyword',
       header: 'Keyword',
-      render: (_, row) => <span className="font-medium text-ink font-sans">{row.keyword}</span>,
+      render: (_, row) => (
+        <span className="text-sm font-medium text-[var(--ink)] font-sans">{row.keyword}</span>
+      ),
     },
     {
       key: 'volume',
       header: 'Volume',
-      render: (_, row) => <span className="text-dim">{formatNumber(row.volume)}</span>,
+      render: (_, row) => (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[var(--dim)] text-sm">{formatNumber(row.volume)}</span>
+          <span
+            className="inline-block w-16 h-1 bg-[var(--border)] rounded"
+            style={{ display: 'inline-block' }}
+          >
+            <span
+              className="block h-1 rounded bg-[var(--ember)]"
+              style={{ width: `${(row.volume / maxVolume) * 100}%` }}
+            />
+          </span>
+        </div>
+      ),
     },
     {
       key: 'difficulty',
       header: 'Difficulty',
       render: (_, row) => (
-        <div className="flex items-center gap-2 min-w-[120px]">
-          <Progress value={row.difficulty} variant={difficultyVariant(row.difficulty)} className="w-16" />
-          <span className="text-xs text-dim">{row.difficulty}</span>
-        </div>
+        <Badge variant={difficultyVariant(row.difficulty)} size="sm">
+          {row.difficulty} · {difficultyLabel(row.difficulty)}
+        </Badge>
       ),
     },
     {
@@ -199,10 +238,10 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
     },
     {
       key: 'ranking_position',
-      header: 'Position',
+      header: 'Latest Ranking',
       render: (_, row) => (
-        <span className={cn('font-mono text-sm', row.ranking_position ? 'text-ink' : 'text-dim')}>
-          {row.ranking_position ?? '—'}
+        <span className={cn('font-mono text-sm', row.ranking_position ? 'text-[var(--ink)]' : 'text-[var(--dim)]')}>
+          {row.ranking_position ? `#${row.ranking_position}` : '—'}
         </span>
       ),
     },
@@ -210,12 +249,12 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
 
   return (
     <div>
-      <StatRow summary={summary} loading={summaryLoading} />
+      <SummaryRow summary={summary} loading={summaryLoading} />
 
       {/* Filter row */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-dim" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--dim)]" />
           <Input
             placeholder="Search keywords…"
             value={search}
@@ -223,28 +262,28 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
             className="pl-9"
           />
         </div>
-        <div className="flex items-center gap-1 bg-surface border border-border rounded-md p-0.5">
+        <div className="flex items-center gap-1 bg-[var(--surface)] border border-[var(--border)] rounded-md p-0.5">
           {(['all', 'low', 'medium', 'high'] as const).map((d) => (
             <button
               key={d}
               onClick={() => setDifficulty(d)}
               className={cn(
                 'px-3 py-1.5 text-xs font-sans font-medium rounded capitalize transition-colors',
-                difficulty === d ? 'bg-ink text-paper' : 'text-dim hover:text-ink'
+                difficulty === d ? 'bg-[var(--ink)] text-[var(--paper)]' : 'text-[var(--dim)] hover:text-[var(--ink)]'
               )}
             >
               {d}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1 bg-surface border border-border rounded-md p-0.5">
+        <div className="flex items-center gap-1 bg-[var(--surface)] border border-[var(--border)] rounded-md p-0.5">
           {(['all', 'informational', 'commercial', 'transactional', 'navigational']).map((i) => (
             <button
               key={i}
               onClick={() => setIntent(i)}
               className={cn(
                 'px-3 py-1.5 text-xs font-sans font-medium rounded capitalize transition-colors',
-                intent === i ? 'bg-ink text-paper' : 'text-dim hover:text-ink'
+                intent === i ? 'bg-[var(--ink)] text-[var(--paper)]' : 'text-[var(--dim)] hover:text-[var(--ink)]'
               )}
             >
               {i === 'all' ? 'All' : i.slice(0, 4) + '.'}
@@ -257,7 +296,7 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
             <Upload className="h-4 w-4 mr-1.5" /> Import CSV
           </Button>
           <Button size="sm" onClick={() => setShowAddModal(true)}>
-            <Plus className="h-4 w-4 mr-1.5" /> Add Keywords
+            <Plus className="h-4 w-4 mr-1.5" /> Add Keyword
           </Button>
         </div>
       </div>
@@ -280,20 +319,62 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
           <ModalHeader><ModalTitle>Add Keyword</ModalTitle></ModalHeader>
           <ModalBody>
             <div className="flex flex-col gap-4">
-              <Input
-                placeholder="Enter keyword…"
-                value={newKeyword}
-                onChange={(e) => setNewKeyword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && newKeyword && addMutation.mutate(newKeyword)}
-                autoFocus
-              />
+              <div>
+                <label className="text-xs text-[var(--dim)] font-sans mb-1 block">Keyword</label>
+                <Input
+                  placeholder="e.g. best crm software"
+                  value={newKeyword}
+                  onChange={(e) => setNewKeyword(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-[var(--dim)] font-sans mb-1 block">Volume</label>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 5400"
+                    value={newVolume}
+                    onChange={(e) => setNewVolume(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-[var(--dim)] font-sans mb-1 block">Difficulty (0–100)</label>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 42"
+                    min={0}
+                    max={100}
+                    value={newDifficulty}
+                    onChange={(e) => setNewDifficulty(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-[var(--dim)] font-sans mb-1 block">Intent</label>
+                <select
+                  value={newIntent}
+                  onChange={(e) => setNewIntent(e.target.value)}
+                  className="w-full h-9 px-3 rounded-md border border-[var(--border)] bg-[var(--paper)] text-sm font-sans text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
+                >
+                  <option value="informational">Informational</option>
+                  <option value="navigational">Navigational</option>
+                  <option value="commercial">Commercial</option>
+                  <option value="transactional">Transactional</option>
+                </select>
+              </div>
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setShowAddModal(false)}>Cancel</Button>
                 <Button
                   disabled={!newKeyword || addMutation.isPending}
-                  onClick={() => addMutation.mutate(newKeyword)}
+                  onClick={() => addMutation.mutate({
+                    keyword: newKeyword,
+                    volume: newVolume ? Number(newVolume) : undefined,
+                    difficulty: newDifficulty ? Number(newDifficulty) : undefined,
+                    intent: newIntent,
+                  })}
                 >
-                  {addMutation.isPending ? 'Adding…' : 'Add'}
+                  {addMutation.isPending ? 'Adding…' : 'Add Keyword'}
                 </Button>
               </div>
             </div>
@@ -348,23 +429,31 @@ function ClustersTab({ slug, brandId }: { slug: string; brandId: string }) {
         >
           {clusters.map((c, i) => (
             <motion.div key={c.id} custom={i} variants={cardVariants}>
-              <Card className="hover:border-ember/50 transition-colors cursor-pointer">
+              <Card className="hover:border-[var(--ember)]/50 transition-colors cursor-pointer">
                 <CardHeader>
-                  <CardTitle className="text-sm font-sans">{c.name}</CardTitle>
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="text-sm font-sans">{c.name}</CardTitle>
+                    <span className="text-xs font-mono bg-[var(--surface)] border border-[var(--border)] rounded-full px-2 py-0.5 text-[var(--dim)] shrink-0">
+                      {c.keyword_count} kw
+                    </span>
+                  </div>
+                  {c.pillar_topic && (
+                    <p className="text-xs text-[var(--dim)] mt-0.5">{c.pillar_topic}</p>
+                  )}
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-display text-2xl font-semibold text-ink">{c.keyword_count}</p>
-                      <p className="text-xs text-dim">keywords</p>
+                      <p className="font-display text-2xl font-semibold text-[var(--ink)]">{c.keyword_count}</p>
+                      <p className="text-xs text-[var(--dim)]">keywords</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-display text-lg font-medium text-ink">{formatNumber(c.avg_volume)}</p>
-                      <p className="text-xs text-dim">avg volume</p>
+                      <p className="font-display text-lg font-medium text-[var(--ink)]">{formatNumber(c.avg_volume)}</p>
+                      <p className="text-xs text-[var(--dim)]">avg volume</p>
                     </div>
                   </div>
                   {c.top_keyword && (
-                    <p className="text-xs text-dim mt-3 truncate">Top: {c.top_keyword}</p>
+                    <p className="text-xs text-[var(--dim)] mt-3 truncate">Top: {c.top_keyword}</p>
                   )}
                 </CardContent>
               </Card>
@@ -408,22 +497,22 @@ function GapsTab({ slug, brandId }: { slug: string; brandId: string }) {
     {
       key: 'keyword',
       header: 'Keyword',
-      render: (_, row) => <span className="font-medium text-ink">{row.keyword}</span>,
+      render: (_, row) => <span className="font-medium text-[var(--ink)]">{row.keyword}</span>,
     },
     {
       key: 'volume',
       header: 'Volume',
-      render: (_, row) => <span className="text-dim">{formatNumber(row.volume)}</span>,
+      render: (_, row) => <span className="text-[var(--dim)]">{formatNumber(row.volume)}</span>,
     },
     {
       key: 'competitor_name',
       header: 'Competitor',
-      render: (_, row) => <span className="text-dim">{row.competitor_name}</span>,
+      render: (_, row) => <span className="text-[var(--dim)]">{row.competitor_name}</span>,
     },
     {
       key: 'competitor_ranking',
       header: 'Comp. Rank',
-      render: (_, row) => <span className="font-mono text-sm text-ink">#{row.competitor_ranking}</span>,
+      render: (_, row) => <span className="font-mono text-sm text-[var(--ink)]">#{row.competitor_ranking}</span>,
     },
     {
       key: 'gap_opportunity_score',
@@ -431,7 +520,7 @@ function GapsTab({ slug, brandId }: { slug: string; brandId: string }) {
       render: (_, row) => (
         <div className="flex items-center gap-2">
           <Progress value={row.gap_opportunity_score} className="w-16" />
-          <span className="text-xs text-dim">{row.gap_opportunity_score}</span>
+          <span className="text-xs text-[var(--dim)]">{row.gap_opportunity_score}</span>
         </div>
       ),
     },
@@ -475,29 +564,29 @@ function OverlapTab({ slug, brandId }: { slug: string; brandId: string }) {
     {
       key: 'keyword',
       header: 'Keyword',
-      render: (_, row) => <span className="font-medium text-ink">{row.keyword}</span>,
+      render: (_, row) => <span className="font-medium text-[var(--ink)]">{row.keyword}</span>,
     },
     {
       key: 'your_ranking',
       header: 'Your Rank',
       render: (_, row) => (
-        <span className="font-mono text-sm font-semibold text-ember">#{row.your_ranking}</span>
+        <span className="font-mono text-sm font-semibold text-[var(--ember)]">#{row.your_ranking}</span>
       ),
     },
     {
       key: 'competitor_name',
       header: 'Competitor',
-      render: (_, row) => <span className="text-dim">{row.competitor_name}</span>,
+      render: (_, row) => <span className="text-[var(--dim)]">{row.competitor_name}</span>,
     },
     {
       key: 'competitor_ranking',
       header: 'Comp. Rank',
-      render: (_, row) => <span className="font-mono text-sm text-ink">#{row.competitor_ranking}</span>,
+      render: (_, row) => <span className="font-mono text-sm text-[var(--ink)]">#{row.competitor_ranking}</span>,
     },
     {
       key: 'volume',
       header: 'Volume',
-      render: (_, row) => <span className="text-dim">{formatNumber(row.volume)}</span>,
+      render: (_, row) => <span className="text-[var(--dim)]">{formatNumber(row.volume)}</span>,
     },
     {
       key: 'action',
@@ -505,9 +594,9 @@ function OverlapTab({ slug, brandId }: { slug: string; brandId: string }) {
       render: (_, row) => (
         <Button variant="outline" size="sm">
           {row.your_ranking < row.competitor_ranking ? (
-            <><TrendingUp className="h-3 w-3 mr-1 text-success" /> Ahead</>
+            <><TrendingUp className="h-3 w-3 mr-1 text-[var(--success)]" /> Ahead</>
           ) : (
-            <><TrendingDown className="h-3 w-3 mr-1 text-danger" /> Defend</>
+            <><TrendingDown className="h-3 w-3 mr-1 text-[var(--danger)]" /> Defend</>
           )}
         </Button>
       ),
@@ -533,22 +622,25 @@ export default function SEOPage() {
   const { slug, brandId } = useParams<{ slug: string; brandId: string }>()
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-9 h-9 rounded-lg bg-ember/10 flex items-center justify-center">
-          <BarChart2 className="h-5 w-5 text-ember" />
-        </div>
-        <div>
-          <h1 className="font-display text-xl font-semibold text-ink">SEO Intelligence</h1>
-          <p className="text-sm text-dim font-sans">Keyword tracking, clusters, gaps & competitive overlap</p>
+    <div className="max-w-5xl mx-auto space-y-6 pb-12 p-6">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-[var(--ember)]/10 flex items-center justify-center">
+            <BarChart2 className="h-5 w-5 text-[var(--ember)]" />
+          </div>
+          <div>
+            <h1 className="font-display text-2xl font-semibold text-[var(--ink)]">SEO Intelligence</h1>
+            <p className="text-sm text-[var(--dim)] font-sans">Keyword tracking, clusters, gaps &amp; competitive overlap</p>
+          </div>
         </div>
       </div>
 
       <Tabs defaultValue="keywords">
         <TabsList>
-          <TabsTrigger value="keywords">Keywords</TabsTrigger>
-          <TabsTrigger value="clusters">Clusters</TabsTrigger>
+          <TabsTrigger value="keywords">All Keywords</TabsTrigger>
           <TabsTrigger value="gaps">Gaps</TabsTrigger>
+          <TabsTrigger value="clusters">Clusters</TabsTrigger>
           <TabsTrigger value="overlap">Competitor Overlap</TabsTrigger>
         </TabsList>
 
@@ -556,12 +648,12 @@ export default function SEOPage() {
           <KeywordsTab slug={slug} brandId={brandId} />
         </TabsContent>
 
-        <TabsContent value="clusters">
-          <ClustersTab slug={slug} brandId={brandId} />
-        </TabsContent>
-
         <TabsContent value="gaps">
           <GapsTab slug={slug} brandId={brandId} />
+        </TabsContent>
+
+        <TabsContent value="clusters">
+          <ClustersTab slug={slug} brandId={brandId} />
         </TabsContent>
 
         <TabsContent value="overlap">

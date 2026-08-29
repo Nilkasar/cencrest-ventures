@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
@@ -16,6 +15,7 @@ import {
   ScoreRing, SkeletonCard, EmptyState, DataTable, Badge, Button,
   StatCard,
 } from '@/components/ui'
+import { Progress } from '@/components/ui/progress'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -46,10 +46,10 @@ interface MentionRow {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const PROVIDERS = [
-  { key: 'chatgpt' as const,    label: 'ChatGPT',    color: '#10A37F' },
-  { key: 'gemini' as const,     label: 'Gemini',     color: '#4285F4' },
-  { key: 'claude' as const,     label: 'Claude',     color: '#D4A27F' },
-  { key: 'perplexity' as const, label: 'Perplexity', color: '#6366F1' },
+  { key: 'chatgpt' as const,    label: 'ChatGPT',    color: '#2563EB' },
+  { key: 'gemini' as const,     label: 'Gemini',     color: '#16A34A' },
+  { key: 'claude' as const,     label: 'Claude',     color: '#7C3AED' },
+  { key: 'perplexity' as const, label: 'Perplexity', color: '#EA580C' },
 ]
 
 const EASE = [0.16, 1, 0.3, 1] as [number, number, number, number]
@@ -63,53 +63,43 @@ function ChartTooltip({ active, payload, label }: {
 }) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-paper border border-border rounded-lg px-3 py-2.5 shadow-sm min-w-[160px]">
-      <p className="text-xs text-dim font-sans mb-1.5">{label}</p>
+    <div className="bg-[var(--paper)] border border-[var(--border)] rounded-xl px-4 py-3 shadow-lg min-w-[160px]">
+      <p className="text-xs text-[var(--dim)] font-sans mb-1.5">{label}</p>
       {payload.map((p) => (
-        <div key={p.name} className="flex items-center gap-2 text-xs font-sans">
+        <div key={p.name} className="flex items-center gap-2 text-xs font-sans py-0.5">
           <span className="w-2 h-2 rounded-full shrink-0" style={{ background: p.color }} />
-          <span className="text-dim">{p.name}</span>
-          <span className="ml-auto font-medium text-ink">{Math.round(p.value)}</span>
+          <span className="text-[var(--dim)]">{p.name}</span>
+          <span className="ml-auto font-semibold text-[var(--ink)]">{Math.round(p.value)}</span>
         </div>
       ))}
     </div>
   )
 }
 
-// ── Score Overview ─────────────────────────────────────────────────────────────
+// ── Provider Score Row ─────────────────────────────────────────────────────────
 
-function ScoreOverview({ latest, prev }: { latest?: Run; prev?: Run }) {
+function ProviderScoreRow({
+  label,
+  color,
+  score,
+}: {
+  label: string
+  color: string
+  score: number
+}) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-      {PROVIDERS.map((p, i) => {
-        const score = latest?.scores?.[p.key] ?? 0
-        const prevScore = prev?.scores?.[p.key] ?? 0
-        const delta = score - prevScore
-        return (
-          <motion.div
-            key={p.key}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1, duration: 0.4, ease: EASE }}
-          >
-            <Card className="flex flex-col items-center py-6 gap-3">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: p.color }} />
-                <span className="text-xs font-sans font-medium text-dim">{p.label}</span>
-              </div>
-              <ScoreRing score={score} size={80} />
-              {prev && (
-                <span className={cn(
-                  'text-xs font-sans font-medium',
-                  delta > 0 ? 'text-success' : delta < 0 ? 'text-danger' : 'text-dim'
-                )}>
-                  {delta > 0 ? '+' : ''}{Math.round(delta)} vs last run
-                </span>
-              )}
-            </Card>
-          </motion.div>
-        )
-      })}
+    <div className="flex items-center gap-3 py-2">
+      <span
+        className="rounded-full shrink-0"
+        style={{ width: 10, height: 10, background: color }}
+      />
+      <span className="font-sans text-sm text-[var(--ink)] w-24 shrink-0">{label}</span>
+      <div className="flex-1">
+        <Progress value={score} className="h-2" />
+      </div>
+      <span className="text-sm font-semibold text-[var(--ink)] w-10 text-right font-sans" style={{ color }}>
+        {formatScore(score)}
+      </span>
     </div>
   )
 }
@@ -121,7 +111,7 @@ const mentionColumns = [
     key: 'query',
     header: 'Query',
     render: (v: unknown) => (
-      <span className="text-xs font-sans text-ink line-clamp-2 max-w-[280px]">{String(v)}</span>
+      <span className="text-xs font-sans text-[var(--ink)] line-clamp-2 max-w-[280px]">{String(v)}</span>
     ),
   },
   {
@@ -134,7 +124,7 @@ const mentionColumns = [
           <span className="w-2 h-2 rounded-full shrink-0" style={{ background: p.color }} />
           <span className="text-xs font-sans">{p.label}</span>
         </div>
-      ) : <span className="text-xs font-sans text-dim">{String(v)}</span>
+      ) : <span className="text-xs font-sans text-[var(--dim)]">{String(v)}</span>
     },
   },
   {
@@ -143,9 +133,9 @@ const mentionColumns = [
     render: (v: unknown) => (
       <span className={cn(
         'inline-flex items-center gap-1.5 text-xs font-sans font-medium',
-        v ? 'text-success' : 'text-dim'
+        v ? 'text-[var(--success)]' : 'text-[var(--dim)]'
       )}>
-        <span className={cn('w-1.5 h-1.5 rounded-full', v ? 'bg-success' : 'bg-dim')} />
+        <span className={cn('w-1.5 h-1.5 rounded-full', v ? 'bg-[var(--success)]' : 'bg-[var(--dim)]')} />
         {v ? 'Yes' : 'No'}
       </span>
     ),
@@ -163,7 +153,7 @@ const mentionColumns = [
     key: 'position',
     header: 'Position',
     render: (v: unknown) => (
-      <span className="text-xs font-mono text-dim">{v != null ? `#${v}` : '—'}</span>
+      <span className="text-xs font-mono text-[var(--dim)]">{v != null ? `#${v}` : '—'}</span>
     ),
   },
 ] as const
@@ -182,6 +172,13 @@ export default function VisibilityPage() {
   const completedRuns = runs.filter((r) => r.status === 'completed')
   const latest = completedRuns[0]
   const prev = completedRuns[1]
+
+  // Overall score: average of provider scores from latest run
+  const overallScore = latest?.scores
+    ? Math.round(
+        Object.values(latest.scores).reduce((a, b) => a + b, 0) / PROVIDERS.length
+      )
+    : 0
 
   // Build trend chart data
   const trendData = [...completedRuns].reverse().map((r) => ({
@@ -208,7 +205,7 @@ export default function VisibilityPage() {
     color: p.color,
   })) : []
 
-  // Build mention table rows from latest run (mock structure — real data comes from run detail)
+  // Mention table rows (real data comes from run detail)
   const mentionRows: MentionRow[] = []
 
   if (isLoading) {
@@ -222,7 +219,7 @@ export default function VisibilityPage() {
   if (isError) {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-4">
-        <p className="text-sm text-dim font-sans">Failed to load visibility data.</p>
+        <p className="text-sm text-[var(--dim)] font-sans">Failed to load visibility data.</p>
         <Button variant="outline" onClick={() => refetch()}>
           <RefreshCw className="h-4 w-4" /> Retry
         </Button>
@@ -245,19 +242,55 @@ export default function VisibilityPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      {/* 1. Score overview */}
-      <section>
-        <h2 className="font-display text-lg font-semibold text-ink mb-4">AI Visibility Scores</h2>
-        <ScoreOverview latest={latest} prev={prev} />
-      </section>
+    <div className="flex flex-col gap-8 pb-12">
+
+      {/* 1. Top section — ScoreRing + provider rows */}
+      <motion.section
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: EASE }}
+      >
+        <div className="flex flex-col sm:flex-row gap-8">
+          {/* Left — overall ring */}
+          <div className="flex flex-col items-center justify-center gap-3 min-w-[160px]">
+            <ScoreRing score={overallScore} size={120} />
+            <p className="font-display text-xl font-semibold text-[var(--ink)] text-center">
+              Overall AI Visibility
+            </p>
+            {prev && (
+              <span className={cn(
+                'text-xs font-sans',
+                overallScore > (prev.scores ? Math.round(Object.values(prev.scores).reduce((a, b) => a + b, 0) / PROVIDERS.length) : 0)
+                  ? 'text-[var(--success)]'
+                  : 'text-[var(--danger)]'
+              )}>
+                vs last run
+              </span>
+            )}
+          </div>
+
+          {/* Right — 4 provider rows */}
+          <Card className="flex-1">
+            <CardContent className="pt-4 pb-2">
+              {PROVIDERS.map((p) => (
+                <ProviderScoreRow
+                  key={p.key}
+                  label={p.label}
+                  color={p.color}
+                  score={latest?.scores?.[p.key] ?? 0}
+                />
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </motion.section>
 
       {/* 2. Trend chart */}
       {trendData.length > 1 && (
         <motion.section
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.4, ease: EASE }}
+          transition={{ delay: 0.15, duration: 0.4, ease: EASE }}
         >
           <Card>
             <CardHeader>
@@ -294,7 +327,7 @@ export default function VisibilityPage() {
       <motion.section
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3, duration: 0.4, ease: EASE }}
+        transition={{ delay: 0.25, duration: 0.4, ease: EASE }}
       >
         <Card>
           <CardHeader>
@@ -311,12 +344,12 @@ export default function VisibilityPage() {
         </Card>
       </motion.section>
 
-      {/* 4. Provider comparison bar chart */}
+      {/* 4. Mention rate bar chart */}
       {mentionRateData.length > 0 && (
         <motion.section
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4, duration: 0.4, ease: EASE }}
+          transition={{ delay: 0.35, duration: 0.4, ease: EASE }}
         >
           <Card>
             <CardHeader>
@@ -352,7 +385,7 @@ export default function VisibilityPage() {
         <motion.section
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5, duration: 0.4, ease: EASE }}
+          transition={{ delay: 0.45, duration: 0.4, ease: EASE }}
         >
           <Card>
             <CardHeader>
@@ -390,8 +423,8 @@ export default function VisibilityPage() {
                 {sovData.map((entry) => (
                   <div key={entry.name} className="flex items-center gap-2 text-sm font-sans">
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: entry.color }} />
-                    <span className="text-dim">{entry.name}</span>
-                    <span className="ml-auto font-medium text-ink">{Math.round(entry.value)}</span>
+                    <span className="text-[var(--dim)]">{entry.name}</span>
+                    <span className="ml-auto font-semibold text-[var(--ink)]">{Math.round(entry.value)}</span>
                   </div>
                 ))}
               </div>

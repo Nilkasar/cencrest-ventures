@@ -5,19 +5,22 @@ import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
-import { Plus, X } from 'lucide-react'
+import { Plus, Clock } from 'lucide-react'
 import { api, routes } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Progress } from '@/components/ui/progress'
+import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter } from '@/components/ui/modal'
 
 interface Brand {
   id: string
   name: string
   industry?: string
   website?: string
+  visibility_score?: number
   crawl_status?: 'idle' | 'running' | 'completed' | 'failed'
   last_crawled_at?: string
 }
@@ -32,21 +35,21 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
-const crawlBadgeVariant = (status?: string) => {
-  switch (status) {
-    case 'completed': return 'success'
-    case 'running': return 'info'
-    case 'failed': return 'danger'
-    default: return 'outline'
-  }
+function scoreVariant(score: number): 'success' | 'warning' | 'danger' | 'default' {
+  if (score >= 70) return 'success'
+  if (score >= 40) return 'warning'
+  return 'danger'
 }
+
+const SPRING = [0.16, 1, 0.3, 1] as [number, number, number, number]
 
 function AddBrandModal({ onClose, slug }: { onClose: () => void; slug: string }) {
   const qc = useQueryClient()
-  const [form, setForm] = useState({ name: '', industry: '', website: '' })
+  const [name, setName] = useState('')
+  const [website, setWebsite] = useState('')
 
   const mutation = useMutation({
-    mutationFn: () => api.post(routes.brands(slug), form),
+    mutationFn: () => api.post(routes.brands(slug), { name, website }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['brands', slug] })
       onClose()
@@ -54,66 +57,54 @@ function AddBrandModal({ onClose, slug }: { onClose: () => void; slug: string })
   })
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-300 flex items-center justify-center p-4 bg-ink/40 backdrop-blur-sm"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 12 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.97, y: 4 }}
-        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-        className="bg-paper border border-border rounded-xl shadow-xl w-full max-w-md"
-      >
-        <div className="flex items-center justify-between p-6 border-b border-border">
-          <h2 className="font-display text-xl font-semibold text-ink">Add Brand</h2>
-          <button onClick={onClose} className="text-dim hover:text-ink transition-colors" aria-label="Close">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <form
-          className="p-6 space-y-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            mutation.mutate()
-          }}
-        >
-          {([
-            { key: 'name', label: 'Brand Name', placeholder: 'Acme Corp', required: true },
-            { key: 'industry', label: 'Industry', placeholder: 'SaaS, Healthcare…', required: false },
-            { key: 'website', label: 'Website', placeholder: 'https://acme.com', required: false },
-          ] as const).map(({ key, label, placeholder, required }) => (
-            <div key={key} className="flex flex-col gap-1.5">
-              <label className="text-sm font-sans font-medium text-ink">
-                {label} {required && <span className="text-ember">*</span>}
-              </label>
-              <input
-                type={key === 'website' ? 'url' : 'text'}
-                value={form[key]}
-                onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-                placeholder={placeholder}
-                required={required}
-                className="h-10 px-3 rounded-md border border-border bg-paper text-ink text-sm font-sans focus:outline-none focus:ring-2 focus:ring-ember transition-shadow"
-              />
-            </div>
-          ))}
-          {mutation.isError && (
-            <p className="text-sm text-danger">{(mutation.error as Error).message}</p>
-          )}
-          <div className="flex gap-3 pt-2">
-            <Button type="button" variant="outline" className="flex-1" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" className="flex-1" loading={mutation.isPending}>
-              Add Brand
-            </Button>
-          </div>
-        </form>
-      </motion.div>
-    </motion.div>
+    <Modal open onOpenChange={(open) => { if (!open) onClose() }}>
+      <ModalContent>
+        <ModalHeader>
+          <ModalTitle>Add Brand</ModalTitle>
+        </ModalHeader>
+        <ModalBody>
+          <form
+            id="add-brand-form"
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              mutation.mutate()
+            }}
+          >
+            <Input
+              label="Brand Name"
+              placeholder="Acme Corp"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+            <Input
+              label="Website URL"
+              type="url"
+              placeholder="https://acme.com"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+            />
+            {mutation.isError && (
+              <p className="text-sm text-[var(--danger)] font-sans">
+                {(mutation.error as Error).message}
+              </p>
+            )}
+          </form>
+        </ModalBody>
+        <ModalFooter>
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button
+            type="submit"
+            form="add-brand-form"
+            loading={mutation.isPending}
+            disabled={!name.trim()}
+          >
+            Add Brand
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   )
 }
 
@@ -129,35 +120,34 @@ export default function BrandsPage() {
   const brands = (data as { brands?: Brand[] } | undefined)?.brands ?? []
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-5xl mx-auto pb-12">
       <AnimatePresence>
         {showModal && <AddBrandModal onClose={() => setShowModal(false)} slug={slug} />}
       </AnimatePresence>
 
+      {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
+        transition={{ duration: 0.35, ease: SPRING }}
         className="flex items-center justify-between mb-8"
       >
-        <div>
-          <h1 className="font-display text-3xl font-semibold text-ink">Brands</h1>
-          <p className="text-sm text-dim mt-1">Manage your tracked brands</p>
-        </div>
+        <h1 className="font-display text-2xl font-semibold text-[var(--ink)]">Your Brands</h1>
         <Button onClick={() => setShowModal(true)}>
           <Plus className="h-4 w-4" />
           Add Brand
         </Button>
       </motion.div>
 
+      {/* Content */}
       {isLoading ? (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
       ) : brands.length === 0 ? (
         <EmptyState
           title="No brands yet"
-          description="Add your first brand to start tracking AI visibility."
+          description="Add your first brand to start measuring AI visibility."
           action={
             <Button onClick={() => setShowModal(true)}>
               <Plus className="h-4 w-4" /> Add Brand
@@ -165,45 +155,86 @@ export default function BrandsPage() {
           }
         />
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {brands.map((brand, i) => (
-            <motion.div
-              key={brand.id}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.06, duration: 0.35, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-            >
-              <Link href={`/${slug}/brands/${brand.id}`}>
-                <Card hover className="group">
-                  <CardContent className="pt-6">
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <h2 className="font-display text-lg font-semibold text-ink leading-tight group-hover:text-ember transition-colors">
-                        {brand.name}
-                      </h2>
-                      <Badge
-                        variant={crawlBadgeVariant(brand.crawl_status) as 'success' | 'info' | 'danger' | 'outline'}
-                        size="sm"
-                        dot
-                      >
-                        {brand.crawl_status ?? 'idle'}
-                      </Badge>
-                    </div>
-                    {brand.industry && (
-                      <p className="text-sm text-dim mb-1">{brand.industry}</p>
-                    )}
-                    {brand.website && (
-                      <p className="text-xs text-dim font-mono truncate mb-3">{brand.website}</p>
-                    )}
-                    {brand.last_crawled_at && (
-                      <p className="text-xs text-dim">
-                        Last crawled {relativeTime(brand.last_crawled_at)}
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              </Link>
-            </motion.div>
-          ))}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {brands.map((brand, i) => {
+            const score = brand.visibility_score ?? 0
+            const variant = scoreVariant(score)
+            const scoreColorMap: Record<string, string> = {
+              success: 'var(--success)',
+              warning: 'var(--warning)',
+              danger: 'var(--danger)',
+            }
+            const scoreColor = scoreColorMap[variant] ?? 'var(--dim)'
+
+            return (
+              <motion.div
+                key={brand.id}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.06, duration: 0.35, ease: SPRING }}
+                className="rounded-2xl border border-[var(--border)] bg-white/70 p-6 hover:shadow-md transition-shadow cursor-pointer group"
+              >
+                {/* Brand name */}
+                <h2 className="font-display text-xl text-[var(--ink)] leading-tight group-hover:text-[var(--ember)] transition-colors">
+                  {brand.name}
+                </h2>
+
+                {/* Domain */}
+                {brand.website && (
+                  <p className="font-mono text-xs text-[var(--dim)] mt-0.5 truncate">
+                    {brand.website.replace(/^https?:\/\//, '')}
+                  </p>
+                )}
+
+                {/* Visibility score bar */}
+                <div className="mt-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-sans text-[var(--dim)]">AI Visibility</span>
+                    <span className="text-xs font-sans font-semibold" style={{ color: scoreColor }}>
+                      {score}
+                    </span>
+                  </div>
+                  <Progress value={score} variant={variant} className="h-1.5" />
+                </div>
+
+                {/* Last run */}
+                <div className="text-xs text-[var(--dim)] mt-3 flex items-center gap-1.5">
+                  <Clock className="h-3 w-3 shrink-0" />
+                  {brand.last_crawled_at
+                    ? `Last run: ${relativeTime(brand.last_crawled_at)}`
+                    : 'Never run'}
+                </div>
+
+                {/* Status badge */}
+                {brand.crawl_status && brand.crawl_status !== 'idle' && (
+                  <div className="mt-2">
+                    <Badge
+                      variant={
+                        brand.crawl_status === 'completed'
+                          ? 'success'
+                          : brand.crawl_status === 'running'
+                          ? 'info'
+                          : brand.crawl_status === 'failed'
+                          ? 'danger'
+                          : 'outline'
+                      }
+                      size="sm"
+                      dot
+                    >
+                      {brand.crawl_status}
+                    </Badge>
+                  </div>
+                )}
+
+                {/* CTA */}
+                <Link href={`/${slug}/brands/${brand.id}/visibility`} className="mt-4 block">
+                  <Button variant="outline" size="sm" className="w-full">
+                    View Dashboard →
+                  </Button>
+                </Link>
+              </motion.div>
+            )
+          })}
         </div>
       )}
     </div>

@@ -10,14 +10,13 @@ class ApiError extends Error {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken()
-  const authHeader = token ? { Authorization: `Bearer ${token}` } : {}
 
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      ...authHeader,
-      ...init?.headers,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers as Record<string, string> | undefined),
     },
   })
 

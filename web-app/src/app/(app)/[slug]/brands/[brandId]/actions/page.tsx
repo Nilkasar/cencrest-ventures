@@ -8,13 +8,14 @@ import {
   Check,
   X,
   RefreshCw,
-  AlertCircle,
-  Clock,
   CheckCircle2,
   MinusCircle,
   Inbox,
   Zap,
   MapPin,
+  Plus,
+  Clock,
+  AlertCircle,
 } from 'lucide-react'
 import { api, routes } from '@/lib/api'
 import { cn, priorityColor } from '@/lib/utils'
@@ -22,14 +23,15 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Input } from '@/components/ui/input'
+import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody } from '@/components/ui/modal'
 import { tokens } from '@/design-system/tokens'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Priority = 'P1' | 'P2' | 'P3'
-type ActionStatus = 'pending' | 'in_progress' | 'completed' | 'dismissed'
+type ActionStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'dismissed'
 type ActionSource = 'geo_gap' | 'recommendation'
-
 type FilterTab = 'all' | ActionStatus
 
 interface Action {
@@ -49,6 +51,9 @@ interface ActionsResponse {
 
 interface ActionsSummary {
   pending: number
+  in_progress: number
+  completed: number
+  failed: number
   completed_this_week: number
   dismissed: number
 }
@@ -62,7 +67,7 @@ const FILTER_TABS: Array<{ value: FilterTab; label: string }> = [
   { value: 'pending', label: 'Pending' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'completed', label: 'Completed' },
-  { value: 'dismissed', label: 'Dismissed' },
+  { value: 'failed', label: 'Failed' },
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -83,11 +88,12 @@ function priorityLabel(p: Priority) {
   }
 }
 
-function statusBadgeVariant(s: ActionStatus): 'warning' | 'info' | 'success' | 'default' {
+function statusBadgeVariant(s: ActionStatus): 'warning' | 'info' | 'success' | 'danger' | 'default' {
   switch (s) {
     case 'pending': return 'warning'
     case 'in_progress': return 'info'
     case 'completed': return 'success'
+    case 'failed': return 'danger'
     case 'dismissed': return 'default'
   }
 }
@@ -97,31 +103,43 @@ function statusLabel(s: ActionStatus) {
     case 'pending': return 'Pending'
     case 'in_progress': return 'In Progress'
     case 'completed': return 'Completed'
+    case 'failed': return 'Failed'
     case 'dismissed': return 'Dismissed'
+  }
+}
+
+function borderColorClass(s: ActionStatus) {
+  switch (s) {
+    case 'pending': return 'border-l-[var(--warning)]'
+    case 'in_progress': return 'border-l-[var(--info)]'
+    case 'completed': return 'border-l-[var(--success)]'
+    case 'failed': return 'border-l-[var(--danger)]'
+    case 'dismissed': return 'border-l-[var(--border)]'
   }
 }
 
 function StatusDot({ status }: { status: ActionStatus }) {
   const colors: Record<ActionStatus, string> = {
-    pending: tokens.colors.warning,
-    in_progress: tokens.colors.info,
-    completed: tokens.colors.success,
-    dismissed: tokens.colors.dim,
+    pending: 'var(--warning)',
+    in_progress: 'var(--info)',
+    completed: 'var(--success)',
+    failed: 'var(--danger)',
+    dismissed: 'var(--dim)',
   }
 
   return (
     <motion.span
-      className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+      className={cn('inline-block w-2 h-2 rounded-full flex-shrink-0', status === 'in_progress' && 'animate-pulse')}
       style={{ background: colors[status] }}
-      animate={status === 'pending' ? { opacity: [1, 0.4, 1] } : { opacity: 1 }}
-      transition={status === 'pending' ? { duration: 1.8, repeat: Infinity, ease: 'easeInOut' } : {}}
+      animate={status === 'in_progress' ? { opacity: [1, 0.4, 1] } : { opacity: 1 }}
+      transition={status === 'in_progress' ? { duration: 1.8, repeat: Infinity, ease: 'easeInOut' } : {}}
     />
   )
 }
 
 function SourceTag({ source }: { source: ActionSource }) {
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-mono text-dim">
+    <span className="inline-flex items-center gap-1 text-xs font-mono text-[var(--dim)]">
       {source === 'geo_gap' ? (
         <MapPin className="h-3 w-3" />
       ) : (
@@ -132,172 +150,29 @@ function SourceTag({ source }: { source: ActionSource }) {
   )
 }
 
-// ─── Action Card ──────────────────────────────────────────────────────────────
+// ─── Stats Row ────────────────────────────────────────────────────────────────
 
-interface ActionCardProps {
-  action: Action
-  onComplete: (id: string) => void
-  onDismiss: (id: string) => void
-  isCompleting: boolean
-  isDismissing: boolean
-  index: number
-}
+function StatsRow({ summary }: { summary: ActionsSummary }) {
+  const stats = [
+    { label: 'Pending', value: summary.pending, color: 'text-[var(--warning)]', bg: 'bg-[var(--warning)]/5 border-[var(--warning)]/30' },
+    { label: 'In Progress', value: summary.in_progress, color: 'text-[var(--info)]', bg: 'bg-[var(--info)]/5 border-[var(--info)]/30' },
+    { label: 'Completed', value: summary.completed, color: 'text-[var(--success)]', bg: 'bg-[var(--success)]/5 border-[var(--success)]/30' },
+    { label: 'Failed', value: summary.failed, color: 'text-[var(--danger)]', bg: 'bg-[var(--danger)]/5 border-[var(--danger)]/30' },
+  ]
 
-function ActionCard({
-  action,
-  onComplete,
-  onDismiss,
-  isCompleting,
-  isDismissing,
-  index,
-}: ActionCardProps) {
   return (
-    <motion.div
-      layout
-      key={action.id}
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, x: -32, scale: 0.97 }}
-      transition={{ duration: 0.35, ease: SPRING, delay: index * 0.05 }}
-      whileHover={{ scale: 1.008 }}
-      style={{ originX: 0.5 }}
-      className={cn(
-        'group relative bg-surface border border-border rounded-lg p-4',
-        'transition-[border-color,box-shadow] duration-200',
-        'hover:border-ember/40 hover:shadow-sm',
-        action.status === 'completed' && 'opacity-60',
-        action.status === 'dismissed' && 'opacity-40',
-      )}
-    >
-      <div className="flex items-start gap-3">
-        {/* Priority indicator */}
-        <div className={cn('mt-0.5 font-mono text-xs font-bold leading-none px-1.5 py-1 rounded', priorityColor(action.priority))}>
-          {action.priority}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 min-w-0 space-y-1.5">
-          <div className="flex items-start justify-between gap-2">
-            <p className={cn(
-              'text-sm font-semibold text-ink leading-snug',
-              action.status === 'completed' && 'line-through text-dim',
-            )}>
-              {action.title}
-            </p>
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <Badge variant={priorityBadgeVariant(action.priority)} size="sm">
-                {priorityLabel(action.priority)}
-              </Badge>
-            </div>
-          </div>
-
-          {action.description && (
-            <p className="text-xs text-dim leading-relaxed line-clamp-2">{action.description}</p>
-          )}
-
-          <div className="flex items-center gap-3 pt-0.5 flex-wrap">
-            <SourceTag source={action.source} />
-            <div className="flex items-center gap-1.5">
-              <StatusDot status={action.status} />
-              <Badge variant={statusBadgeVariant(action.status)} size="sm" dot={false}>
-                {statusLabel(action.status)}
-              </Badge>
-            </div>
-          </div>
-        </div>
-
-        {/* Actions */}
-        {action.status !== 'completed' && action.status !== 'dismissed' && (
-          <div className="flex items-center gap-1.5 ml-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex-shrink-0">
-            <motion.button
-              whileHover={{ scale: 1.1, backgroundColor: tokens.colors.successMuted }}
-              whileTap={{ scale: 0.92 }}
-              transition={{ type: 'tween', ease: SPRING, duration: 0.15 }}
-              onClick={() => onComplete(action.id)}
-              disabled={isCompleting || isDismissing}
-              className={cn(
-                'h-8 w-8 rounded-md flex items-center justify-center border border-border',
-                'text-dim hover:text-success hover:border-success/40 transition-colors',
-                'disabled:pointer-events-none disabled:opacity-50',
-              )}
-              title="Mark complete"
-            >
-              {isCompleting ? (
-                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
-                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                </svg>
-              ) : (
-                <Check className="h-3.5 w-3.5" />
-              )}
-            </motion.button>
-
-            <motion.button
-              whileHover={{ scale: 1.1, backgroundColor: tokens.colors.dangerMuted }}
-              whileTap={{ scale: 0.92 }}
-              transition={{ type: 'tween', ease: SPRING, duration: 0.15 }}
-              onClick={() => onDismiss(action.id)}
-              disabled={isCompleting || isDismissing}
-              className={cn(
-                'h-8 w-8 rounded-md flex items-center justify-center border border-border',
-                'text-dim hover:text-danger hover:border-danger/40 transition-colors',
-                'disabled:pointer-events-none disabled:opacity-50',
-              )}
-              title="Dismiss"
-            >
-              {isDismissing ? (
-                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
-                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                </svg>
-              ) : (
-                <X className="h-3.5 w-3.5" />
-              )}
-            </motion.button>
-          </div>
-        )}
-
-        {action.status === 'completed' && (
-          <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0 ml-2" />
-        )}
-
-        {action.status === 'dismissed' && (
-          <MinusCircle className="h-5 w-5 text-dim flex-shrink-0 ml-2" />
-        )}
-      </div>
-    </motion.div>
-  )
-}
-
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
-
-function PageSkeleton() {
-  return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="space-y-2">
-          <Skeleton className="h-9 w-56" />
-          <Skeleton className="h-4 w-40" />
-        </div>
-        <Skeleton className="h-10 w-24 rounded-md" />
-      </div>
-      <div className="flex gap-2">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-8 w-20 rounded-full" />
-        ))}
-      </div>
-      <div className="space-y-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="bg-surface border border-border rounded-lg p-4 flex gap-3">
-            <Skeleton className="h-6 w-8 rounded" />
-            <div className="flex-1 space-y-2">
-              <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-3 w-1/2" />
-              <Skeleton className="h-3 w-24" />
-            </div>
-          </div>
-        ))}
-      </div>
+    <div className="grid grid-cols-4 gap-3">
+      {stats.map((s) => (
+        <motion.div
+          key={s.label}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={cn('rounded-xl border px-4 py-3', s.bg)}
+        >
+          <p className={cn('text-2xl font-bold font-display', s.color)}>{s.value}</p>
+          <p className="text-xs text-[var(--dim)] uppercase tracking-wide mt-0.5">{s.label}</p>
+        </motion.div>
+      ))}
     </div>
   )
 }
@@ -313,7 +188,7 @@ function CounterBadge({ count }: { count: number }) {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.8, y: 6 }}
         transition={{ type: 'tween', ease: SPRING, duration: 0.2 }}
-        className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-ember text-paper text-xs font-mono font-bold leading-none"
+        className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-[var(--ember)] text-[var(--paper)] text-xs font-mono font-bold leading-none"
       >
         {count}
       </motion.span>
@@ -343,14 +218,14 @@ function FilterPills({
               onClick={() => onChange(tab.value)}
               className={cn(
                 'relative px-3 py-1.5 rounded-full text-sm font-sans font-medium transition-colors duration-150',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember focus-visible:ring-offset-2',
-                isActive ? 'text-paper' : 'text-dim hover:text-ink',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ember)] focus-visible:ring-offset-2',
+                isActive ? 'text-[var(--paper)]' : 'text-[var(--dim)] hover:text-[var(--ink)]',
               )}
             >
               {isActive && (
                 <motion.span
                   layoutId="action-filter-pill"
-                  className="absolute inset-0 bg-ember rounded-full"
+                  className="absolute inset-0 bg-[var(--ember)] rounded-full"
                   transition={{ type: 'tween', ease: SPRING, duration: 0.25 }}
                 />
               )}
@@ -360,7 +235,7 @@ function FilterPills({
                   <span
                     className={cn(
                       'text-xs rounded-full px-1.5 py-px font-mono font-semibold leading-none',
-                      isActive ? 'bg-white/20 text-paper' : 'bg-border text-dim',
+                      isActive ? 'bg-white/20 text-[var(--paper)]' : 'bg-[var(--border)] text-[var(--dim)]',
                     )}
                   >
                     {counts[tab.value]}
@@ -375,34 +250,247 @@ function FilterPills({
   )
 }
 
-// ─── Summary Bar ──────────────────────────────────────────────────────────────
+// ─── Action Card ──────────────────────────────────────────────────────────────
 
-function SummaryBar({ summary }: { summary: ActionsSummary }) {
+interface ActionCardProps {
+  action: Action
+  onComplete: (id: string) => void
+  onDismiss: (id: string) => void
+  onRetry: (id: string) => void
+  isCompleting: boolean
+  isDismissing: boolean
+  index: number
+}
+
+function ActionCard({
+  action,
+  onComplete,
+  onDismiss,
+  onRetry,
+  isCompleting,
+  isDismissing,
+  index,
+}: ActionCardProps) {
+  const formattedDate = new Date(action.created_at).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
+      layout
+      key={action.id}
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: SPRING, delay: 0.15 }}
-      className="flex items-center gap-6 py-3 px-4 bg-surface border border-border rounded-lg text-sm font-sans"
+      exit={{ opacity: 0, x: -32, scale: 0.97 }}
+      transition={{ duration: 0.35, ease: SPRING, delay: index * 0.05 }}
+      className={cn(
+        'group relative border-l-4 bg-white/70 px-5 py-4 mb-2 rounded-r-xl rounded-l-sm',
+        'transition-[border-color,box-shadow] duration-200',
+        borderColorClass(action.status),
+        action.status === 'completed' && 'opacity-60',
+        action.status === 'dismissed' && 'opacity-40',
+      )}
     >
-      <div className="flex items-center gap-2 text-warning">
-        <Clock className="h-4 w-4" />
-        <span className="font-semibold text-ink">{summary.pending}</span>
-        <span className="text-dim">pending</span>
-      </div>
-      <div className="w-px h-4 bg-border" />
-      <div className="flex items-center gap-2">
-        <CheckCircle2 className="h-4 w-4 text-success" />
-        <span className="font-semibold text-ink">{summary.completed_this_week}</span>
-        <span className="text-dim">completed this week</span>
-      </div>
-      <div className="w-px h-4 bg-border" />
-      <div className="flex items-center gap-2">
-        <MinusCircle className="h-4 w-4 text-dim" />
-        <span className="font-semibold text-ink">{summary.dismissed}</span>
-        <span className="text-dim">dismissed</span>
+      <div className="flex items-start gap-3">
+        {/* Status dot */}
+        <div className="mt-1 flex-shrink-0">
+          <StatusDot status={action.status} />
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <p className={cn(
+            'font-display text-base font-semibold text-[var(--ink)] leading-snug',
+            action.status === 'completed' && 'line-through text-[var(--dim)]',
+          )}>
+            {action.title}
+          </p>
+
+          {action.description && (
+            <p className="text-sm text-[var(--dim)] mt-0.5 line-clamp-2">{action.description}</p>
+          )}
+
+          {/* Footer row */}
+          <div className="flex items-center gap-3 mt-2 flex-wrap">
+            <span className="text-xs text-[var(--dim)]">{formattedDate}</span>
+            <SourceTag source={action.source} />
+            <div className="flex items-center gap-1.5">
+              <Badge variant={priorityBadgeVariant(action.priority)} size="sm">
+                {priorityLabel(action.priority)}
+              </Badge>
+              <Badge variant={statusBadgeVariant(action.status)} size="sm" dot={false}>
+                {statusLabel(action.status)}
+              </Badge>
+            </div>
+
+            {/* Action buttons */}
+            <div className="ml-auto flex items-center gap-1.5">
+              {(action.status === 'pending' || action.status === 'in_progress') && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onComplete(action.id)}
+                  disabled={isCompleting || isDismissing}
+                  className="text-[var(--success)] border-[var(--success)]/30 hover:bg-[var(--success)]/5"
+                >
+                  {isCompleting ? (
+                    <svg className="animate-spin h-3.5 w-3.5 mr-1" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+                      <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                    </svg>
+                  ) : (
+                    <Check className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  Mark Complete
+                </Button>
+              )}
+
+              {action.status === 'failed' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onRetry(action.id)}
+                  disabled={isCompleting || isDismissing}
+                >
+                  <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                  Retry
+                </Button>
+              )}
+
+              {action.status !== 'dismissed' && action.status !== 'completed' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onDismiss(action.id)}
+                  disabled={isCompleting || isDismissing}
+                  className="text-[var(--dim)] hover:text-[var(--ink)]"
+                >
+                  Archive
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {action.status === 'completed' && (
+          <CheckCircle2 className="h-5 w-5 text-[var(--success)] flex-shrink-0" />
+        )}
+        {action.status === 'failed' && (
+          <AlertCircle className="h-5 w-5 text-[var(--danger)] flex-shrink-0" />
+        )}
+        {action.status === 'dismissed' && (
+          <MinusCircle className="h-5 w-5 text-[var(--dim)] flex-shrink-0" />
+        )}
       </div>
     </motion.div>
+  )
+}
+
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
+
+function PageSkeleton() {
+  return (
+    <div className="max-w-4xl mx-auto space-y-6 p-6">
+      <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-9 w-56" />
+          <Skeleton className="h-4 w-40" />
+        </div>
+        <Skeleton className="h-10 w-28 rounded-md" />
+      </div>
+      <div className="grid grid-cols-4 gap-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-16 rounded-xl" />
+        ))}
+      </div>
+      <div className="flex gap-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-8 w-20 rounded-full" />
+        ))}
+      </div>
+      <div className="space-y-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="bg-[var(--surface)] border-l-4 border-[var(--border)] rounded-r-xl px-5 py-4 flex gap-3">
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── New Action Modal ─────────────────────────────────────────────────────────
+
+function NewActionModal({
+  open,
+  onClose,
+  slug,
+  brandId,
+}: {
+  open: boolean
+  onClose: () => void
+  slug: string
+  brandId: string
+}) {
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const qc = useQueryClient()
+
+  const createMutation = useMutation({
+    mutationFn: (payload: { title: string; description: string }) =>
+      api.post(routes.actions(slug, brandId), { ...payload, source: 'recommendation', priority: 'P2' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['actions', slug, brandId] })
+      qc.invalidateQueries({ queryKey: ['actions-summary', slug, brandId] })
+      setTitle('')
+      setDescription('')
+      onClose()
+    },
+  })
+
+  return (
+    <Modal open={open} onOpenChange={(o) => !o && onClose()}>
+      <ModalContent>
+        <ModalHeader><ModalTitle>New Action</ModalTitle></ModalHeader>
+        <ModalBody>
+          <div className="flex flex-col gap-4">
+            <div>
+              <label className="text-xs text-[var(--dim)] font-sans mb-1 block">Title</label>
+              <Input
+                placeholder="Action title…"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="text-xs text-[var(--dim)] font-sans mb-1 block">Description</label>
+              <textarea
+                placeholder="What needs to be done…"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 text-sm font-sans text-[var(--ink)] bg-[var(--paper)] border border-[var(--border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--ember)] resize-none"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={onClose}>Cancel</Button>
+              <Button
+                disabled={!title || createMutation.isPending}
+                onClick={() => createMutation.mutate({ title, description })}
+              >
+                {createMutation.isPending ? 'Creating…' : 'Create Action'}
+              </Button>
+            </div>
+          </div>
+        </ModalBody>
+      </ModalContent>
+    </Modal>
   )
 }
 
@@ -412,6 +500,7 @@ export default function ActionsPage() {
   const { slug, brandId } = useParams<{ slug: string; brandId: string }>()
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState<FilterTab>('all')
+  const [showNewAction, setShowNewAction] = useState(false)
   const mutatingIds = useRef<Map<string, 'completing' | 'dismissing'>>(new Map())
   const [, forceUpdate] = useState(0)
 
@@ -493,6 +582,16 @@ export default function ActionsPage() {
     },
   })
 
+  // ── Retry Mutation ────────────────────────────────────────────────────────
+
+  const retryMutation = useMutation({
+    mutationFn: (actionId: string) =>
+      api.patch(`${routes.actions(slug, brandId)}/${actionId}`, { status: 'pending' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['actions', slug, brandId] })
+    },
+  })
+
   const handleComplete = useCallback(
     (id: string) => {
       mutatingIds.current.set(id, 'completing')
@@ -511,6 +610,13 @@ export default function ActionsPage() {
     [dismissMutation]
   )
 
+  const handleRetry = useCallback(
+    (id: string) => {
+      retryMutation.mutate(id)
+    },
+    [retryMutation]
+  )
+
   // ── Derived ───────────────────────────────────────────────────────────────
 
   const allActions = data?.actions ?? []
@@ -525,6 +631,7 @@ export default function ActionsPage() {
     pending: allActions.filter((a) => a.status === 'pending').length,
     in_progress: allActions.filter((a) => a.status === 'in_progress').length,
     completed: allActions.filter((a) => a.status === 'completed').length,
+    failed: allActions.filter((a) => a.status === 'failed').length,
     dismissed: allActions.filter((a) => a.status === 'dismissed').length,
   }
 
@@ -532,6 +639,9 @@ export default function ActionsPage() {
 
   const summary: ActionsSummary = summaryData ?? {
     pending: pendingCount,
+    in_progress: counts.in_progress,
+    completed: counts.completed,
+    failed: counts.failed,
     completed_this_week: counts.completed,
     dismissed: counts.dismissed,
   }
@@ -539,7 +649,7 @@ export default function ActionsPage() {
   if (isLoading) return <PageSkeleton />
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6 pb-12 p-6">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -549,28 +659,41 @@ export default function ActionsPage() {
       >
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="font-display text-3xl font-semibold text-ink">Action Center</h1>
+            <h1 className="font-display text-2xl font-semibold text-[var(--ink)]">Action Plan</h1>
             {pendingCount > 0 && <CounterBadge count={pendingCount} />}
           </div>
-          <p className="text-sm text-dim mt-1">Prioritized actions derived from AI recommendation gaps</p>
+          <p className="text-sm text-[var(--dim)] mt-1">Prioritized actions derived from AI recommendation gaps</p>
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => syncMutation.mutate()}
-          disabled={syncMutation.isPending}
-          className="flex-shrink-0"
-        >
-          <motion.span
-            animate={syncMutation.isPending ? { rotate: 360 } : { rotate: 0 }}
-            transition={syncMutation.isPending ? { duration: 1, repeat: Infinity, ease: 'linear' } : {}}
-            style={{ display: 'inline-flex' }}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
           >
-            <RefreshCw className="h-4 w-4" />
-          </motion.span>
-          {syncMutation.isPending ? 'Syncing…' : 'Sync'}
-        </Button>
+            <motion.span
+              animate={syncMutation.isPending ? { rotate: 360 } : { rotate: 0 }}
+              transition={syncMutation.isPending ? { duration: 1, repeat: Infinity, ease: 'linear' } : {}}
+              style={{ display: 'inline-flex' }}
+            >
+              <RefreshCw className="h-4 w-4" />
+            </motion.span>
+            {syncMutation.isPending ? 'Syncing…' : 'Sync'}
+          </Button>
+          <Button size="sm" onClick={() => setShowNewAction(true)}>
+            <Plus className="h-4 w-4 mr-1.5" /> New Action
+          </Button>
+        </div>
+      </motion.div>
+
+      {/* Stats row */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05 }}
+      >
+        <StatsRow summary={summary} />
       </motion.div>
 
       {/* Filter Pills */}
@@ -583,7 +706,7 @@ export default function ActionsPage() {
       </motion.div>
 
       {/* Action List */}
-      <div className="space-y-2.5">
+      <div>
         <AnimatePresence mode="popLayout" initial={false}>
           {filtered.length === 0 ? (
             <motion.div
@@ -597,6 +720,8 @@ export default function ActionsPage() {
                 icon={
                   filter === 'completed' ? (
                     <CheckCircle2 className="h-6 w-6" />
+                  ) : filter === 'failed' ? (
+                    <AlertCircle className="h-6 w-6" />
                   ) : filter === 'dismissed' ? (
                     <MinusCircle className="h-6 w-6" />
                   ) : (
@@ -608,6 +733,8 @@ export default function ActionsPage() {
                     ? 'No actions yet'
                     : filter === 'completed'
                     ? 'Nothing completed yet'
+                    : filter === 'failed'
+                    ? 'No failed actions'
                     : filter === 'dismissed'
                     ? 'Nothing dismissed'
                     : `No ${filter.replace('_', ' ')} actions`
@@ -639,6 +766,7 @@ export default function ActionsPage() {
                 action={action}
                 onComplete={handleComplete}
                 onDismiss={handleDismiss}
+                onRetry={handleRetry}
                 isCompleting={mutatingIds.current.get(action.id) === 'completing'}
                 isDismissing={mutatingIds.current.get(action.id) === 'dismissing'}
                 index={i}
@@ -648,8 +776,13 @@ export default function ActionsPage() {
         </AnimatePresence>
       </div>
 
-      {/* Summary Bar */}
-      <SummaryBar summary={summary} />
+      {/* New Action Modal */}
+      <NewActionModal
+        open={showNewAction}
+        onClose={() => setShowNewAction(false)}
+        slug={slug}
+        brandId={brandId}
+      />
     </div>
   )
 }

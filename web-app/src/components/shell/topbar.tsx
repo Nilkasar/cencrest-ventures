@@ -2,130 +2,168 @@
 
 import { useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { Search, Bell, ChevronDown, Settings, LogOut, User } from 'lucide-react'
+import { Bell, Menu, ChevronRight } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/store/app-store'
+import { getStoredUser } from '@/lib/auth-storage'
 import { cn } from '@/lib/utils'
 
-function BreadCrumb() {
+function getInitials(name: string | undefined, email: string | undefined): string {
+  const source = name ?? email ?? ''
+  return source
+    .split(' ')
+    .map((p) => p[0] ?? '')
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+}
+
+function Breadcrumb() {
   const pathname = usePathname()
+  const currentOrg = useAppStore((s) => s.currentOrg)
   const currentBrand = useAppStore((s) => s.currentBrand)
-  const segment = pathname.split('/').filter(Boolean)[0] ?? 'dashboard'
-  const label = segment.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+
+  const segments = pathname.split('/').filter(Boolean)
+  // Last meaningful segment as the page label
+  const pageSeg = segments[segments.length - 1] ?? 'dashboard'
+  const pageLabel = pageSeg.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
   return (
-    <div className="flex items-center gap-2 text-sm">
-      {currentBrand && (
+    <nav className="flex items-center gap-1.5 font-sans text-sm min-w-0">
+      {currentOrg && (
         <>
-          <span className="text-[var(--dim)]">{currentBrand.name}</span>
-          <span className="text-[var(--border-strong)]">/</span>
+          <span
+            className="truncate max-w-[100px] text-[var(--dim)]"
+            style={{ fontSize: 13 }}
+          >
+            {currentOrg.name}
+          </span>
+          <ChevronRight size={12} className="text-[var(--border-strong)] flex-shrink-0" />
         </>
       )}
-      <span className="font-medium text-[var(--ink)]">{label}</span>
-    </div>
+      {currentBrand && (
+        <>
+          <span
+            className="truncate max-w-[100px] text-[var(--dim)]"
+            style={{ fontSize: 13 }}
+          >
+            {currentBrand.name}
+          </span>
+          <ChevronRight size={12} className="text-[var(--border-strong)] flex-shrink-0" />
+        </>
+      )}
+      <span
+        className="font-medium text-[var(--ink)] truncate"
+        style={{ fontSize: 13 }}
+      >
+        {pageLabel}
+      </span>
+    </nav>
   )
 }
 
 export function Topbar() {
   const togglePalette = useAppStore((s) => s.toggleCommandPalette)
+  const toggleMobileSidebar = useAppStore((s) => s.toggleMobileSidebar)
   const [notifOpen, setNotifOpen] = useState(false)
-  const [userOpen, setUserOpen] = useState(false)
+
+  const user = getStoredUser()
+  const initials = getInitials(user?.name, user?.email)
   const unreadCount = 3 // placeholder
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between h-14 px-6 bg-[var(--paper)]/90 backdrop-blur-sm border-b border-[var(--border)]">
-      <BreadCrumb />
+    <header
+      className={cn(
+        'sticky top-0 z-30 flex items-center justify-between px-4 bg-[var(--paper)] border-b border-[var(--border)]'
+      )}
+      style={{ height: 52 }}
+    >
+      {/* Left: hamburger + breadcrumb */}
+      <div className="flex items-center gap-3 min-w-0">
+        {/* Mobile hamburger */}
+        <button
+          onClick={toggleMobileSidebar}
+          className={cn(
+            'lg:hidden flex items-center justify-center rounded-md p-1.5',
+            'text-[var(--ink)] hover:bg-[var(--surface)] transition-colors cursor-pointer'
+          )}
+          aria-label="Open navigation"
+        >
+          <Menu size={20} />
+        </button>
+        <Breadcrumb />
+      </div>
 
-      <div className="flex items-center gap-2">
-        {/* Search / command palette trigger */}
+      {/* Right: ⌘K + bell + avatar */}
+      <div className="flex items-center gap-1.5 flex-shrink-0 ml-4">
+        {/* ⌘K pill */}
         <button
           onClick={togglePalette}
           className={cn(
-            'flex items-center gap-2 px-3 py-1.5 rounded-md text-sm',
-            'text-[var(--dim)] bg-[var(--surface)] border border-[var(--border)]',
-            'hover:border-[var(--border-strong)] transition-colors cursor-pointer'
+            'hidden sm:flex items-center gap-1.5 rounded-lg transition-colors cursor-pointer font-mono',
+            'border border-[var(--border)] hover:border-[var(--ember)]',
+            'text-[var(--dim)]'
           )}
+          style={{ padding: '4px 10px', fontSize: 12 }}
         >
-          <Search size={14} />
-          <span className="hidden sm:inline">Search</span>
-          <kbd className="hidden sm:inline text-[10px] bg-[var(--paper)] border border-[var(--border)] rounded px-1 py-0.5 font-mono">
-            ⌘K
-          </kbd>
+          <span>⌘K</span>
         </button>
 
         {/* Notifications */}
         <div className="relative">
           <button
-            onClick={() => { setNotifOpen(!notifOpen); setUserOpen(false) }}
-            className="relative p-2 rounded-md text-[var(--dim)] hover:text-[var(--ink)] hover:bg-[var(--surface)] transition-colors cursor-pointer"
+            onClick={() => setNotifOpen((v) => !v)}
+            className="relative flex items-center justify-center w-9 h-9 rounded-md text-[var(--dim)] hover:text-[var(--ink)] hover:bg-[var(--surface)] transition-colors cursor-pointer"
+            aria-label="Notifications"
           >
-            <Bell size={17} />
+            <Bell size={18} />
             {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[var(--ember)]" />
+              <span
+                className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[var(--ember)]"
+                aria-hidden
+              />
             )}
           </button>
 
           <AnimatePresence>
             {notifOpen && (
-              <motion.div
-                className="absolute right-0 top-10 w-72 bg-[var(--paper)] border border-[var(--border)] rounded-xl shadow-lg overflow-hidden"
-                initial={{ opacity: 0, y: -8, scale: 0.96 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -8, scale: 0.96 }}
-                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-              >
-                <div className="p-3 border-b border-[var(--border)] flex items-center justify-between">
-                  <span className="text-sm font-medium text-[var(--ink)]">Notifications</span>
-                  <span className="text-xs text-[var(--ember)] font-medium">{unreadCount} unread</span>
-                </div>
-                <div className="p-3 text-sm text-[var(--dim)] text-center py-6">
-                  No new notifications
-                </div>
-              </motion.div>
+              <>
+                {/* backdrop to close */}
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setNotifOpen(false)}
+                />
+                <motion.div
+                  className="absolute right-0 top-11 z-50 w-72 bg-[var(--paper)] border border-[var(--border)] rounded-xl shadow-lg overflow-hidden"
+                  initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                  transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <div className="px-4 py-3 border-b border-[var(--border)] flex items-center justify-between">
+                    <span className="font-sans text-sm font-medium text-[var(--ink)]">Notifications</span>
+                    {unreadCount > 0 && (
+                      <span className="font-sans text-xs font-medium text-[var(--ember)]">
+                        {unreadCount} unread
+                      </span>
+                    )}
+                  </div>
+                  <div className="py-8 text-center font-sans text-sm text-[var(--dim)]">
+                    No new notifications
+                  </div>
+                </motion.div>
+              </>
             )}
           </AnimatePresence>
         </div>
 
-        {/* User menu */}
-        <div className="relative">
-          <button
-            onClick={() => { setUserOpen(!userOpen); setNotifOpen(false) }}
-            className="flex items-center gap-1.5 p-1.5 rounded-md hover:bg-[var(--surface)] transition-colors cursor-pointer"
-          >
-            <div className="w-7 h-7 rounded-full bg-[var(--ember)]/20 flex items-center justify-center">
-              <User size={14} className="text-[var(--ember)]" />
-            </div>
-            <ChevronDown size={13} className={cn('text-[var(--dim)] transition-transform', userOpen && 'rotate-180')} />
-          </button>
-
-          <AnimatePresence>
-            {userOpen && (
-              <motion.div
-                className="absolute right-0 top-10 w-48 bg-[var(--paper)] border border-[var(--border)] rounded-xl shadow-lg overflow-hidden"
-                initial={{ opacity: 0, y: -8, scale: 0.96 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -8, scale: 0.96 }}
-                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-              >
-                <div className="p-1">
-                  <a
-                    href="/settings/profile"
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-[var(--ink)] hover:bg-[var(--surface)] transition-colors cursor-pointer"
-                  >
-                    <Settings size={14} className="text-[var(--dim)]" />
-                    Settings
-                  </a>
-                  <button
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-[var(--danger)] hover:bg-[var(--surface)] transition-colors cursor-pointer"
-                    onClick={() => { /* handle logout */ }}
-                  >
-                    <LogOut size={14} />
-                    Sign out
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+        {/* Avatar */}
+        <div
+          className="flex items-center justify-center rounded-full bg-[var(--ember)] text-white font-sans font-semibold select-none flex-shrink-0"
+          style={{ width: 32, height: 32, fontSize: 12 }}
+          title={user?.name ?? user?.email ?? 'Account'}
+        >
+          {initials || '?'}
         </div>
       </div>
     </header>
