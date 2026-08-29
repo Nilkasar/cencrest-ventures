@@ -3,14 +3,16 @@
 import { useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { motion } from 'framer-motion'
-import { Play } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Play, ExternalLink } from 'lucide-react'
 import { api, routes } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Progress } from '@/components/ui/progress'
+import { cn } from '@/lib/utils'
 
 interface Run {
   id: string
@@ -18,6 +20,7 @@ interface Run {
   created_at: string
   completed_at?: string
   provider?: string
+  provider_count?: number
   queries_total?: number
   queries_done?: number
 }
@@ -33,79 +36,73 @@ function relativeTime(iso?: string): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
-const statusMeta: Record<
-  Run['status'],
-  { variant: 'success' | 'danger' | 'info' | 'outline'; dot: boolean; pulse: boolean }
-> = {
-  pending: { variant: 'outline', dot: true, pulse: false },
-  running: { variant: 'info', dot: false, pulse: true },
-  completed: { variant: 'success', dot: true, pulse: false },
-  failed: { variant: 'danger', dot: true, pulse: false },
+function durationLabel(run: Run): string {
+  if (!run.completed_at || !run.created_at) return '—'
+  const ms = new Date(run.completed_at).getTime() - new Date(run.created_at).getTime()
+  const secs = Math.floor(ms / 1000)
+  if (secs < 60) return `${secs}s`
+  return `${Math.floor(secs / 60)}m ${secs % 60}s`
 }
 
-function RunCard({ run, index }: { run: Run; index: number }) {
-  const meta = statusMeta[run.status]
-  const progress =
-    run.queries_total && run.queries_done != null
-      ? Math.round((run.queries_done / run.queries_total) * 100)
-      : null
+// ─── Active Run Banner ────────────────────────────────────────────────────────
 
+function ActiveRunBanner({ run }: { run: Run }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.06, duration: 0.35, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
+      className="rounded-xl bg-[var(--warning)]/10 border border-[var(--warning)]/30 px-4 py-3 flex items-center gap-3 mb-4"
     >
-      <div className="flex items-center gap-4 py-4 border-b border-border last:border-0">
-        {/* Status dot */}
-        <div className="shrink-0">
-          {meta.pulse ? (
-            <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-ember opacity-75" />
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-ember" />
-            </span>
-          ) : (
-            <Badge variant={meta.variant} size="sm" dot>
-              {run.status}
-            </Badge>
-          )}
-        </div>
-
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="font-mono text-xs text-dim">#{run.id.slice(0, 8)}</span>
-            {run.provider && (
-              <Badge variant="outline" size="sm">{run.provider}</Badge>
-            )}
-            {meta.pulse && <Badge variant="info" size="sm">Running</Badge>}
-          </div>
-          {progress != null && (
-            <div className="flex items-center gap-2 mt-1.5">
-              <div className="flex-1 h-1.5 bg-border rounded-full overflow-hidden max-w-48">
-                <motion.div
-                  className="h-full bg-ember rounded-full"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.5, ease: 'easeOut' }}
-                />
-              </div>
-              <span className="text-xs text-dim font-mono">{run.queries_done}/{run.queries_total}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Time */}
-        <div className="text-right shrink-0">
-          <p className="text-xs text-dim">{relativeTime(run.created_at)}</p>
-          {run.completed_at && (
-            <p className="text-xs text-dim">done {relativeTime(run.completed_at)}</p>
-          )}
-        </div>
+      {/* Pulsing amber dot */}
+      <span className="relative flex h-2.5 w-2.5 shrink-0">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--warning)] opacity-60" />
+        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[var(--warning)]" />
+      </span>
+      <span className="text-sm font-medium text-[var(--ink)] flex-1">Analysis in progress…</span>
+      {/* Indeterminate progress */}
+      <div className="w-40 relative h-1.5 overflow-hidden rounded-full bg-[var(--warning)]/20">
+        <motion.div
+          className="absolute inset-y-0 rounded-full bg-[var(--warning)]"
+          animate={{ x: ['-100%', '400%'] }}
+          transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+          style={{ width: '40%', left: 0 }}
+        />
       </div>
+      {run.queries_total && run.queries_done != null && (
+        <span className="text-xs font-mono text-[var(--dim)] shrink-0">
+          {run.queries_done}/{run.queries_total}
+        </span>
+      )}
     </motion.div>
   )
 }
+
+// ─── Status Badge ─────────────────────────────────────────────────────────────
+
+function RunStatusBadge({ status }: { status: Run['status'] }) {
+  if (status === 'running') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium font-sans bg-[var(--info)]/10 text-[var(--info)]">
+        <span className="relative flex h-1.5 w-1.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--info)] opacity-60" />
+          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[var(--info)]" />
+        </span>
+        Running
+      </span>
+    )
+  }
+  const map = {
+    completed: { variant: 'success' as const, label: 'Completed' },
+    failed: { variant: 'danger' as const, label: 'Failed' },
+    pending: { variant: 'outline' as const, label: 'Pending' },
+  }
+  const meta = map[status]
+  return <Badge variant={meta.variant} size="sm" dot>{meta.label}</Badge>
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function RunsPage() {
   const { slug, brandId } = useParams<{ slug: string; brandId: string }>()
@@ -128,8 +125,8 @@ export default function RunsPage() {
 
   const runs = (data as { runs?: Run[] } | undefined)?.runs ?? []
   const hasActive = runs.some((r) => r.status === 'running' || r.status === 'pending')
+  const activeRun = runs.find((r) => r.status === 'running' || r.status === 'pending') ?? null
 
-  // Keep polling while active
   useEffect(() => {
     if (!hasActive) return
     const id = setInterval(() => {
@@ -140,6 +137,7 @@ export default function RunsPage() {
 
   return (
     <div className="max-w-4xl mx-auto">
+      {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -147,8 +145,8 @@ export default function RunsPage() {
         className="flex items-center justify-between mb-8"
       >
         <div>
-          <h1 className="font-display text-3xl font-semibold text-ink">AI Runs</h1>
-          <p className="text-sm text-dim mt-1">Each run queries all AI providers</p>
+          <h1 className="font-display text-3xl font-semibold text-[var(--ink)]">AI Analysis Runs</h1>
+          <p className="text-sm text-[var(--dim)] mt-1">Each run queries all AI providers</p>
         </div>
         <Button
           onClick={() => newRunMutation.mutate()}
@@ -156,19 +154,26 @@ export default function RunsPage() {
           disabled={hasActive}
         >
           <Play className="h-4 w-4" />
-          New Run
+          Run Now
         </Button>
       </motion.div>
 
+      {/* Active run banner */}
+      <AnimatePresence>
+        {activeRun && <ActiveRunBanner run={activeRun} />}
+      </AnimatePresence>
+
+      {/* Runs table */}
       {isLoading ? (
         <SkeletonCard />
       ) : runs.length === 0 ? (
         <EmptyState
+          icon={<Play className="h-6 w-6" />}
           title="No runs yet"
           description="Start a run to query AI providers and measure your brand's visibility."
           action={
             <Button onClick={() => newRunMutation.mutate()} loading={newRunMutation.isPending}>
-              <Play className="h-4 w-4" /> New Run
+              <Play className="h-4 w-4" /> Run Now
             </Button>
           }
         />
@@ -182,10 +187,49 @@ export default function RunsPage() {
             <CardHeader>
               <CardTitle>Run History</CardTitle>
             </CardHeader>
-            <CardContent>
-              {runs.map((run, i) => (
-                <RunCard key={run.id} run={run} index={i} />
-              ))}
+            <CardContent className="p-0">
+              {/* Table head */}
+              <div className="grid grid-cols-[160px_120px_80px_100px_100px_80px] gap-3 px-4 py-2.5 bg-[var(--surface)] border-b border-[var(--border)]">
+                {['Date', 'Status', 'Queries', 'Duration', 'Providers', ''].map((h, i) => (
+                  <span key={i} className="text-xs font-semibold text-[var(--dim)] uppercase tracking-wide">{h}</span>
+                ))}
+              </div>
+              <div className="divide-y divide-[var(--border)]">
+                <AnimatePresence initial={false}>
+                  {runs.map((run, i) => (
+                    <motion.div
+                      key={run.id}
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.04, duration: 0.25, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
+                      className="grid grid-cols-[160px_120px_80px_100px_100px_80px] gap-3 px-4 py-3 items-center hover:bg-[var(--surface)]/50 transition-colors"
+                    >
+                      {/* Date */}
+                      <span className="font-mono text-sm text-[var(--dim)]">{relativeTime(run.created_at)}</span>
+                      {/* Status */}
+                      <RunStatusBadge status={run.status} />
+                      {/* Queries */}
+                      <span className="text-sm font-mono text-[var(--ink)]">
+                        {run.queries_done != null && run.queries_total
+                          ? `${run.queries_done}/${run.queries_total}`
+                          : run.queries_total ?? '—'}
+                      </span>
+                      {/* Duration */}
+                      <span className="text-sm font-mono text-[var(--dim)]">{durationLabel(run)}</span>
+                      {/* Provider Count */}
+                      <span className="text-sm font-mono text-[var(--dim)]">
+                        {run.provider_count ?? (run.provider ? 1 : '—')}
+                      </span>
+                      {/* View */}
+                      <button
+                        className="inline-flex items-center gap-1 text-xs text-[var(--ember)] hover:underline font-medium"
+                      >
+                        View <ExternalLink className="h-3 w-3" />
+                      </button>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
             </CardContent>
           </Card>
         </motion.div>

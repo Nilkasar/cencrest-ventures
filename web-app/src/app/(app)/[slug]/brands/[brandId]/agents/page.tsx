@@ -5,18 +5,18 @@ import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Globe,
+  Brain,
   Search,
-  TrendingUp,
+  Zap,
   Play,
   ChevronDown,
   ChevronUp,
   X,
-  Zap,
   Clock,
   CheckCircle2,
   XCircle,
   Loader2,
+  Settings,
 } from 'lucide-react'
 import { api, routes } from '@/lib/api'
 import { cn, relativeTime, formatNumber } from '@/lib/utils'
@@ -24,7 +24,6 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
-import { Progress } from '@/components/ui/progress'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -63,7 +62,7 @@ const AGENTS: {
   label: string
   description: string
   icon: React.ElementType
-  gradient: string
+  iconBg: string
   iconColor: string
   routeKey: 'geoAgent' | 'seoAgent' | 'growthAgent'
 }[] = [
@@ -71,9 +70,9 @@ const AGENTS: {
     type: 'geo',
     label: 'GEO Agent',
     description: 'Audits AI model citations, detects brand mentions, and maps generative visibility gaps across ChatGPT, Gemini, Claude, and Perplexity.',
-    icon: Globe,
-    gradient: 'from-blue-500 to-teal-400',
-    iconColor: 'text-blue-100',
+    icon: Brain,
+    iconBg: 'bg-[var(--ember)]/10',
+    iconColor: 'text-[var(--ember)]',
     routeKey: 'geoAgent',
   },
   {
@@ -81,22 +80,22 @@ const AGENTS: {
     label: 'SEO Agent',
     description: 'Crawls keyword rankings, identifies content gaps, and surfaces link opportunities to grow organic search authority.',
     icon: Search,
-    gradient: 'from-purple-500 to-violet-400',
-    iconColor: 'text-purple-100',
+    iconBg: 'bg-[var(--info)]/10',
+    iconColor: 'text-[var(--info)]',
     routeKey: 'seoAgent',
   },
   {
     type: 'growth',
     label: 'Growth Agent',
     description: 'Analyses funnel conversion signals, competitive positioning, and recommends high-leverage growth experiments.',
-    icon: TrendingUp,
-    gradient: 'from-ember to-orange-400',
-    iconColor: 'text-orange-100',
+    icon: Zap,
+    iconBg: 'bg-[var(--success)]/10',
+    iconColor: 'text-[var(--success)]',
     routeKey: 'growthAgent',
   },
 ]
 
-// ─── CSS Sparkle effect (pure CSS animation, no external lib) ─────────────────
+// ─── CSS Sparkle effect ────────────────────────────────────────────────────────
 
 const sparkleKeyframes = `
 @keyframes sparkle-pop {
@@ -108,7 +107,6 @@ const sparkleKeyframes = `
 
 function SparkleOverlay({ active }: { active: boolean }) {
   if (!active) return null
-
   const particles = Array.from({ length: 18 }, (_, i) => {
     const angle = (i / 18) * 360
     const dist = 40 + Math.random() * 60
@@ -120,14 +118,13 @@ function SparkleOverlay({ active }: { active: boolean }) {
     const colors = ['#C2410C', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899']
     const color = colors[i % colors.length]
     const size = 4 + Math.random() * 6
-
     return { tx, ty, tx2, ty2, delay, color, size }
   })
 
   return (
     <>
       <style>{sparkleKeyframes}</style>
-      <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-xl" aria-hidden="true">
+      <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-2xl" aria-hidden="true">
         {particles.map((p, i) => (
           <div
             key={i}
@@ -153,21 +150,6 @@ function SparkleOverlay({ active }: { active: boolean }) {
   )
 }
 
-// ─── Indeterminate shimmer progress ──────────────────────────────────────────
-
-function IndeterminateProgress() {
-  return (
-    <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-surface border border-border">
-      <motion.div
-        className="absolute inset-y-0 w-1/3 rounded-full bg-ember"
-        animate={{ x: ['−100%', '400%'] }}
-        transition={{ repeat: Infinity, duration: 1.4, ease: 'linear' }}
-        style={{ left: 0 }}
-      />
-    </div>
-  )
-}
-
 // ─── Status helpers ────────────────────────────────────────────────────────────
 
 function statusBadgeVariant(s: AgentStatus): 'outline' | 'info' | 'success' | 'danger' {
@@ -188,7 +170,7 @@ function StatusIcon({ status }: { status: AgentStatus }) {
   }
 }
 
-function duration(run: AgentRun): string {
+function durationStr(run: AgentRun): string {
   if (!run.completed_at) return '—'
   const ms = new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()
   const secs = Math.floor(ms / 1000)
@@ -224,113 +206,97 @@ function AgentCard({
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: SPRING }}
-      className="relative bg-paper border border-border rounded-xl shadow-sm overflow-hidden"
+      className="relative rounded-2xl border border-[var(--border)] bg-white/70 p-6 flex flex-col overflow-hidden"
     >
-      {/* Sparkle on complete */}
       <SparkleOverlay active={justCompleted} />
 
-      {/* Gradient header */}
-      <div className={cn('p-5 bg-gradient-to-br', agentDef.gradient)}>
-        <div className="flex items-start justify-between">
-          <div className={cn('p-2.5 rounded-lg bg-white/20', agentDef.iconColor)}>
-            <Icon className="h-6 w-6" />
-          </div>
-          <Badge variant={statusBadgeVariant(status)} size="sm" dot={status !== 'running'}>
-            {status === 'running' ? (
-              <span className="flex items-center gap-1">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Running
-              </span>
-            ) : status}
-          </Badge>
-        </div>
-        <h3 className="mt-3 font-display text-xl font-semibold text-white">{agentDef.label}</h3>
+      {/* Icon circle */}
+      <div className={cn('w-14 h-14 rounded-full flex items-center justify-center mb-4', agentDef.iconBg)}>
+        <Icon className={cn('h-6 w-6', agentDef.iconColor)} />
       </div>
 
-      {/* Body */}
-      <div className="p-5 space-y-4">
-        <p className="text-sm text-dim leading-relaxed">{agentDef.description}</p>
+      {/* Name */}
+      <h3 className="font-display text-xl text-[var(--ink)]">{agentDef.label}</h3>
 
-        {/* Running progress */}
-        <AnimatePresence>
-          {isRunning && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.25 }}
-            >
-              <IndeterminateProgress />
-            </motion.div>
-          )}
-        </AnimatePresence>
+      {/* Description */}
+      <p className="text-sm text-[var(--dim)] mt-1 leading-relaxed flex-1">{agentDef.description}</p>
 
-        {/* Last run */}
-        {state?.last_run_at && (
-          <div className="flex items-center gap-1.5 text-xs text-dim">
-            <Clock className="h-3 w-3 shrink-0" />
-            <span>Last run {relativeTime(state.last_run_at)}</span>
-            {state.actions_generated != null && (
-              <>
-                <span className="mx-1">·</span>
-                <Zap className="h-3 w-3 text-ember shrink-0" />
-                <span>{formatNumber(state.actions_generated)} actions</span>
-              </>
-            )}
-          </div>
-        )}
+      {/* Status badge */}
+      <div className="mt-3">
+        <Badge variant={statusBadgeVariant(status)} size="sm" dot={status !== 'running'}>
+          {status === 'running' ? (
+            <span className="flex items-center gap-1">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Running
+            </span>
+          ) : status}
+        </Badge>
+      </div>
 
-        {/* Run now */}
+      {/* Last run */}
+      {state?.last_run_at && (
+        <div className="flex items-center gap-1.5 text-xs text-[var(--dim)] mt-3">
+          <Clock className="h-3 w-3 shrink-0" />
+          <span>Last run {relativeTime(state.last_run_at)}</span>
+        </div>
+      )}
+
+      {/* Footer row */}
+      <div className="flex items-center gap-2 mt-4">
         <Button
-          className="w-full"
+          size="sm"
           onClick={onRun}
           loading={running || isRunning}
           disabled={isRunning}
+          className="flex-1"
         >
-          <Play className="h-4 w-4" />
+          <Play className="h-3.5 w-3.5" />
           {isRunning ? 'Running…' : 'Run Now'}
         </Button>
-
-        {/* Expand toggle */}
-        {recentRuns.length > 0 && (
-          <button
-            onClick={() => setExpanded((v) => !v)}
-            className="w-full flex items-center justify-between text-xs text-dim hover:text-ink transition-colors py-1"
-          >
-            <span>Recent runs ({recentRuns.length})</span>
-            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          </button>
-        )}
-
-        {/* Expanded run list */}
-        <AnimatePresence>
-          {expanded && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.28, ease: SPRING }}
-              className="overflow-hidden"
-            >
-              <div className="space-y-2 pt-1">
-                {recentRuns.slice(0, 5).map((run) => (
-                  <div
-                    key={run.id}
-                    className="flex items-center gap-2 text-xs py-2 border-b border-border last:border-0"
-                  >
-                    <StatusIcon status={run.status} />
-                    <Badge variant={statusBadgeVariant(run.status)} size="sm">{run.status}</Badge>
-                    <span className="text-dim flex-1 text-right">{relativeTime(run.started_at)}</span>
-                    {run.actions_generated != null && (
-                      <span className="font-mono text-dim">{run.actions_generated} actions</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <Button size="sm" variant="outline">
+          <Settings className="h-3.5 w-3.5" />
+          Configure
+        </Button>
       </div>
+
+      {/* Expand recent runs */}
+      {recentRuns.length > 0 && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="w-full flex items-center justify-between text-xs text-[var(--dim)] hover:text-[var(--ink)] transition-colors py-1 mt-3"
+        >
+          <span>Recent runs ({recentRuns.length})</span>
+          {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+        </button>
+      )}
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.28, ease: SPRING }}
+            className="overflow-hidden"
+          >
+            <div className="space-y-2 pt-1">
+              {recentRuns.slice(0, 5).map((run) => (
+                <div
+                  key={run.id}
+                  className="flex items-center gap-2 text-xs py-2 border-b border-[var(--border)] last:border-0"
+                >
+                  <StatusIcon status={run.status} />
+                  <Badge variant={statusBadgeVariant(run.status)} size="sm">{run.status}</Badge>
+                  <span className="text-[var(--dim)] flex-1 text-right">{relativeTime(run.started_at)}</span>
+                  {run.actions_generated != null && (
+                    <span className="font-mono text-[var(--dim)]">{run.actions_generated} actions</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   )
 }
@@ -366,47 +332,44 @@ function RunDetailPanel({
       transition={{ duration: 0.32, ease: SPRING }}
       className="h-full flex flex-col overflow-hidden"
     >
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 p-5 border-b border-border shrink-0">
+      <div className="flex items-start justify-between gap-3 p-5 border-b border-[var(--border)] shrink-0">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Badge variant={statusBadgeVariant(run.status)} size="sm" dot>{run.status}</Badge>
-            <span className="text-xs font-mono text-dim uppercase">{run.agent_type} agent</span>
+            <span className="text-xs font-mono text-[var(--dim)] uppercase">{run.agent_type} agent</span>
           </div>
-          <h3 className="font-display text-lg font-semibold text-ink">Run Details</h3>
-          <p className="text-xs text-dim mt-0.5">{relativeTime(run.started_at)}</p>
+          <h3 className="font-display text-lg font-semibold text-[var(--ink)]">Run Details</h3>
+          <p className="text-xs text-[var(--dim)] mt-0.5">{relativeTime(run.started_at)}</p>
         </div>
         <button
           onClick={onClose}
-          className="p-1.5 rounded-md hover:bg-surface transition-colors text-dim hover:text-ink shrink-0"
+          className="p-1.5 rounded-md hover:bg-[var(--surface)] transition-colors text-[var(--dim)] hover:text-[var(--ink)] shrink-0"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
 
-      {/* Metrics */}
-      <div className="grid grid-cols-2 gap-3 p-5 border-b border-border shrink-0">
-        <div className="bg-surface rounded-lg p-3 border border-border">
-          <p className="text-xs text-dim mb-1">Duration</p>
-          <p className="font-display text-xl font-semibold text-ink">{duration(run)}</p>
+      <div className="grid grid-cols-2 gap-3 p-5 border-b border-[var(--border)] shrink-0">
+        <div className="bg-[var(--surface)] rounded-lg p-3 border border-[var(--border)]">
+          <p className="text-xs text-[var(--dim)] mb-1">Duration</p>
+          <p className="font-display text-xl font-semibold text-[var(--ink)]">{durationStr(run)}</p>
         </div>
-        <div className="bg-surface rounded-lg p-3 border border-border">
-          <p className="text-xs text-dim mb-1">Actions</p>
-          <p className="font-display text-xl font-semibold text-ink">{run.actions_generated ?? '—'}</p>
+        <div className="bg-[var(--surface)] rounded-lg p-3 border border-[var(--border)]">
+          <p className="text-xs text-[var(--dim)] mb-1">Actions</p>
+          <p className="font-display text-xl font-semibold text-[var(--ink)]">{run.actions_generated ?? '—'}</p>
         </div>
       </div>
 
-      {/* Actions list */}
       <div className="flex-1 overflow-y-auto p-5">
-        <p className="text-xs text-dim uppercase tracking-wide font-semibold mb-3">Generated Actions</p>
+        <p className="text-xs text-[var(--dim)] uppercase tracking-wide font-semibold mb-3">Generated Actions</p>
         {isLoading ? (
           <div className="space-y-2">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="h-12 bg-surface rounded-md animate-pulse" />
+              <div key={i} className="h-12 bg-[var(--surface)] rounded-md animate-pulse" />
             ))}
           </div>
         ) : actions.length === 0 ? (
-          <p className="text-sm text-dim">No actions recorded for this run.</p>
+          <p className="text-sm text-[var(--dim)]">No actions recorded for this run.</p>
         ) : (
           <motion.ul
             initial="hidden"
@@ -421,13 +384,13 @@ function RunDetailPanel({
                   hidden: { opacity: 0, x: 12 },
                   visible: { opacity: 1, x: 0, transition: { duration: 0.25, ease: SPRING } },
                 }}
-                className="flex items-start gap-2.5 p-3 bg-surface rounded-lg border border-border"
+                className="flex items-start gap-2.5 p-3 bg-[var(--surface)] rounded-lg border border-[var(--border)]"
               >
-                <Zap className="h-4 w-4 text-ember shrink-0 mt-0.5" />
+                <Zap className="h-4 w-4 text-[var(--ember)] shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-ink">{action.title}</p>
+                  <p className="text-sm font-medium text-[var(--ink)]">{action.title}</p>
                   {action.description && (
-                    <p className="text-xs text-dim mt-0.5 leading-relaxed">{action.description}</p>
+                    <p className="text-xs text-[var(--dim)] mt-0.5 leading-relaxed">{action.description}</p>
                   )}
                 </div>
               </motion.li>
@@ -441,10 +404,10 @@ function RunDetailPanel({
 
 // ─── Run History Table ─────────────────────────────────────────────────────────
 
-const AGENT_TYPE_META: Record<AgentType, { label: string; gradient: string }> = {
-  geo: { label: 'GEO Agent', gradient: 'from-blue-500 to-teal-400' },
-  seo: { label: 'SEO Agent', gradient: 'from-purple-500 to-violet-400' },
-  growth: { label: 'Growth Agent', gradient: 'from-ember to-orange-400' },
+const AGENT_TYPE_META: Record<AgentType, { label: string }> = {
+  geo: { label: 'GEO Agent' },
+  seo: { label: 'SEO Agent' },
+  growth: { label: 'Growth Agent' },
 }
 
 function RunHistoryTable({
@@ -458,23 +421,21 @@ function RunHistoryTable({
 }) {
   if (runs.length === 0) {
     return (
-      <div className="flex items-center justify-center h-32 rounded-lg border border-dashed border-border">
-        <p className="text-sm text-dim">No runs yet. Fire an agent to get started.</p>
+      <div className="flex items-center justify-center h-32 rounded-lg border border-dashed border-[var(--border)]">
+        <p className="text-sm text-[var(--dim)]">No runs yet. Fire an agent to get started.</p>
       </div>
     )
   }
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden">
-      {/* Table head */}
-      <div className="grid grid-cols-[1fr_120px_120px_120px_80px_80px] gap-3 px-4 py-2.5 bg-surface border-b border-border">
+    <div className="rounded-lg border border-[var(--border)] overflow-hidden">
+      <div className="grid grid-cols-[1fr_120px_120px_120px_80px_80px] gap-3 px-4 py-2.5 bg-[var(--surface)] border-b border-[var(--border)]">
         {['Agent', 'Status', 'Started', 'Completed', 'Duration', 'Actions'].map((h) => (
-          <span key={h} className="text-xs font-semibold text-dim uppercase tracking-wide">{h}</span>
+          <span key={h} className="text-xs font-semibold text-[var(--dim)] uppercase tracking-wide">{h}</span>
         ))}
       </div>
 
-      {/* Rows */}
-      <div className="divide-y divide-border">
+      <div className="divide-y divide-[var(--border)]">
         <AnimatePresence initial={false}>
           {runs.map((run, i) => {
             const meta = AGENT_TYPE_META[run.agent_type]
@@ -488,16 +449,11 @@ function RunHistoryTable({
                 onClick={() => onSelect(run)}
                 className={cn(
                   'w-full grid grid-cols-[1fr_120px_120px_120px_80px_80px] gap-3 px-4 py-3 text-left',
-                  'hover:bg-surface/70 transition-colors',
-                  isSelected && 'bg-surface ring-1 ring-inset ring-ember/30'
+                  'hover:bg-[var(--surface)]/70 transition-colors',
+                  isSelected && 'bg-[var(--surface)] ring-1 ring-inset ring-[var(--ember)]/30'
                 )}
               >
-                {/* Agent type */}
-                <div className="flex items-center gap-2">
-                  <div className={cn('w-2 h-2 rounded-full bg-gradient-to-r shrink-0', meta.gradient)} />
-                  <span className="text-sm font-medium text-ink">{meta.label}</span>
-                </div>
-                {/* Status */}
+                <span className="text-sm font-medium text-[var(--ink)]">{meta.label}</span>
                 <div>
                   <Badge variant={statusBadgeVariant(run.status)} size="sm" dot={run.status !== 'running'}>
                     {run.status === 'running' ? (
@@ -508,14 +464,10 @@ function RunHistoryTable({
                     ) : run.status}
                   </Badge>
                 </div>
-                {/* Started */}
-                <span className="text-xs text-dim self-center">{relativeTime(run.started_at)}</span>
-                {/* Completed */}
-                <span className="text-xs text-dim self-center">{run.completed_at ? relativeTime(run.completed_at) : '—'}</span>
-                {/* Duration */}
-                <span className="text-xs font-mono text-dim self-center">{duration(run)}</span>
-                {/* Actions */}
-                <span className="text-xs font-mono text-ink self-center">{run.actions_generated ?? '—'}</span>
+                <span className="text-xs text-[var(--dim)] self-center">{relativeTime(run.started_at)}</span>
+                <span className="text-xs text-[var(--dim)] self-center">{run.completed_at ? relativeTime(run.completed_at) : '—'}</span>
+                <span className="text-xs font-mono text-[var(--dim)] self-center">{durationStr(run)}</span>
+                <span className="text-xs font-mono text-[var(--ink)] self-center">{run.actions_generated ?? '—'}</span>
               </motion.button>
             )
           })}
@@ -535,7 +487,6 @@ export default function AgentsPage() {
   const [justCompleted, setJustCompleted] = useState<Record<AgentType, boolean>>({ geo: false, seo: false, growth: false })
   const [runningAgents, setRunningAgents] = useState<Record<AgentType, boolean>>({ geo: false, seo: false, growth: false })
 
-  // Fetch agent states
   const agentQueries = AGENTS.map((a) =>
     // eslint-disable-next-line react-hooks/rules-of-hooks
     useQuery({
@@ -554,7 +505,6 @@ export default function AgentsPage() {
     growth: agentQueries[2].data as AgentState | undefined,
   }
 
-  // Detect running → completed to fire sparkle
   useEffect(() => {
     AGENTS.forEach((a) => {
       const cur = agentStates[a.type]?.status ?? 'idle'
@@ -567,7 +517,6 @@ export default function AgentsPage() {
     })
   })
 
-  // Run history
   const { data: historyData, isLoading: historyLoading } = useQuery({
     queryKey: ['agent-runs-history', slug, brandId],
     queryFn: () =>
@@ -599,19 +548,19 @@ export default function AgentsPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
-      {/* Page header */}
+      {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.32, ease: SPRING }}
       >
-        <h1 className="font-display text-3xl font-semibold text-ink">AI Agents</h1>
-        <p className="text-sm text-dim mt-1">Autonomous intelligence runners</p>
+        <h1 className="font-display text-3xl font-semibold text-[var(--ink)]">AI Agents</h1>
+        <p className="text-sm text-[var(--dim)] mt-1">Specialized intelligence modules</p>
       </motion.div>
 
       {/* Agent cards */}
       {isLoading ? (
-        <div className="grid grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {[0, 1, 2].map((i) => <SkeletonCard key={i} />)}
         </div>
       ) : (
@@ -650,13 +599,12 @@ export default function AgentsPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
-          className="font-display text-xl font-semibold text-ink mb-4"
+          className="font-display text-xl font-semibold text-[var(--ink)] mb-4"
         >
           Run History
         </motion.h2>
 
         <div className="flex gap-5 items-start">
-          {/* Table */}
           <div className="flex-1 min-w-0">
             {historyLoading ? (
               <SkeletonCard />
@@ -669,7 +617,6 @@ export default function AgentsPage() {
             )}
           </div>
 
-          {/* Slide-in detail panel */}
           <AnimatePresence>
             {selectedRun && (
               <motion.div
@@ -678,7 +625,7 @@ export default function AgentsPage() {
                 animate={{ opacity: 1, width: '380px' }}
                 exit={{ opacity: 0, width: 0 }}
                 transition={{ duration: 0.32, ease: SPRING }}
-                className="shrink-0 overflow-hidden rounded-xl border border-border bg-paper shadow-md sticky top-4"
+                className="shrink-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--paper)] shadow-md sticky top-4"
                 style={{ maxHeight: 'calc(100vh - 120px)' }}
               >
                 <RunDetailPanel

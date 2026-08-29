@@ -5,8 +5,8 @@ import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  FileText, Globe, Search, MapPin, Swords, LayoutGrid,
-  Plus, Download, RefreshCw, Share2, Calendar, AlertCircle,
+  Eye, Globe, Users, Search, FileText,
+  Plus, Download, RefreshCw, Share2, AlertCircle,
   CheckCircle2, Clock,
 } from 'lucide-react'
 import { api, routes } from '@/lib/api'
@@ -53,20 +53,53 @@ interface ReportSummary {
 
 const SPRING = { type: 'spring', stiffness: 320, damping: 28 } as const
 
-// ─── Report type helpers ──────────────────────────────────────────────────────
+// ─── Report type config ───────────────────────────────────────────────────────
 
-function ReportTypeIcon({ type, className }: { type: ReportType; className?: string }) {
-  const cls = cn('h-5 w-5', className)
-  switch (type) {
-    case 'visibility': return <Globe className={cls} />
-    case 'seo': return <Search className={cls} />
-    case 'geo': return <MapPin className={cls} />
-    case 'competitive': return <Swords className={cls} />
-    case 'comprehensive': return <LayoutGrid className={cls} />
-  }
+interface ReportTypeDef {
+  type: ReportType
+  title: string
+  description: string
+  icon: React.ElementType
+  iconBg: string
+  iconColor: string
 }
 
-function reportTypeLabel(t: ReportType) {
+const REPORT_TYPE_DEFS: ReportTypeDef[] = [
+  {
+    type: 'visibility',
+    title: 'Visibility Report',
+    description: 'Track how your brand appears across AI models and generative search surfaces.',
+    icon: Eye,
+    iconBg: 'bg-[var(--info)]/10',
+    iconColor: 'text-[var(--info)]',
+  },
+  {
+    type: 'geo',
+    title: 'GEO Performance',
+    description: 'Measure your generative engine optimization score across query categories.',
+    icon: Globe,
+    iconBg: 'bg-[var(--ember)]/10',
+    iconColor: 'text-[var(--ember)]',
+  },
+  {
+    type: 'competitive',
+    title: 'Competitive Intel',
+    description: 'Compare AI recommendations for your brand vs. top competitors.',
+    icon: Users,
+    iconBg: 'bg-purple-500/10',
+    iconColor: 'text-purple-600',
+  },
+  {
+    type: 'seo',
+    title: 'SEO Analysis',
+    description: 'Keyword ranking trends and content gap opportunities in organic search.',
+    icon: Search,
+    iconBg: 'bg-[var(--success)]/10',
+    iconColor: 'text-[var(--success)]',
+  },
+]
+
+function reportTypeLabel(t: ReportType): string {
   const map: Record<ReportType, string> = {
     visibility: 'Visibility',
     seo: 'SEO',
@@ -77,126 +110,18 @@ function reportTypeLabel(t: ReportType) {
   return map[t]
 }
 
-function reportTypeColor(t: ReportType) {
-  switch (t) {
-    case 'visibility': return 'text-blue-600 bg-blue-50'
-    case 'seo': return 'text-violet-600 bg-violet-50'
-    case 'geo': return 'text-emerald-600 bg-emerald-50'
-    case 'competitive': return 'text-red-600 bg-red-50'
-    case 'comprehensive': return 'text-amber-600 bg-amber-50'
+function statusBadgeVariant(s: ReportStatus): 'success' | 'danger' | 'warning' {
+  const map: Record<ReportStatus, 'success' | 'danger' | 'warning'> = {
+    completed: 'success',
+    failed: 'danger',
+    pending: 'warning',
   }
+  return map[s]
 }
 
-// ─── Report card ──────────────────────────────────────────────────────────────
-
-function ReportCard({
-  report, slug, brandId, index, onClick,
-}: {
-  report: Report
-  slug: string
-  brandId: string
-  index: number
-  onClick: () => void
-}) {
-  const queryClient = useQueryClient()
-
-  const retryMutation = useMutation({
-    mutationFn: () => api.post(routes.reports(slug, brandId), {
-      name: report.name, type: report.type, format: report.format,
-    }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['reports', slug, brandId] }),
-  })
-
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, scale: 0.96, y: 10 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ ...SPRING, delay: index * 0.04 }}
-      whileHover={report.status === 'completed' ? { y: -2, boxShadow: '0 4px 24px 0 rgba(194,65,12,0.10)' } : {}}
-      className={cn(
-        'rounded-xl border bg-paper p-5 cursor-pointer transition-[border-color] duration-200',
-        report.status === 'completed'
-          ? 'border-border hover:border-ember/40'
-          : 'border-border',
-      )}
-      onClick={report.status === 'completed' ? onClick : undefined}
-    >
-      {/* Icon + name */}
-      <div className="flex items-start gap-3 mb-4">
-        <div className={cn('rounded-lg p-2.5 shrink-0', reportTypeColor(report.type))}>
-          <ReportTypeIcon type={report.type} className="h-4 w-4" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-sm text-ink leading-snug truncate">{report.name}</h3>
-          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-            <Badge variant="outline" size="sm">{reportTypeLabel(report.type)}</Badge>
-            <Badge variant="default" size="sm" className="font-mono text-[10px]">{report.format}</Badge>
-          </div>
-        </div>
-      </div>
-
-      {/* Status area */}
-      <div className="space-y-2.5">
-        {report.status === 'pending' && (
-          <div className="flex items-center gap-2 text-sm text-dim">
-            <Spinner className="h-3.5 w-3.5" />
-            <span>Generating…</span>
-          </div>
-        )}
-
-        {report.status === 'completed' && (
-          <>
-            <div className="flex items-center gap-1.5 text-success text-xs font-medium">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              Ready
-            </div>
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <span className="text-xs text-dim flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                {report.completed_at ? relativeTime(report.completed_at) : '—'}
-              </span>
-              {report.metadata?.file_size && (
-                <span className="text-xs font-mono text-dim">{report.metadata.file_size}</span>
-              )}
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full gap-1.5"
-              onClick={(e) => { e.stopPropagation(); window.open(report.file_path ?? '#', '_blank') }}
-            >
-              <Download className="h-3.5 w-3.5" />
-              Download
-            </Button>
-          </>
-        )}
-
-        {report.status === 'failed' && (
-          <>
-            <div className="flex items-center gap-1.5 text-danger text-xs font-medium">
-              <AlertCircle className="h-3.5 w-3.5" />
-              Failed
-            </div>
-            {report.metadata?.error && (
-              <p className="text-xs text-dim leading-relaxed">{report.metadata.error}</p>
-            )}
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full gap-1.5"
-              onClick={(e) => { e.stopPropagation(); retryMutation.mutate() }}
-              loading={retryMutation.isPending}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Retry
-            </Button>
-          </>
-        )}
-      </div>
-    </motion.div>
-  )
+function statusLabel(s: ReportStatus): string {
+  const map: Record<ReportStatus, string> = { completed: 'Ready', failed: 'Failed', pending: 'Generating' }
+  return map[s]
 }
 
 // ─── Report preview modal ─────────────────────────────────────────────────────
@@ -241,7 +166,7 @@ function ReportPreviewModal({
           {isLoading ? (
             <div className="flex justify-center py-10"><Spinner /></div>
           ) : sections.length === 0 ? (
-            <p className="text-sm text-dim text-center py-8">No sections available for preview.</p>
+            <p className="text-sm text-[var(--dim)] text-center py-8">No sections available for preview.</p>
           ) : (
             <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
               {sections.map((s, i) => (
@@ -250,10 +175,10 @@ function ReportPreviewModal({
                   initial={{ opacity: 0, x: -8 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.05 }}
-                  className="border border-border rounded-lg p-4"
+                  className="border border-[var(--border)] rounded-lg p-4"
                 >
-                  <h4 className="text-sm font-semibold text-ink mb-1">{s.title}</h4>
-                  <p className="text-xs text-dim leading-relaxed">{s.summary}</p>
+                  <h4 className="text-sm font-semibold text-[var(--ink)] mb-1">{s.title}</h4>
+                  <p className="text-xs text-[var(--dim)] leading-relaxed">{s.summary}</p>
                 </motion.div>
               ))}
             </div>
@@ -280,13 +205,13 @@ function ReportPreviewModal({
 // ─── Generate Report Modal ────────────────────────────────────────────────────
 
 function GenerateReportModal({
-  open, onClose, slug, brandId,
+  open, onClose, slug, brandId, defaultType,
 }: {
-  open: boolean; onClose: () => void; slug: string; brandId: string
+  open: boolean; onClose: () => void; slug: string; brandId: string; defaultType?: ReportType
 }) {
   const queryClient = useQueryClient()
   const [form, setForm] = useState<{ name: string; type: ReportType; format: ReportFormat }>({
-    name: '', type: 'comprehensive', format: 'PDF',
+    name: '', type: defaultType ?? 'comprehensive', format: 'PDF',
   })
 
   const mutation = useMutation({
@@ -314,7 +239,7 @@ function GenerateReportModal({
             placeholder="e.g. Q3 Visibility Brief"
           />
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-ink font-sans">Type</label>
+            <label className="text-sm font-medium text-[var(--ink)] font-sans">Type</label>
             <Select value={form.type} onValueChange={(v) => setForm((f) => ({ ...f, type: v as ReportType }))}>
               <SelectTrigger>
                 <SelectValue />
@@ -329,7 +254,7 @@ function GenerateReportModal({
             </Select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-ink font-sans">Format</label>
+            <label className="text-sm font-medium text-[var(--ink)] font-sans">Format</label>
             <div className="flex gap-2">
               {(['PDF', 'HTML', 'JSON'] as ReportFormat[]).map((fmt) => (
                 <button
@@ -338,8 +263,8 @@ function GenerateReportModal({
                   className={cn(
                     'flex-1 h-10 rounded-md border text-sm font-mono font-medium transition-all',
                     form.format === fmt
-                      ? 'border-ember bg-ember/5 text-ember'
-                      : 'border-border text-dim hover:border-border-strong hover:text-ink',
+                      ? 'border-[var(--ember)] bg-[var(--ember)]/5 text-[var(--ember)]'
+                      : 'border-[var(--border)] text-[var(--dim)] hover:text-[var(--ink)]',
                   )}
                 >
                   {fmt}
@@ -364,6 +289,7 @@ function GenerateReportModal({
 export default function ReportsPage() {
   const { slug, brandId } = useParams<{ slug: string; brandId: string }>()
   const [showGenerate, setShowGenerate] = useState(false)
+  const [generateType, setGenerateType] = useState<ReportType | undefined>()
   const [previewId, setPreviewId] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
@@ -380,7 +306,21 @@ export default function ReportsPage() {
     queryFn: () => api.get<ReportSummary>(`${routes.reports(slug, brandId)}/summary`),
   })
 
+  const queryClient = useQueryClient()
+
+  const retryMutation = useMutation({
+    mutationFn: (report: Report) => api.post(routes.reports(slug, brandId), {
+      name: report.name, type: report.type, format: report.format,
+    }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['reports', slug, brandId] }),
+  })
+
   const reports = data?.reports ?? []
+
+  function openGenerate(type?: ReportType) {
+    setGenerateType(type)
+    setShowGenerate(true)
+  }
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -389,74 +329,150 @@ export default function ReportsPage() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={SPRING}
-        className="flex items-start justify-between mb-6"
+        className="flex items-start justify-between mb-8"
       >
         <div>
-          <h1 className="font-display text-3xl font-semibold text-ink flex items-center gap-2.5">
-            <FileText className="h-7 w-7 text-ember" />
-            Reports
-          </h1>
-          <p className="text-sm text-dim mt-1">Intelligence briefs &amp; exports</p>
+          <h1 className="font-display text-3xl font-semibold text-[var(--ink)]">Reports</h1>
+          <p className="text-sm text-[var(--dim)] mt-1">Intelligence briefs &amp; exports</p>
         </div>
-        <Button onClick={() => setShowGenerate(true)} className="gap-2">
+        <Button onClick={() => openGenerate()} className="gap-2">
           <Plus className="h-4 w-4" />
           Generate Report
         </Button>
       </motion.div>
 
-      {/* Summary bar */}
-      <AnimatePresence>
-        {summary && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            className="flex items-center gap-6 bg-surface border border-border rounded-lg px-5 py-3 mb-6 text-sm text-dim"
-          >
-            <span className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-success" />
-              <strong className="text-ink">{summary.generated_this_month}</strong> generated this month
-            </span>
-            <span className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-info" />
-              <strong className="text-ink">{summary.scheduled}</strong> scheduled
-            </span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Report type cards 2×2 grid */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ ...SPRING, delay: 0.05 }}
+        className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8"
+      >
+        {REPORT_TYPE_DEFS.map((def) => {
+          const Icon = def.icon
+          return (
+            <div
+              key={def.type}
+              className="rounded-xl border border-[var(--border)] bg-white/70 p-6 flex gap-4"
+            >
+              <div className={cn('w-12 h-12 rounded-full flex items-center justify-center shrink-0', def.iconBg)}>
+                <Icon className={cn('h-5 w-5', def.iconColor)} />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <h3 className="font-display text-lg text-[var(--ink)]">{def.title}</h3>
+                <p className="text-sm text-[var(--dim)] mt-1 leading-relaxed flex-1">{def.description}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 w-fit"
+                  onClick={() => openGenerate(def.type)}
+                >
+                  Generate →
+                </Button>
+              </div>
+            </div>
+          )
+        })}
+      </motion.div>
 
-      {/* Grid */}
-      {isLoading ? (
-        <div className="grid grid-cols-3 gap-4">
-          {[0, 1, 2, 3, 4, 5].map((i) => <SkeletonCard key={i} />)}
-        </div>
-      ) : reports.length === 0 ? (
-        <EmptyState
-          title="No reports yet"
-          description="Generate your first intelligence brief to share AI visibility insights."
-          action={<Button onClick={() => setShowGenerate(true)} className="gap-2"><Plus className="h-4 w-4" />Generate Report</Button>}
-        />
-      ) : (
-        <motion.div layout className="grid grid-cols-3 gap-4">
-          <AnimatePresence mode="popLayout">
-            {reports.map((r, i) => (
-              <ReportCard
-                key={r.id}
-                report={r}
-                slug={slug}
-                brandId={brandId}
-                index={i}
-                onClick={() => setPreviewId(r.id)}
-              />
-            ))}
-          </AnimatePresence>
-        </motion.div>
-      )}
+      {/* Generated Reports */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ ...SPRING, delay: 0.1 }}
+      >
+        <h2 className="font-display text-xl text-[var(--ink)] mb-4">Generated Reports</h2>
+
+        {isLoading ? (
+          <div className="space-y-2">
+            {[0, 1, 2].map((i) => <SkeletonCard key={i} className="h-14" />)}
+          </div>
+        ) : reports.length === 0 ? (
+          <EmptyState
+            icon={<FileText className="h-6 w-6" />}
+            title="No reports yet"
+            description="Generate your first intelligence brief to share AI visibility insights."
+            action={<Button onClick={() => openGenerate()} className="gap-2"><Plus className="h-4 w-4" />Generate Report</Button>}
+          />
+        ) : (
+          <div className="rounded-xl border border-[var(--border)] overflow-hidden">
+            {/* Table head */}
+            <div className="grid grid-cols-[1fr_120px_140px_120px_120px] gap-3 px-4 py-2.5 bg-[var(--surface)] border-b border-[var(--border)]">
+              {['Name', 'Type', 'Date', 'Status', ''].map((h, i) => (
+                <span key={i} className="text-xs font-semibold text-[var(--dim)] uppercase tracking-wide">{h}</span>
+              ))}
+            </div>
+            <AnimatePresence initial={false}>
+              {reports.map((r, i) => (
+                <motion.div
+                  key={r.id}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.04, ...SPRING }}
+                  className="grid grid-cols-[1fr_120px_140px_120px_120px] gap-3 px-4 py-3 items-center border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface)]/50 transition-colors"
+                >
+                  <span className="text-sm font-medium text-[var(--ink)] truncate">{r.name}</span>
+                  <Badge variant="outline" size="sm">{reportTypeLabel(r.type)}</Badge>
+                  <span className="text-xs text-[var(--dim)] flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {r.completed_at ? relativeTime(r.completed_at) : '—'}
+                  </span>
+                  <div>
+                    {r.status === 'pending' ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-[var(--warning)]">
+                        <Spinner className="h-3 w-3" />
+                        Generating
+                      </span>
+                    ) : r.status === 'failed' ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-[var(--danger)]">
+                        <AlertCircle className="h-3 w-3" />
+                        Failed
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-[var(--success)]">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Ready
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {r.status === 'completed' && r.file_path && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => window.open(r.file_path ?? '#', '_blank')}
+                        className="gap-1 text-xs"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Download PDF
+                      </Button>
+                    )}
+                    {r.status === 'failed' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => retryMutation.mutate(r)}
+                        loading={retryMutation.isPending}
+                        className="gap-1 text-xs"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Retry
+                      </Button>
+                    )}
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        )}
+      </motion.div>
 
       <GenerateReportModal
         open={showGenerate}
         onClose={() => setShowGenerate(false)}
         slug={slug}
         brandId={brandId}
+        defaultType={generateType}
       />
       <ReportPreviewModal
         reportId={previewId}

@@ -5,18 +5,9 @@ import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  FileText,
-  RefreshCw,
-  CheckCircle,
-  AlertTriangle,
-  Lightbulb,
-  ExternalLink,
-  FileJson,
-  FileSpreadsheet,
-  Clock,
-  ChevronLeft,
-  ChevronRight,
-  Table2,
+  FileText, Plus, RefreshCw, CheckCircle, AlertTriangle,
+  Lightbulb, ExternalLink, FileJson, FileSpreadsheet, Clock,
+  Search, SlidersHorizontal,
 } from 'lucide-react'
 import { api, routes } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -28,19 +19,33 @@ import { ScoreRing } from '@/components/ui/score-ring'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody } from '@/components/ui/modal'
+import { Progress } from '@/components/ui/progress'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
 import { cn, scoreColor, relativeTime } from '@/lib/utils'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
+
+type ContentType = 'blog' | 'whitepaper' | 'case_study' | 'video' | string
+type ContentStatus = 'published' | 'draft' | 'needs_review' | 'optimized'
 
 interface ContentPiece {
   id: string
   title: string
   url: string
   score: number
+  geo_score?: number
   word_count: number
   last_modified: string
-  status: 'published' | 'draft' | 'needs_review' | 'optimized'
+  status: ContentStatus
+  content_type?: ContentType
+  keywords_count?: number
   strengths: string[]
   weaknesses: string[]
   recommendations: string[]
@@ -71,6 +76,8 @@ interface ContentData {
     gaps_found: number
     improvements: number
     pieces_analyzed: number
+    published?: number
+    this_month?: number
     last_analyzed?: string
   }
 }
@@ -79,14 +86,42 @@ interface ContentData {
 
 const SPRING: [number, number, number, number] = [0.16, 1, 0.3, 1]
 
-function statusVariant(s: ContentPiece['status']): 'success' | 'info' | 'warning' | 'outline' {
+function statusVariant(s: ContentStatus): 'success' | 'info' | 'warning' | 'outline' {
   const map = { published: 'success', optimized: 'info', needs_review: 'warning', draft: 'outline' } as const
-  return map[s]
+  return map[s] ?? 'outline'
 }
 
-function statusLabel(s: ContentPiece['status']) {
-  const map = { published: 'Published', optimized: 'Optimized', needs_review: 'Needs Review', draft: 'Draft' }
-  return map[s]
+function statusLabel(s: ContentStatus) {
+  const map: Record<ContentStatus, string> = { published: 'Published', optimized: 'Optimized', needs_review: 'Review', draft: 'Draft' }
+  return map[s] ?? s
+}
+
+function contentTypeBadge(t: ContentType): { label: string; variant: 'info' | 'outline' | 'success' | 'warning' } {
+  const map: Record<string, { label: string; variant: 'info' | 'outline' | 'success' | 'warning' }> = {
+    blog: { label: 'Blog', variant: 'info' },
+    whitepaper: { label: 'Whitepaper', variant: 'outline' },
+    case_study: { label: 'Case Study', variant: 'success' },
+    video: { label: 'Video', variant: 'warning' },
+  }
+  return map[t] ?? { label: t.replace(/_/g, ' '), variant: 'outline' }
+}
+
+// For whitepaper we want purple styling — override inline
+function contentTypeClass(t: ContentType): string {
+  if (t === 'whitepaper') return 'bg-purple-50 text-purple-700 border-purple-200 border rounded-full px-2.5 py-0.5 text-xs font-medium font-sans inline-flex items-center gap-1.5'
+  return ''
+}
+
+function geoScoreProgressVariant(score: number): 'success' | 'warning' | 'danger' {
+  if (score >= 70) return 'success'
+  if (score >= 40) return 'warning'
+  return 'danger'
+}
+
+function geoScoreTextColor(score: number) {
+  if (score >= 70) return 'text-[var(--success)]'
+  if (score >= 40) return 'text-[var(--warning)]'
+  return 'text-[var(--danger)]'
 }
 
 function severityVariant(s: Gap['severity']): 'danger' | 'warning' | 'info' | 'outline' {
@@ -101,146 +136,134 @@ function effortVariant(e: Improvement['effort']): 'success' | 'warning' | 'dange
 
 function priorityHeaderClass(p: Improvement['priority']) {
   const map = {
-    critical: 'text-danger border-danger/20 bg-danger-muted',
-    high: 'text-warning border-warning/20 bg-warning-muted',
-    medium: 'text-info border-info/20 bg-info-muted',
+    critical: 'text-[var(--danger)] border-[color:var(--danger)]/20 bg-red-50',
+    high: 'text-[var(--warning)] border-[color:var(--warning)]/20 bg-amber-50',
+    medium: 'text-[var(--info)] border-[color:var(--info)]/20 bg-blue-50',
   }
   return map[p]
 }
 
-// ─── Clickable Audit Table ─────────────────────────────────────────────────────
+// ─── Content Card ──────────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 10
-
-function AuditTable({
-  pieces,
-  onSelect,
-}: {
-  pieces: ContentPiece[]
-  onSelect: (p: ContentPiece) => void
-}) {
-  const [page, setPage] = useState(0)
-  const total = Math.ceil(pieces.length / PAGE_SIZE)
-  const slice = pieces.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
-
-  if (pieces.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-surface border border-border flex items-center justify-center text-dim">
-          <Table2 className="h-5 w-5" />
-        </div>
-        <p className="text-sm text-dim">No content pieces found.</p>
-      </div>
-    )
-  }
+function ContentCard({ piece, onSelect, index }: { piece: ContentPiece; onSelect: () => void; index: number }) {
+  const geoScore = piece.geo_score ?? piece.score
+  const progressVariant = geoScoreProgressVariant(geoScore)
+  const textColor = geoScoreTextColor(geoScore)
 
   return (
-    <div className="rounded-lg border border-border bg-paper overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm font-sans">
-          <thead className="sticky top-0 bg-surface z-10 border-b border-border">
-            <tr>
-              {['Title', 'URL', 'Score', 'Words', 'Modified', 'Status'].map((h) => (
-                <th key={h} className="text-left py-3 px-4 text-xs font-medium text-dim uppercase tracking-wide whitespace-nowrap">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {slice.map((row, i) => (
-              <motion.tr
-                key={row.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.2, delay: i * 0.04 }}
-                onClick={() => onSelect(row)}
-                className="border-b border-border last:border-0 cursor-pointer hover:bg-surface transition-colors duration-100"
-              >
-                <td className="py-3 px-4 max-w-[220px]">
-                  <span className="block truncate font-medium text-ink">{row.title}</span>
-                </td>
-                <td className="py-3 px-4">
-                  <a
-                    href={row.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="inline-flex items-center gap-1 text-xs font-mono text-dim hover:text-ember transition-colors max-w-[160px] truncate"
-                  >
-                    {row.url.replace(/^https?:\/\//, '').slice(0, 36)}
-                    <ExternalLink className="h-3 w-3 shrink-0" />
-                  </a>
-                </td>
-                <td className="py-3 px-4 w-16">
-                  <ScoreRing score={row.score} size={36} strokeWidth={4} />
-                </td>
-                <td className="py-3 px-4 w-24">
-                  <span className="font-mono text-xs text-dim">{row.word_count.toLocaleString()}</span>
-                </td>
-                <td className="py-3 px-4 w-28">
-                  <span className="text-xs text-dim">{relativeTime(row.last_modified)}</span>
-                </td>
-                <td className="py-3 px-4 w-32">
-                  <Badge variant={statusVariant(row.status)} size="sm">{statusLabel(row.status)}</Badge>
-                </td>
-              </motion.tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {total > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-          <span className="text-xs text-dim">Page {page + 1} of {total}</span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
-              className="p-1.5 rounded-md text-dim hover:text-ink hover:bg-surface disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setPage((p) => Math.min(total - 1, p + 1))}
-              disabled={page === total - 1}
-              className="p-1.5 rounded-md text-dim hover:text-ink hover:bg-surface disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: SPRING, delay: index * 0.05 }}
+      className="rounded-2xl border border-[var(--border)] bg-white/70 p-5 hover:shadow-md transition-shadow cursor-pointer flex flex-col"
+      onClick={onSelect}
+    >
+      {/* Type badge */}
+      {piece.content_type && (() => {
+        const badge = contentTypeBadge(piece.content_type)
+        const cls = contentTypeClass(piece.content_type)
+        if (cls) {
+          return <span className={cls}>{badge.label}</span>
+        }
+        return <Badge variant={badge.variant} size="sm">{badge.label}</Badge>
+      })()}
+
+      {/* Title */}
+      <h3 className="font-display text-lg text-[var(--ink)] mt-2 leading-snug line-clamp-2">
+        {piece.title}
+      </h3>
+
+      {/* GEO Score bar */}
+      <div className="mt-3 mb-4">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[11px] font-medium text-[var(--dim)] uppercase tracking-wide">GEO Score</span>
+          <span className={cn('text-sm font-display font-semibold', textColor)}>{geoScore}/100</span>
         </div>
-      )}
+        <Progress value={geoScore} variant={progressVariant} className="h-1.5" />
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center gap-2 flex-wrap mt-auto">
+        <Badge variant={statusVariant(piece.status)} size="sm">{statusLabel(piece.status)}</Badge>
+        {piece.keywords_count != null && (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[var(--surface)] border border-[var(--border)] text-[11px] font-mono text-[var(--dim)]">
+            {piece.keywords_count} kw
+          </span>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto"
+          onClick={(e) => { e.stopPropagation(); onSelect() }}
+        >
+          View →
+        </Button>
+      </div>
+    </motion.div>
+  )
+}
+
+// ─── Filter Bar ────────────────────────────────────────────────────────────────
+
+interface Filters {
+  type: string
+  status: string
+  sort: string
+}
+
+function FilterBar({ filters, onChange }: { filters: Filters; onChange: (f: Filters) => void }) {
+  return (
+    <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-1.5 text-[var(--dim)]">
+        <SlidersHorizontal className="h-3.5 w-3.5" />
+        <span className="text-xs font-medium uppercase tracking-wide">Filter</span>
+      </div>
+      <Select value={filters.type || 'all'} onValueChange={(v) => onChange({ ...filters, type: v === 'all' ? '' : v })}>
+        <SelectTrigger className="h-8 text-xs w-36">
+          <SelectValue placeholder="All Types" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All Types</SelectItem>
+          <SelectItem value="blog">Blog</SelectItem>
+          <SelectItem value="whitepaper">Whitepaper</SelectItem>
+          <SelectItem value="case_study">Case Study</SelectItem>
+          <SelectItem value="video">Video</SelectItem>
+        </SelectContent>
+      </Select>
+      <Select value={filters.status || 'all'} onValueChange={(v) => onChange({ ...filters, status: v === 'all' ? '' : v })}>
+        <SelectTrigger className="h-8 text-xs w-36">
+          <SelectValue placeholder="All Status" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All Status</SelectItem>
+          <SelectItem value="published">Published</SelectItem>
+          <SelectItem value="draft">Draft</SelectItem>
+          <SelectItem value="needs_review">Needs Review</SelectItem>
+          <SelectItem value="optimized">Optimized</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   )
 }
 
-// ─── Piece Detail Modal ─────────────────────────────────────────────────────────
+// ─── Piece Detail Modal ────────────────────────────────────────────────────────
 
-function PieceModal({
-  piece,
-  open,
-  onClose,
-}: {
-  piece: ContentPiece | null
-  open: boolean
-  onClose: () => void
-}) {
+function PieceModal({ piece, open, onClose }: { piece: ContentPiece | null; open: boolean; onClose: () => void }) {
   if (!piece) return null
+  const geoScore = piece.geo_score ?? piece.score
+  const progressVariant = geoScoreProgressVariant(geoScore)
+  const textColor = geoScoreTextColor(geoScore)
 
   return (
     <Modal open={open} onOpenChange={(v) => !v && onClose()}>
       <ModalContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <ModalHeader>
           <div className="flex items-start gap-3 pr-6">
-            <ScoreRing score={piece.score} size={52} strokeWidth={5} />
+            <ScoreRing score={geoScore} size={52} strokeWidth={5} />
             <div className="flex-1 min-w-0">
               <ModalTitle className="line-clamp-2">{piece.title}</ModalTitle>
-              <a
-                href={piece.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-dim hover:text-ember transition-colors mt-1 font-mono"
-              >
+              <a href={piece.url} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-[var(--dim)] hover:text-[var(--ember)] transition-colors mt-1 font-mono">
                 {piece.url.length > 60 ? piece.url.slice(0, 60) + '…' : piece.url}
                 <ExternalLink className="h-3 w-3" />
               </a>
@@ -248,19 +271,31 @@ function PieceModal({
           </div>
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <Badge variant={statusVariant(piece.status)} size="sm">{statusLabel(piece.status)}</Badge>
-            <span className="text-xs text-dim font-mono">{piece.word_count.toLocaleString()} words</span>
-            <span className="text-xs text-dim">· {relativeTime(piece.last_modified)}</span>
+            {piece.content_type && (() => {
+              const badge = contentTypeBadge(piece.content_type)
+              const cls = contentTypeClass(piece.content_type)
+              if (cls) return <span className={cls}>{badge.label}</span>
+              return <Badge variant={badge.variant} size="sm">{badge.label}</Badge>
+            })()}
+            <span className="text-xs text-[var(--dim)] font-mono">{piece.word_count.toLocaleString()} words</span>
+            <span className="text-xs text-[var(--dim)]">· {relativeTime(piece.last_modified)}</span>
+          </div>
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-medium text-[var(--dim)] uppercase tracking-wide">GEO Score</span>
+              <span className={cn('text-sm font-display font-semibold', textColor)}>{geoScore}/100</span>
+            </div>
+            <Progress value={geoScore} variant={progressVariant} />
           </div>
         </ModalHeader>
         <ModalBody className="space-y-5">
           {piece.strengths.length > 0 && (
             <div>
-              <p className="text-xs font-semibold text-dim uppercase tracking-wide mb-2">Strengths</p>
+              <p className="text-xs font-semibold text-[var(--dim)] uppercase tracking-wide mb-2">Strengths</p>
               <ul className="space-y-1.5">
                 {piece.strengths.map((s, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-ink">
-                    <CheckCircle className="h-4 w-4 text-success shrink-0 mt-0.5" />
-                    {s}
+                  <li key={i} className="flex items-start gap-2 text-sm text-[var(--ink)]">
+                    <CheckCircle className="h-4 w-4 text-[var(--success)] shrink-0 mt-0.5" />{s}
                   </li>
                 ))}
               </ul>
@@ -268,12 +303,11 @@ function PieceModal({
           )}
           {piece.weaknesses.length > 0 && (
             <div>
-              <p className="text-xs font-semibold text-dim uppercase tracking-wide mb-2">Weaknesses</p>
+              <p className="text-xs font-semibold text-[var(--dim)] uppercase tracking-wide mb-2">Weaknesses</p>
               <ul className="space-y-1.5">
                 {piece.weaknesses.map((w, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-ink">
-                    <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
-                    {w}
+                  <li key={i} className="flex items-start gap-2 text-sm text-[var(--ink)]">
+                    <AlertTriangle className="h-4 w-4 text-[var(--warning)] shrink-0 mt-0.5" />{w}
                   </li>
                 ))}
               </ul>
@@ -281,12 +315,11 @@ function PieceModal({
           )}
           {piece.recommendations.length > 0 && (
             <div>
-              <p className="text-xs font-semibold text-dim uppercase tracking-wide mb-2">Recommendations</p>
+              <p className="text-xs font-semibold text-[var(--dim)] uppercase tracking-wide mb-2">Recommendations</p>
               <ul className="space-y-1.5">
                 {piece.recommendations.map((r, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-ink">
-                    <Lightbulb className="h-4 w-4 text-ember shrink-0 mt-0.5" />
-                    {r}
+                  <li key={i} className="flex items-start gap-2 text-sm text-[var(--ink)]">
+                    <Lightbulb className="h-4 w-4 text-[var(--ember)] shrink-0 mt-0.5" />{r}
                   </li>
                 ))}
               </ul>
@@ -295,6 +328,56 @@ function PieceModal({
         </ModalBody>
       </ModalContent>
     </Modal>
+  )
+}
+
+// ─── Content Grid ──────────────────────────────────────────────────────────────
+
+function ContentGrid({ pieces, onSelect }: { pieces: ContentPiece[]; onSelect: (p: ContentPiece) => void }) {
+  const [filters, setFilters] = useState<Filters>({ type: '', status: '', sort: 'modified' })
+
+  const filtered = pieces
+    .filter((p) => !filters.type || p.content_type === filters.type)
+    .filter((p) => !filters.status || p.status === filters.status)
+    .sort((a, b) => {
+      if (filters.sort === 'score_desc') return (b.geo_score ?? b.score) - (a.geo_score ?? a.score)
+      if (filters.sort === 'score_asc') return (a.geo_score ?? a.score) - (b.geo_score ?? b.score)
+      if (filters.sort === 'title') return a.title.localeCompare(b.title)
+      return new Date(b.last_modified).getTime() - new Date(a.last_modified).getTime()
+    })
+
+  if (pieces.length === 0) {
+    return (
+      <EmptyState
+        icon={<FileText className="h-6 w-6" />}
+        title="No content pieces"
+        description="Add your first piece of content to begin tracking GEO performance."
+        action={<Button><Plus className="h-4 w-4" />Add Content</Button>}
+      />
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <FilterBar filters={filters} onChange={setFilters} />
+      {filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <Search className="h-8 w-8 text-[var(--dim)]" />
+          <p className="text-sm text-[var(--dim)]">No content matches these filters.</p>
+          <button onClick={() => setFilters({ type: '', status: '', sort: 'modified' })} className="text-xs text-[var(--ember)] hover:underline">
+            Clear filters
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          <AnimatePresence mode="popLayout">
+            {filtered.map((piece, i) => (
+              <ContentCard key={piece.id} piece={piece} onSelect={() => onSelect(piece)} index={i} />
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -330,11 +413,11 @@ function GapsTab({ gaps }: { gaps: Gap[] }) {
                     </Badge>
                     <Badge variant="outline" size="sm">{gap.gap_type.replace(/_/g, ' ')}</Badge>
                   </div>
-                  <p className="text-sm text-ink leading-relaxed">{gap.description}</p>
+                  <p className="text-sm text-[var(--ink)] leading-relaxed">{gap.description}</p>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="text-xs text-dim mb-0.5">Est. Impact</p>
-                  <p className={cn('text-lg font-display font-semibold', gap.estimated_impact >= 20 ? 'text-success' : 'text-warning')}>
+                  <p className="text-xs text-[var(--dim)] mb-0.5">Est. Impact</p>
+                  <p className={cn('text-lg font-display font-semibold', gap.estimated_impact >= 20 ? 'text-[var(--success)]' : 'text-[var(--warning)]')}>
                     +{gap.estimated_impact}%
                   </p>
                 </div>
@@ -384,13 +467,13 @@ function ImprovementsTab({ improvements }: { improvements: Improvement[] }) {
                   <Card>
                     <CardContent className="p-4 flex items-center gap-4">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-ink">{imp.title}</p>
+                        <p className="text-sm font-medium text-[var(--ink)]">{imp.title}</p>
                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                          <span className="text-xs text-dim">Effort:</span>
+                          <span className="text-xs text-[var(--dim)]">Effort:</span>
                           <Badge variant={effortVariant(imp.effort)} size="sm">
                             {imp.effort.charAt(0).toUpperCase() + imp.effort.slice(1)}
                           </Badge>
-                          <span className="text-xs text-dim ml-1">
+                          <span className="text-xs text-[var(--dim)] ml-1">
                             Impact: <span className={cn('font-semibold', scoreColor(imp.impact_score))}>{imp.impact_score}</span>
                           </span>
                         </div>
@@ -417,7 +500,7 @@ function ExportTab({ slug, brandId }: { slug: string; brandId: string }) {
 
   return (
     <div className="flex flex-col items-center justify-center py-20 gap-6">
-      <p className="text-sm text-dim font-sans text-center max-w-xs leading-relaxed">
+      <p className="text-sm text-[var(--dim)] font-sans text-center max-w-xs leading-relaxed">
         Export your full content analysis for offline review or client reporting.
       </p>
       <div className="flex items-center gap-4">
@@ -432,12 +515,12 @@ function ExportTab({ slug, brandId }: { slug: string; brandId: string }) {
             whileHover={{ scale: 1.03, y: -2 }}
             whileTap={{ scale: 0.97 }}
             onClick={() => downloadAs(format)}
-            className="flex flex-col items-center gap-3 p-8 rounded-xl border border-border bg-surface hover:bg-paper hover:border-ember/40 hover:shadow-md transition-all cursor-pointer group"
+            className="flex flex-col items-center gap-3 p-8 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--paper)] hover:border-[var(--ember)]/40 hover:shadow-md transition-all cursor-pointer group"
           >
-            <Icon className="h-10 w-10 text-dim group-hover:text-ember transition-colors" />
+            <Icon className="h-10 w-10 text-[var(--dim)] group-hover:text-[var(--ember)] transition-colors" />
             <div className="text-center">
-              <p className="font-semibold text-ink text-sm">{label}</p>
-              <p className="text-xs text-dim mt-0.5">{sub}</p>
+              <p className="font-semibold text-[var(--ink)] text-sm">{label}</p>
+              <p className="text-xs text-[var(--dim)] mt-0.5">{sub}</p>
             </div>
           </motion.button>
         ))}
@@ -453,7 +536,7 @@ export default function ContentPage() {
   const qc = useQueryClient()
   const { toast } = useToast()
   const [selectedPiece, setSelectedPiece] = useState<ContentPiece | null>(null)
-  const [activeTab, setActiveTab] = useState('audit')
+  const [activeTab, setActiveTab] = useState('content')
 
   const { data, isLoading } = useQuery({
     queryKey: ['content', slug, brandId],
@@ -475,17 +558,22 @@ export default function ContentPage() {
   const gaps = data?.gaps ?? []
   const improvements = data?.improvements ?? []
   const summary = data?.summary
-  const isEmpty = !isLoading && pieces.length === 0 && gaps.length === 0 && improvements.length === 0
+
+  const published = summary?.published ?? pieces.filter((p) => p.status === 'published').length
+  const avgGeo = pieces.length
+    ? Math.round(pieces.reduce((acc, p) => acc + (p.geo_score ?? p.score), 0) / pieces.length)
+    : 0
 
   if (isLoading) {
     return (
-      <div className="max-w-7xl mx-auto space-y-4">
-        <div className="h-8 w-64 skeleton rounded" />
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="h-10 w-72 rounded-lg bg-[var(--surface)] animate-pulse" />
+        <div className="grid grid-cols-3 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
-        <SkeletonCard />
-        <SkeletonCard />
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
       </div>
     )
   }
@@ -503,90 +591,75 @@ export default function ContentPage() {
           className="flex items-start justify-between gap-4"
         >
           <div>
-            <h1 className="font-display text-3xl font-semibold text-ink">Content Intelligence</h1>
+            <h1 className="font-display text-3xl font-semibold text-[var(--ink)]">Content Intelligence</h1>
             {summary?.last_analyzed && (
-              <p className="text-sm text-dim mt-1 flex items-center gap-1.5">
+              <p className="text-sm text-[var(--dim)] mt-1 flex items-center gap-1.5">
                 <Clock className="h-3.5 w-3.5" />
                 Last analyzed {relativeTime(summary.last_analyzed)}
               </p>
             )}
           </div>
-          <Button onClick={() => analyzeMutation.mutate()} loading={analyzeMutation.isPending} className="shrink-0">
-            <RefreshCw className="h-4 w-4" />
-            Analyze Now
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => analyzeMutation.mutate()} loading={analyzeMutation.isPending}>
+              <RefreshCw className="h-4 w-4" />
+              Analyze
+            </Button>
+            <Button>
+              <Plus className="h-4 w-4" />
+              Add Content
+            </Button>
+          </div>
         </motion.div>
 
-        {/* Stat cards */}
-        {summary && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, ease: SPRING, delay: 0.05 }}
-            className="grid grid-cols-2 lg:grid-cols-4 gap-4"
-          >
-            <StatCard label="Content Score" value={summary.content_score} suffix="/100" />
-            <StatCard label="Gaps Found" value={summary.gaps_found} />
-            <StatCard label="Improvements" value={summary.improvements} />
-            <StatCard label="Pieces Analyzed" value={summary.pieces_analyzed} />
-          </motion.div>
-        )}
+        {/* Stats row — 3 cards */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: SPRING, delay: 0.05 }}
+          className="grid grid-cols-3 gap-4"
+        >
+          <StatCard label="Total Pieces" value={summary?.pieces_analyzed ?? pieces.length} />
+          <StatCard label="Published" value={published} />
+          <StatCard label="Avg GEO Score" value={avgGeo} suffix="/100" />
+        </motion.div>
 
-        {/* Empty state */}
-        {isEmpty ? (
-          <EmptyState
-            icon={<FileText className="h-6 w-6" />}
-            title="No content analyzed yet"
-            description="Run your first analysis to surface insights across your content library."
-            action={
-              <Button onClick={() => analyzeMutation.mutate()} loading={analyzeMutation.isPending}>
-                <RefreshCw className="h-4 w-4" />
-                Analyze Now
-              </Button>
-            }
-          />
-        ) : (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, ease: SPRING, delay: 0.1 }}
-          >
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList>
-                <TabsTrigger value="audit">
-                  Content Audit
-                  {pieces.length > 0 && <span className="ml-1.5 text-xs text-dim font-mono">({pieces.length})</span>}
-                </TabsTrigger>
-                <TabsTrigger value="gaps">
-                  Gaps
-                  {gaps.length > 0 && <span className="ml-1.5 text-xs text-dim font-mono">({gaps.length})</span>}
-                </TabsTrigger>
-                <TabsTrigger value="improvements">
-                  Improvements
-                  {improvements.length > 0 && <span className="ml-1.5 text-xs text-dim font-mono">({improvements.length})</span>}
-                </TabsTrigger>
-                <TabsTrigger value="export">Export</TabsTrigger>
-              </TabsList>
+        {/* Tabs */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: SPRING, delay: 0.1 }}
+        >
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList>
+              <TabsTrigger value="content">
+                Content
+                {pieces.length > 0 && <span className="ml-1.5 text-xs text-[var(--dim)] font-mono">({pieces.length})</span>}
+              </TabsTrigger>
+              <TabsTrigger value="gaps">
+                Gaps
+                {gaps.length > 0 && <span className="ml-1.5 text-xs text-[var(--dim)] font-mono">({gaps.length})</span>}
+              </TabsTrigger>
+              <TabsTrigger value="improvements">
+                Improvements
+                {improvements.length > 0 && <span className="ml-1.5 text-xs text-[var(--dim)] font-mono">({improvements.length})</span>}
+              </TabsTrigger>
+              <TabsTrigger value="export">Export</TabsTrigger>
+            </TabsList>
 
-              <TabsContent value="audit">
-                <AuditTable pieces={pieces} onSelect={setSelectedPiece} />
-                <p className="text-xs text-dim mt-2 font-sans">Click any row to view full analysis.</p>
-              </TabsContent>
-
-              <TabsContent value="gaps">
-                <GapsTab gaps={gaps} />
-              </TabsContent>
-
-              <TabsContent value="improvements">
-                <ImprovementsTab improvements={improvements} />
-              </TabsContent>
-
-              <TabsContent value="export">
-                <ExportTab slug={slug} brandId={brandId} />
-              </TabsContent>
-            </Tabs>
-          </motion.div>
-        )}
+            <TabsContent value="content">
+              <ContentGrid pieces={pieces} onSelect={setSelectedPiece} />
+            </TabsContent>
+            <TabsContent value="gaps">
+              <GapsTab gaps={gaps} />
+            </TabsContent>
+            <TabsContent value="improvements">
+              <ImprovementsTab improvements={improvements} />
+            </TabsContent>
+            <TabsContent value="export">
+              <ExportTab slug={slug} brandId={brandId} />
+            </TabsContent>
+          </Tabs>
+        </motion.div>
       </div>
     </>
   )

@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FlaskConical, Trophy, BarChart2, Play, StopCircle,
-  Plus, ChevronDown, Activity, CheckCircle2, PauseCircle,
+  Plus, ChevronDown, Activity,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
@@ -19,12 +19,14 @@ import { Spinner } from '@/components/ui/spinner'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
+import { Progress } from '@/components/ui/progress'
 import {
   Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter,
 } from '@/components/ui/modal'
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { cn, relativeTime } from '@/lib/utils'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -43,6 +45,7 @@ interface Experiment {
   started_at: string | null
   ended_at: string | null
   measurements_count: number
+  progress_pct?: number
   stat_sig?: boolean
 }
 
@@ -69,74 +72,38 @@ const SPRING = { type: 'spring', stiffness: 320, damping: 28 } as const
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: ExperimentStatus }) {
-  const map: Record<ExperimentStatus, { variant: 'info' | 'success' | 'warning' | 'default'; label: string; pulse: boolean }> = {
-    running: { variant: 'info', label: 'Running', pulse: true },
-    completed: { variant: 'success', label: 'Completed', pulse: false },
-    paused: { variant: 'warning', label: 'Paused', pulse: false },
-    draft: { variant: 'default', label: 'Draft', pulse: false },
-  }
-  const { variant, label, pulse } = map[status]
-  return (
-    <span className={cn(
-      'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium font-sans',
-      variant === 'info' && 'bg-info-muted text-info',
-      variant === 'success' && 'bg-success-muted text-success',
-      variant === 'warning' && 'bg-warning-muted text-warning',
-      variant === 'default' && 'bg-surface text-dim border border-border',
-    )}>
-      {pulse ? (
+  if (status === 'running') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium font-sans bg-[var(--info)]/10 text-[var(--info)]">
         <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-info opacity-60" />
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-info" />
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--info)] opacity-60" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--info)]" />
         </span>
-      ) : (
-        <span className={cn(
-          'inline-block w-1.5 h-1.5 rounded-full',
-          variant === 'success' && 'bg-success',
-          variant === 'warning' && 'bg-warning',
-          variant === 'default' && 'bg-dim',
-        )} />
-      )}
-      {label}
-    </span>
-  )
-}
-
-// ─── Mini variant bar ─────────────────────────────────────────────────────────
-
-function MiniVariantBar({
-  labelA, labelB, valueA, valueB,
-}: {
-  labelA: string; labelB: string; valueA: number; valueB: number
-}) {
-  const max = Math.max(valueA, valueB, 1)
+        Running
+      </span>
+    )
+  }
+  if (status === 'completed') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium font-sans bg-[var(--success)]/10 text-[var(--success)]">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--success)]" />
+        Completed
+      </span>
+    )
+  }
+  if (status === 'paused') {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium font-sans bg-[var(--warning)]/10 text-[var(--warning)]">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--warning)]" />
+        Paused
+      </span>
+    )
+  }
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-2">
-        <span className="w-5 text-[10px] font-mono text-dim shrink-0">A</span>
-        <div className="flex-1 h-2 bg-surface rounded-full overflow-hidden">
-          <motion.div
-            className="h-full rounded-full bg-ember"
-            initial={{ width: 0 }}
-            animate={{ width: `${(valueA / max) * 100}%` }}
-            transition={SPRING}
-          />
-        </div>
-        <span className="text-[10px] font-mono text-ink w-8 text-right shrink-0">{valueA.toFixed(1)}</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="w-5 text-[10px] font-mono text-dim shrink-0">B</span>
-        <div className="flex-1 h-2 bg-surface rounded-full overflow-hidden">
-          <motion.div
-            className="h-full rounded-full bg-info"
-            initial={{ width: 0 }}
-            animate={{ width: `${(valueB / max) * 100}%` }}
-            transition={SPRING}
-          />
-        </div>
-        <span className="text-[10px] font-mono text-ink w-8 text-right shrink-0">{valueB.toFixed(1)}</span>
-      </div>
-    </div>
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium font-sans bg-[var(--surface)] text-[var(--dim)] border border-[var(--border)]">
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--dim)]" />
+      Draft
+    </span>
   )
 }
 
@@ -188,111 +155,103 @@ function ExperimentCard({
     'Variant B': m.b_value,
   })) ?? []
 
+  const progress = exp.progress_pct ?? (exp.status === 'running' ? 42 : exp.status === 'completed' ? 100 : 0)
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ ...SPRING, delay: index * 0.06 }}
-      className="rounded-xl border border-border bg-paper shadow-sm overflow-hidden"
+      className="rounded-xl border border-[var(--border)] bg-white/70 p-5 mb-3 overflow-hidden"
     >
-      <div className="p-5">
-        {/* Header row */}
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap mb-1">
-              <h3 className="font-display text-base font-semibold text-ink leading-snug">{exp.name}</h3>
-              <StatusBadge status={exp.status} />
-              {exp.winner && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                  <Trophy className="h-3 w-3" />
-                  Variant {exp.winner} wins
-                </span>
-              )}
-              {exp.stat_sig && exp.status === 'completed' && (
-                <Badge variant="success" size="sm">Stat Sig</Badge>
-              )}
-            </div>
-            <p className="text-sm text-dim leading-relaxed line-clamp-2">{exp.hypothesis}</p>
-          </div>
-          <span className="text-xs font-mono text-dim shrink-0 mt-0.5">
-            {exp.measurements_count} measurements
-          </span>
-        </div>
-
-        {/* Variant mini bars */}
-        <div className="mb-4 bg-surface rounded-lg p-3 border border-border">
-          <div className="flex items-center gap-2 mb-2">
-            <BarChart2 className="h-3.5 w-3.5 text-dim" />
-            <span className="text-xs font-medium text-dim">Primary metric</span>
-          </div>
-          <MiniVariantBar
-            labelA="A"
-            labelB="B"
-            valueA={analysis?.metrics?.[0]?.a_value ?? 0}
-            valueB={analysis?.metrics?.[0]?.b_value ?? 0}
-          />
-        </div>
-
-        {/* Variant descriptions */}
-        <div className="grid grid-cols-2 gap-2 mb-4">
-          {[
-            { label: 'A', desc: exp.variant_a?.description },
-            { label: 'B', desc: exp.variant_b?.description },
-          ].map(({ label, desc }) => (
-            <div key={label} className="rounded-md bg-surface border border-border p-2.5">
-              <span className={cn('text-[10px] font-mono font-bold mr-1', label === 'A' ? 'text-ember' : 'text-info')}>
-                Variant {label}
-              </span>
-              <p className="text-xs text-dim mt-0.5 leading-relaxed line-clamp-2">{desc}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Actions */}
+      {/* Status badge + hypothesis */}
+      <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setExpanded(!expanded)}
-            className="gap-1.5"
-          >
-            <BarChart2 className="h-3.5 w-3.5" />
-            View Analysis
-            <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
-              <ChevronDown className="h-3.5 w-3.5" />
-            </motion.div>
-          </Button>
-
-          {exp.status === 'running' && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => endMutation.mutate()}
-                loading={endMutation.isPending}
-                className="gap-1.5 text-danger border-danger/30 hover:bg-danger/5"
-              >
-                <StopCircle className="h-3.5 w-3.5" />
-                End
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setShowMeasure(!showMeasure)} className="gap-1.5">
-                <Plus className="h-3.5 w-3.5" />
-                Record
-              </Button>
-            </>
+          <StatusBadge status={exp.status} />
+          {exp.winner && (
+            <Badge variant="success" size="sm">
+              <Trophy className="h-3 w-3" />
+              Winner: Variant {exp.winner}
+            </Badge>
           )}
-
-          {exp.status === 'draft' && (
-            <Button size="sm" onClick={() => startMutation.mutate()} loading={startMutation.isPending} className="gap-1.5">
-              <Play className="h-3.5 w-3.5" />
-              Start
-            </Button>
-          )}
-
-          {exp.started_at && (
-            <span className="text-xs text-dim ml-auto">Started {relativeTime(exp.started_at)}</span>
+          {exp.stat_sig && exp.status === 'completed' && (
+            <Badge variant="info" size="sm">Stat Sig</Badge>
           )}
         </div>
+        <span className="text-xs font-mono text-[var(--dim)] shrink-0 mt-0.5">
+          {exp.measurements_count} measurements
+        </span>
+      </div>
+
+      {/* Hypothesis */}
+      <h3 className="font-display text-lg text-[var(--ink)] leading-snug mb-1">{exp.hypothesis}</h3>
+      <p className="text-sm text-[var(--dim)] leading-relaxed line-clamp-2 mb-3">{exp.name}</p>
+
+      {/* Variants chips */}
+      <div className="flex items-center gap-2 mb-3">
+        <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-[var(--surface)] border border-[var(--border)] text-xs font-sans text-[var(--dim)]">
+          Control: {exp.variant_a?.label ?? 'Variant A'}
+        </span>
+        <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-[var(--surface)] border border-[var(--border)] text-xs font-sans text-[var(--dim)]">
+          {exp.variant_b?.label ?? 'Variant A'}
+        </span>
+      </div>
+
+      {/* Running: progress bar */}
+      {exp.status === 'running' && (
+        <div className="mb-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-[var(--dim)]">Progress elapsed</span>
+            <span className="text-xs font-mono text-[var(--dim)]">{progress}%</span>
+          </div>
+          <Progress value={progress} variant="default" className="h-1.5" />
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setExpanded(!expanded)}
+          className="gap-1.5"
+        >
+          <BarChart2 className="h-3.5 w-3.5" />
+          View Results
+          <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
+            <ChevronDown className="h-3.5 w-3.5" />
+          </motion.div>
+        </Button>
+
+        {exp.status === 'running' && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => endMutation.mutate()}
+              loading={endMutation.isPending}
+              className="gap-1.5 text-[var(--danger)] border-[var(--danger)]/30 hover:bg-[var(--danger)]/5"
+            >
+              <StopCircle className="h-3.5 w-3.5" />
+              End
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowMeasure(!showMeasure)} className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
+              Record
+            </Button>
+          </>
+        )}
+
+        {exp.status === 'draft' && (
+          <Button size="sm" onClick={() => startMutation.mutate()} loading={startMutation.isPending} className="gap-1.5">
+            <Play className="h-3.5 w-3.5" />
+            Start
+          </Button>
+        )}
+
+        {exp.started_at && (
+          <span className="text-xs text-[var(--dim)] ml-auto">Started {relativeTime(exp.started_at)}</span>
+        )}
       </div>
 
       {/* Record measurement inline form */}
@@ -303,17 +262,17 @@ function ExperimentCard({
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="overflow-hidden border-t border-border"
+            className="overflow-hidden border-t border-[var(--border)] mt-3"
           >
-            <div className="px-5 py-4 bg-surface/50 space-y-3">
-              <p className="text-xs font-medium text-dim uppercase tracking-wide">Record Measurement</p>
+            <div className="pt-4 space-y-3">
+              <p className="text-xs font-medium text-[var(--dim)] uppercase tracking-wide">Record Measurement</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-ink mb-1 block">Variant</label>
+                  <label className="text-xs font-medium text-[var(--ink)] mb-1 block">Variant</label>
                   <select
                     value={measureForm.variant}
                     onChange={(e) => setMeasureForm((f) => ({ ...f, variant: e.target.value as 'A' | 'B' }))}
-                    className="h-9 w-full px-2 rounded-md border border-border bg-paper text-sm text-ink focus:outline-none focus:ring-2 focus:ring-ember"
+                    className="h-9 w-full px-2 rounded-md border border-[var(--border)] bg-[var(--paper)] text-sm text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
                   >
                     <option value="A">Variant A</option>
                     <option value="B">Variant B</option>
@@ -358,18 +317,18 @@ function ExperimentCard({
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="overflow-hidden border-t border-border"
+            className="overflow-hidden border-t border-[var(--border)] mt-3"
           >
-            <div className="px-5 py-5">
+            <div className="pt-4">
               {analysisLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <Spinner />
                 </div>
               ) : chartData.length === 0 ? (
-                <p className="text-sm text-dim text-center py-6">No measurements recorded yet.</p>
+                <p className="text-sm text-[var(--dim)] text-center py-6">No measurements recorded yet.</p>
               ) : (
                 <>
-                  <p className="text-xs font-medium text-dim uppercase tracking-wide mb-4">Variant comparison — all metrics</p>
+                  <p className="text-xs font-medium text-[var(--dim)] uppercase tracking-wide mb-4">Variant comparison</p>
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
@@ -386,11 +345,11 @@ function ExperimentCard({
                   {analysis?.metrics && (
                     <div className="mt-4 grid grid-cols-3 gap-2">
                       {analysis.metrics.map((m) => (
-                        <div key={m.name} className="bg-surface border border-border rounded-lg p-3">
-                          <p className="text-[10px] font-mono text-dim truncate">{m.name}</p>
+                        <div key={m.name} className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-3">
+                          <p className="text-[10px] font-mono text-[var(--dim)] truncate">{m.name}</p>
                           <p className={cn(
                             'text-sm font-semibold mt-0.5',
-                            m.lift_pct > 0 ? 'text-success' : m.lift_pct < 0 ? 'text-danger' : 'text-dim',
+                            m.lift_pct > 0 ? 'text-[var(--success)]' : m.lift_pct < 0 ? 'text-[var(--danger)]' : 'text-[var(--dim)]',
                           )}>
                             {m.lift_pct > 0 ? '+' : ''}{m.lift_pct.toFixed(1)}% lift
                           </p>
@@ -445,39 +404,39 @@ function NewExperimentModal({
             placeholder="e.g. Homepage CTA copy test"
           />
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-ink font-sans">Hypothesis</label>
+            <label className="text-sm font-medium text-[var(--ink)] font-sans">Hypothesis</label>
             <textarea
               value={form.hypothesis}
               onChange={(e) => setForm((f) => ({ ...f, hypothesis: e.target.value }))}
               rows={3}
               placeholder="We believe that… because…"
-              className="w-full rounded-md border border-border bg-paper px-3 py-2 text-sm text-ink placeholder:text-dim resize-none focus:outline-none focus:ring-2 focus:ring-ember"
+              className="w-full rounded-md border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--dim)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-ink font-sans">Variant A</label>
+              <label className="text-sm font-medium text-[var(--ink)] font-sans">Variant A (Control)</label>
               <textarea
                 value={form.variant_a_description}
                 onChange={(e) => setForm((f) => ({ ...f, variant_a_description: e.target.value }))}
                 rows={2}
                 placeholder="Control / baseline"
-                className="w-full rounded-md border border-border bg-paper px-3 py-2 text-sm text-ink placeholder:text-dim resize-none focus:outline-none focus:ring-2 focus:ring-ember"
+                className="w-full rounded-md border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--dim)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-ink font-sans">Variant B</label>
+              <label className="text-sm font-medium text-[var(--ink)] font-sans">Variant B</label>
               <textarea
                 value={form.variant_b_description}
                 onChange={(e) => setForm((f) => ({ ...f, variant_b_description: e.target.value }))}
                 rows={2}
                 placeholder="Treatment / challenger"
-                className="w-full rounded-md border border-border bg-paper px-3 py-2 text-sm text-ink placeholder:text-dim resize-none focus:outline-none focus:ring-2 focus:ring-ember"
+                className="w-full rounded-md border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--dim)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
               />
             </div>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-ink font-sans">Primary metric</label>
+            <label className="text-sm font-medium text-[var(--ink)] font-sans">Primary metric</label>
             <Select value={form.primary_metric} onValueChange={(v) => setForm((f) => ({ ...f, primary_metric: v }))}>
               <SelectTrigger>
                 <SelectValue />
@@ -506,9 +465,12 @@ function NewExperimentModal({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+type TabFilter = 'all' | ExperimentStatus
+
 export default function ExperimentsPage() {
   const { slug, brandId } = useParams<{ slug: string; brandId: string }>()
   const [showNew, setShowNew] = useState(false)
+  const [tab, setTab] = useState<TabFilter>('all')
 
   const { data, isLoading } = useQuery({
     queryKey: ['experiments', slug, brandId],
@@ -516,11 +478,10 @@ export default function ExperimentsPage() {
   })
 
   const experiments = data?.experiments ?? []
+  const filtered = tab === 'all' ? experiments : experiments.filter((e) => e.status === tab)
+
   const active = experiments.filter((e) => e.status === 'running').length
   const completed = experiments.filter((e) => e.status === 'completed').length
-  const avgLift = experiments
-    .filter((e) => e.status === 'completed')
-    .reduce((acc, _) => acc + (Math.random() * 20 - 5), 0) / (completed || 1)
   const totalMeasurements = experiments.reduce((acc, e) => acc + e.measurements_count, 0)
 
   return (
@@ -533,11 +494,11 @@ export default function ExperimentsPage() {
         className="flex items-center justify-between mb-6"
       >
         <div>
-          <h1 className="font-display text-3xl font-semibold text-ink flex items-center gap-2.5">
-            <FlaskConical className="h-7 w-7 text-ember" />
+          <h1 className="font-display text-3xl font-semibold text-[var(--ink)] flex items-center gap-2.5">
+            <FlaskConical className="h-7 w-7 text-[var(--ember)]" />
             Experiments
           </h1>
-          <p className="text-sm text-dim mt-1">A/B test your recommendation signals</p>
+          <p className="text-sm text-[var(--dim)] mt-1">A/B test your recommendation signals</p>
         </div>
         <Button onClick={() => setShowNew(true)} className="gap-2">
           <Plus className="h-4 w-4" />
@@ -550,34 +511,45 @@ export default function ExperimentsPage() {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ ...SPRING, delay: 0.07 }}
-        className="grid grid-cols-4 gap-4 mb-8"
+        className="grid grid-cols-3 gap-4 mb-8"
       >
         <StatCard label="Active" value={active} />
         <StatCard label="Completed" value={completed} />
-        <StatCard label="Avg lift %" value={Number(avgLift.toFixed(1))} suffix="%" decimals={1} />
         <StatCard label="Measurements" value={totalMeasurements} />
       </motion.div>
 
-      {/* Experiment list */}
-      {isLoading ? (
-        <div className="space-y-4">
-          {[0, 1, 2].map((i) => <SkeletonCard key={i} />)}
-        </div>
-      ) : experiments.length === 0 ? (
-        <EmptyState
-          title="No experiments yet"
-          description="Create your first A/B experiment to start measuring variant performance."
-          action={<Button onClick={() => setShowNew(true)} className="gap-2"><Plus className="h-4 w-4" />New Experiment</Button>}
-        />
-      ) : (
-        <div className="space-y-4">
-          <AnimatePresence mode="popLayout">
-            {experiments.map((exp, i) => (
-              <ExperimentCard key={exp.id} exp={exp} slug={slug} brandId={brandId} index={i} />
-            ))}
-          </AnimatePresence>
-        </div>
-      )}
+      {/* Status tabs */}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as TabFilter)} className="mb-4">
+        <TabsList>
+          <TabsTrigger value="all">All <span className="ml-1 text-xs font-mono text-[var(--dim)]">({experiments.length})</span></TabsTrigger>
+          <TabsTrigger value="running">Running <span className="ml-1 text-xs font-mono text-[var(--dim)]">({experiments.filter(e => e.status === 'running').length})</span></TabsTrigger>
+          <TabsTrigger value="completed">Completed <span className="ml-1 text-xs font-mono text-[var(--dim)]">({experiments.filter(e => e.status === 'completed').length})</span></TabsTrigger>
+          <TabsTrigger value="draft">Draft <span className="ml-1 text-xs font-mono text-[var(--dim)]">({experiments.filter(e => e.status === 'draft').length})</span></TabsTrigger>
+        </TabsList>
+
+        {(['all', 'running', 'completed', 'draft'] as TabFilter[]).map((t) => (
+          <TabsContent key={t} value={t}>
+            {isLoading ? (
+              <div className="space-y-3">
+                {[0, 1, 2].map((i) => <SkeletonCard key={i} />)}
+              </div>
+            ) : filtered.length === 0 ? (
+              <EmptyState
+                icon={<Activity className="h-6 w-6" />}
+                title={t === 'all' ? 'No experiments yet' : `No ${t} experiments`}
+                description={t === 'all' ? 'Create your first A/B experiment to start measuring variant performance.' : `No experiments with status "${t}".`}
+                action={t === 'all' ? <Button onClick={() => setShowNew(true)} className="gap-2"><Plus className="h-4 w-4" />New Experiment</Button> : undefined}
+              />
+            ) : (
+              <AnimatePresence mode="popLayout">
+                {filtered.map((exp, i) => (
+                  <ExperimentCard key={exp.id} exp={exp} slug={slug} brandId={brandId} index={i} />
+                ))}
+              </AnimatePresence>
+            )}
+          </TabsContent>
+        ))}
+      </Tabs>
 
       <NewExperimentModal open={showNew} onClose={() => setShowNew(false)} slug={slug} brandId={brandId} />
     </div>

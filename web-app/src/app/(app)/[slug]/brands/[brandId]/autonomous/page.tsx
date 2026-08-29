@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -19,16 +19,16 @@ import {
 import { api } from '@/lib/api'
 import { cn, relativeTime, formatNumber } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { DataTable, Column } from '@/components/ui/data-table'
-import { spring } from '@/design-system/motion'
+import { SkeletonCard } from '@/components/ui/skeleton'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Frequency = 'daily' | 'weekly' | 'monthly'
 
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const DAYS_SHORT = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+const DAYS_FULL = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 const MODULES = [
   { id: 'geo_scan', label: 'GEO Scan', icon: Globe },
@@ -76,12 +76,6 @@ interface RunHistoryData {
 
 const SPRING = [0.16, 1, 0.3, 1] as [number, number, number, number]
 
-const stagger = (i: number) => ({
-  initial: { opacity: 0, y: 16 },
-  animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.35, ease: SPRING, delay: i * 0.07 },
-})
-
 function buildRoute(slug: string, brandId: string) {
   return `/api/orgs/${slug}/brands/${brandId}/autonomous`
 }
@@ -97,77 +91,72 @@ function countdown(nextRunIso: string): string {
   return `${mins}m`
 }
 
+function nextScheduledTimes(schedule: Schedule): string[] {
+  const results: string[] = []
+  const now = new Date()
+  for (let d = 0; d < 30 && results.length < 3; d++) {
+    const candidate = new Date(now)
+    candidate.setDate(now.getDate() + d)
+    candidate.setHours(schedule.hour, schedule.minute, 0, 0)
+    if (candidate <= now) continue
+    if (schedule.frequency === 'weekly' && candidate.getDay() !== schedule.day_of_week) continue
+    if (schedule.frequency === 'monthly' && candidate.getDate() !== 1) continue
+    results.push(candidate.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }))
+  }
+  return results
+}
+
 // ─── Toggle Switch ────────────────────────────────────────────────────────────
 
 function ToggleSwitch({
   checked,
   onChange,
-  label,
-  size = 'md',
 }: {
   checked: boolean
   onChange: (v: boolean) => void
-  label?: string
-  size?: 'sm' | 'md' | 'lg'
 }) {
-  const dims = size === 'lg'
-    ? { track: 'h-8 w-14', thumb: 'h-6 w-6', on: 'translate-x-7', off: 'translate-x-1' }
-    : size === 'sm'
-    ? { track: 'h-5 w-9', thumb: 'h-3.5 w-3.5', on: 'translate-x-4', off: 'translate-x-0.5' }
-    : { track: 'h-7 w-12', thumb: 'h-5 w-5', on: 'translate-x-6', off: 'translate-x-1' }
-
   return (
     <button
       role="switch"
       aria-checked={checked}
-      aria-label={label}
       onClick={() => onChange(!checked)}
       className={cn(
-        'relative inline-flex items-center rounded-full transition-colors duration-200',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember focus-visible:ring-offset-2',
-        checked ? 'bg-ember' : 'bg-border',
-        dims.track
+        'relative inline-flex items-center w-11 h-6 rounded-full transition-colors duration-200',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ember)] focus-visible:ring-offset-2',
+        checked ? 'bg-[var(--ember)]' : 'border border-[var(--border)] bg-[var(--surface)]',
       )}
     >
       <motion.span
         layout
         transition={{ type: 'spring', stiffness: 500, damping: 35 }}
         className={cn(
-          'inline-block rounded-full bg-paper shadow-sm',
-          dims.thumb,
-          checked ? dims.on : dims.off
+          'inline-block w-4 h-4 rounded-full bg-white shadow-sm',
+          checked ? 'translate-x-6' : 'translate-x-1'
         )}
       />
     </button>
   )
 }
 
-// ─── Frequency Selector ───────────────────────────────────────────────────────
+// ─── Frequency Selector (segmented control) ───────────────────────────────────
 
-function FrequencySelector({
-  value,
-  onChange,
-}: {
-  value: Frequency
-  onChange: (f: Frequency) => void
-}) {
+function FrequencySelector({ value, onChange }: { value: Frequency; onChange: (f: Frequency) => void }) {
   const options: Frequency[] = ['daily', 'weekly', 'monthly']
-
   return (
-    <div className="flex rounded-lg border border-border bg-paper p-1 gap-1 w-fit">
+    <div className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--paper)] p-1 gap-1">
       {options.map((opt) => (
         <button
           key={opt}
           onClick={() => onChange(opt)}
           className={cn(
             'relative px-4 py-1.5 text-sm font-sans capitalize rounded-md transition-colors duration-150 focus-visible:outline-none',
-            value === opt ? 'text-paper' : 'text-dim hover:text-ink'
+            value === opt ? 'text-white' : 'text-[var(--dim)] hover:text-[var(--ink)]'
           )}
         >
           {value === opt && (
             <motion.div
               layoutId="freq-indicator"
-              className="absolute inset-0 rounded-md bg-ember"
+              className="absolute inset-0 rounded-md bg-[var(--ember)]"
               transition={{ type: 'spring', stiffness: 450, damping: 36 }}
             />
           )}
@@ -178,83 +167,42 @@ function FrequencySelector({
   )
 }
 
-// ─── Time Picker ──────────────────────────────────────────────────────────────
+// ─── Day of week multi-select ─────────────────────────────────────────────────
 
-function TimePicker({
-  hour,
-  minute,
-  onHourChange,
-  onMinuteChange,
-}: {
-  hour: number
-  minute: number
-  onHourChange: (h: number) => void
-  onMinuteChange: (m: number) => void
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <select
-        value={hour}
-        onChange={(e) => onHourChange(Number(e.target.value))}
-        className={cn(
-          'h-10 rounded-md border border-border bg-paper px-3 text-sm font-mono text-ink',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember focus-visible:border-ember'
-        )}
-        aria-label="Hour"
-      >
-        {Array.from({ length: 24 }, (_, i) => (
-          <option key={i} value={i}>{String(i).padStart(2, '0')}</option>
-        ))}
-      </select>
-      <span className="text-dim font-display text-lg font-semibold">:</span>
-      <select
-        value={minute}
-        onChange={(e) => onMinuteChange(Number(e.target.value))}
-        className={cn(
-          'h-10 rounded-md border border-border bg-paper px-3 text-sm font-mono text-ink',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember focus-visible:border-ember'
-        )}
-        aria-label="Minute"
-      >
-        {[0, 15, 30, 45].map((m) => (
-          <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
-        ))}
-      </select>
-    </div>
-  )
-}
-
-// ─── Day-of-Week Picker ───────────────────────────────────────────────────────
-
-function DayPicker({
-  value,
+function DayButtons({
+  selected,
   onChange,
 }: {
-  value: number
-  onChange: (d: number) => void
+  selected: number[]
+  onChange: (days: number[]) => void
 }) {
+  function toggle(i: number) {
+    onChange(selected.includes(i) ? selected.filter((d) => d !== i) : [...selected, i])
+  }
+
   return (
     <div className="flex gap-1.5">
-      {DAYS.map((day, i) => {
-        const active = value === i
+      {DAYS_SHORT.map((d, i) => {
+        const active = selected.includes(i)
         return (
           <button
-            key={day}
-            onClick={() => onChange(i)}
+            key={i}
+            onClick={() => toggle(i)}
+            title={DAYS_FULL[i]}
             className={cn(
-              'relative w-10 h-10 rounded-lg text-xs font-sans font-medium transition-colors duration-150',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember',
-              active ? 'text-paper' : 'text-dim hover:text-ink hover:bg-surface border border-border'
+              'relative w-9 h-9 rounded-lg text-xs font-medium transition-colors duration-150',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ember)]',
+              active ? 'text-white' : 'text-[var(--dim)] hover:text-[var(--ink)] hover:bg-[var(--surface)] border border-[var(--border)]'
             )}
           >
             {active && (
               <motion.div
-                layoutId="day-indicator"
-                className="absolute inset-0 rounded-lg bg-ember"
+                layoutId={`day-${i}`}
+                className="absolute inset-0 rounded-lg bg-[var(--ember)]"
                 transition={{ type: 'spring', stiffness: 450, damping: 36 }}
               />
             )}
-            <span className="relative z-10">{day}</span>
+            <span className="relative z-10">{d}</span>
           </button>
         )
       })}
@@ -264,23 +212,12 @@ function DayPicker({
 
 // ─── Module Checkboxes ────────────────────────────────────────────────────────
 
-function ModuleChecks({
-  selected,
-  onChange,
-}: {
-  selected: string[]
-  onChange: (modules: string[]) => void
-}) {
+function ModuleChecks({ selected, onChange }: { selected: string[]; onChange: (m: string[]) => void }) {
   const toggle = (id: string) => {
-    onChange(
-      selected.includes(id)
-        ? selected.filter((m) => m !== id)
-        : [...selected, id]
-    )
+    onChange(selected.includes(id) ? selected.filter((m) => m !== id) : [...selected, id])
   }
-
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2">
       {MODULES.map(({ id, label, icon: Icon }) => {
         const checked = selected.includes(id)
         return (
@@ -288,15 +225,13 @@ function ModuleChecks({
             key={id}
             className={cn(
               'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors duration-150',
-              checked
-                ? 'bg-ember/5 border-ember/30'
-                : 'bg-paper border-border hover:bg-surface'
+              checked ? 'bg-[var(--ember)]/5 border-[var(--ember)]/30' : 'bg-[var(--paper)] border-[var(--border)] hover:bg-[var(--surface)]'
             )}
           >
             <div
               className={cn(
                 'w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors duration-150',
-                checked ? 'bg-ember border-ember' : 'border-border'
+                checked ? 'bg-[var(--ember)] border-[var(--ember)]' : 'border-[var(--border)]'
               )}
               aria-hidden="true"
             >
@@ -306,14 +241,9 @@ function ModuleChecks({
                 </svg>
               )}
             </div>
-            <input
-              type="checkbox"
-              checked={checked}
-              onChange={() => toggle(id)}
-              className="sr-only"
-            />
-            <Icon className={cn('h-4 w-4 flex-shrink-0', checked ? 'text-ember' : 'text-dim')} />
-            <span className={cn('text-sm font-sans', checked ? 'text-ink font-medium' : 'text-dim')}>
+            <input type="checkbox" checked={checked} onChange={() => toggle(id)} className="sr-only" />
+            <Icon className={cn('h-4 w-4 flex-shrink-0', checked ? 'text-[var(--ember)]' : 'text-[var(--dim)]')} />
+            <span className={cn('text-sm font-sans', checked ? 'text-[var(--ink)] font-medium' : 'text-[var(--dim)]')}>
               {label}
             </span>
           </label>
@@ -323,174 +253,125 @@ function ModuleChecks({
   )
 }
 
-// ─── Schedule Config Card ─────────────────────────────────────────────────────
+// ─── Schedule Card ────────────────────────────────────────────────────────────
 
-function ScheduleConfigCard({
-  schedule,
-  slug,
-  brandId,
-}: {
-  schedule: Schedule
-  slug: string
-  brandId: string
-}) {
+function ScheduleCard({ schedule, slug, brandId }: { schedule: Schedule; slug: string; brandId: string }) {
   const qc = useQueryClient()
   const base = buildRoute(slug, brandId)
-
   const [form, setForm] = useState(schedule)
   useEffect(() => { setForm(schedule) }, [schedule])
 
+  const [selectedDays, setSelectedDays] = useState<number[]>([schedule.day_of_week])
+
   const saveMutation = useMutation({
-    mutationFn: () => api.patch(`${base}/schedule`, form),
+    mutationFn: () => api.patch(`${base}/schedule`, { ...form, day_of_week: selectedDays[0] ?? 1 }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['autonomous', slug, brandId] }),
   })
 
+  const timeValue = `${String(form.hour).padStart(2, '0')}:${String(form.minute).padStart(2, '0')}`
+
+  function onTimeChange(v: string) {
+    const [h, m] = v.split(':').map(Number)
+    setForm((f) => ({ ...f, hour: h ?? 0, minute: m ?? 0 }))
+  }
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Calendar className="h-5 w-5 text-ember" />
-          Schedule Configuration
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Frequency */}
-        <div>
-          <label className="text-xs font-sans font-medium text-dim uppercase tracking-wide block mb-3">
-            Frequency
-          </label>
-          <FrequencySelector
-            value={form.frequency}
-            onChange={(f) => setForm((p) => ({ ...p, frequency: f }))}
-          />
-        </div>
+    <div className="rounded-xl border border-[var(--border)] bg-white/70 p-5 mb-6 space-y-5">
+      <h2 className="font-display text-lg text-[var(--ink)]">Schedule</h2>
 
-        {/* Time */}
-        <div>
-          <label className="text-xs font-sans font-medium text-dim uppercase tracking-wide block mb-3">
-            Time (UTC)
-          </label>
-          <TimePicker
-            hour={form.hour}
-            minute={form.minute}
-            onHourChange={(h) => setForm((p) => ({ ...p, hour: h }))}
-            onMinuteChange={(m) => setForm((p) => ({ ...p, minute: m }))}
-          />
-        </div>
+      {/* Frequency */}
+      <div>
+        <label className="text-xs font-medium text-[var(--dim)] uppercase tracking-wide block mb-2">Frequency</label>
+        <FrequencySelector value={form.frequency} onChange={(f) => setForm((p) => ({ ...p, frequency: f }))} />
+      </div>
 
-        {/* Day of Week (weekly only) */}
-        <AnimatePresence>
-          {form.frequency === 'weekly' && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.25, ease: SPRING }}
-              className="overflow-hidden"
-            >
-              <label className="text-xs font-sans font-medium text-dim uppercase tracking-wide block mb-3">
-                Day of Week
-              </label>
-              <DayPicker
-                value={form.day_of_week}
-                onChange={(d) => setForm((p) => ({ ...p, day_of_week: d }))}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
+      {/* Time */}
+      <div>
+        <label className="text-xs font-medium text-[var(--dim)] uppercase tracking-wide block mb-2">Run at</label>
+        <input
+          type="time"
+          value={timeValue}
+          onChange={(e) => onTimeChange(e.target.value)}
+          className="h-10 rounded-md border border-[var(--border)] bg-[var(--paper)] px-3 text-sm font-mono text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--ember)] focus:border-[var(--ember)]"
+        />
+      </div>
 
-        {/* Modules */}
-        <div>
-          <label className="text-xs font-sans font-medium text-dim uppercase tracking-wide block mb-3">
-            Included Modules
-          </label>
-          <ModuleChecks
-            selected={form.modules}
-            onChange={(modules) => setForm((p) => ({ ...p, modules }))}
-          />
-        </div>
+      {/* Day of week (weekly only) */}
+      <AnimatePresence>
+        {form.frequency === 'weekly' && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25, ease: SPRING }}
+            className="overflow-hidden"
+          >
+            <label className="text-xs font-medium text-[var(--dim)] uppercase tracking-wide block mb-2">Day of Week</label>
+            <DayButtons selected={selectedDays} onChange={setSelectedDays} />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-        <Button
-          className="w-full"
-          onClick={() => saveMutation.mutate()}
-          loading={saveMutation.isPending}
-        >
-          Save Schedule
-        </Button>
-      </CardContent>
-    </Card>
+      {/* Modules */}
+      <div>
+        <label className="text-xs font-medium text-[var(--dim)] uppercase tracking-wide block mb-2">Modules</label>
+        <ModuleChecks selected={form.modules} onChange={(modules) => setForm((p) => ({ ...p, modules }))} />
+      </div>
+
+      <Button className="w-full" onClick={() => saveMutation.mutate()} loading={saveMutation.isPending}>
+        Save Schedule
+      </Button>
+    </div>
   )
 }
 
-// ─── Schedule Status Card ─────────────────────────────────────────────────────
+// ─── Status summary mini cards ────────────────────────────────────────────────
 
-function ScheduleStatusCard({ status }: { status: ScheduleStatus }) {
+function ScheduleStatusCards({ status }: { status: ScheduleStatus }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Activity className="h-5 w-5 text-ember" />
-          Schedule Status
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {/* Next Run */}
-          <div className="bg-surface rounded-xl p-4 border border-border">
-            <div className="flex items-center gap-2 mb-1">
-              <Clock className="h-4 w-4 text-dim" />
-              <span className="text-xs text-dim font-sans uppercase tracking-wide">Next run</span>
-            </div>
-            <p className="font-display text-2xl font-semibold text-ink">
-              {status.next_run ? countdown(status.next_run) : '—'}
-            </p>
-            {status.next_run && (
-              <p className="text-xs text-dim mt-1 font-sans">
-                {new Date(status.next_run).toLocaleString('en-US', {
-                  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                })}
-              </p>
-            )}
-          </div>
-
-          {/* Last Run */}
-          <div className="bg-surface rounded-xl p-4 border border-border">
-            <div className="flex items-center gap-2 mb-1">
-              <CheckSquare className="h-4 w-4 text-dim" />
-              <span className="text-xs text-dim font-sans uppercase tracking-wide">Last run</span>
-            </div>
-            <p className="text-sm font-sans text-ink mb-2">
-              {status.last_run ? relativeTime(status.last_run) : '—'}
-            </p>
-            {status.last_status && (
-              <Badge
-                variant={
-                  status.last_status === 'completed' ? 'success'
-                    : status.last_status === 'running' ? 'info'
-                    : status.last_status === 'failed' ? 'danger'
-                    : 'outline'
-                }
-                size="sm"
-                dot
-              >
-                {status.last_status}
-              </Badge>
-            )}
-          </div>
-
-          {/* Total Runs */}
-          <div className="bg-surface rounded-xl p-4 border border-border">
-            <div className="flex items-center gap-2 mb-1">
-              <Zap className="h-4 w-4 text-dim" />
-              <span className="text-xs text-dim font-sans uppercase tracking-wide">Total runs</span>
-            </div>
-            <p className="font-display text-2xl font-semibold text-ink">
-              {formatNumber(status.total_runs)}
-            </p>
-          </div>
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
+        <div className="flex items-center gap-2 mb-1">
+          <Clock className="h-4 w-4 text-[var(--dim)]" />
+          <span className="text-xs text-[var(--dim)] font-sans uppercase tracking-wide">Next run</span>
         </div>
-      </CardContent>
-    </Card>
+        <p className="font-display text-2xl font-semibold text-[var(--ink)]">
+          {status.next_run ? countdown(status.next_run) : '—'}
+        </p>
+      </div>
+      <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
+        <div className="flex items-center gap-2 mb-1">
+          <CheckSquare className="h-4 w-4 text-[var(--dim)]" />
+          <span className="text-xs text-[var(--dim)] font-sans uppercase tracking-wide">Last run</span>
+        </div>
+        <p className="text-sm font-sans text-[var(--ink)] mb-2">
+          {status.last_run ? relativeTime(status.last_run) : '—'}
+        </p>
+        {status.last_status && (
+          <Badge
+            variant={
+              status.last_status === 'completed' ? 'success'
+                : status.last_status === 'running' ? 'info'
+                : status.last_status === 'failed' ? 'danger'
+                : 'outline'
+            }
+            size="sm"
+            dot
+          >
+            {status.last_status}
+          </Badge>
+        )}
+      </div>
+      <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
+        <div className="flex items-center gap-2 mb-1">
+          <Zap className="h-4 w-4 text-[var(--dim)]" />
+          <span className="text-xs text-[var(--dim)] font-sans uppercase tracking-wide">Total runs</span>
+        </div>
+        <p className="font-display text-2xl font-semibold text-[var(--ink)]">
+          {formatNumber(status.total_runs)}
+        </p>
+      </div>
+    </div>
   )
 }
 
@@ -511,9 +392,27 @@ function RunHistory({ slug, brandId }: { slug: string; brandId: string }) {
       key: 'date',
       header: 'Date',
       render: (v) => (
-        <span className="text-sm text-ink font-sans">
+        <span className="text-sm text-[var(--ink)] font-mono">
           {relativeTime(v as string)}
         </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (v) => (
+        <Badge
+          variant={
+            v === 'completed' ? 'success'
+              : v === 'running' ? 'info'
+              : v === 'failed' ? 'danger'
+              : 'outline'
+          }
+          size="sm"
+          dot
+        >
+          {v as string}
+        </Badge>
       ),
     },
     {
@@ -536,30 +435,12 @@ function RunHistory({ slug, brandId }: { slug: string; brandId: string }) {
       },
     },
     {
-      key: 'status',
-      header: 'Status',
-      render: (v) => (
-        <Badge
-          variant={
-            v === 'completed' ? 'success'
-              : v === 'running' ? 'info'
-              : v === 'failed' ? 'danger'
-              : 'outline'
-          }
-          size="sm"
-          dot
-        >
-          {v as string}
-        </Badge>
-      ),
-    },
-    {
       key: 'duration',
       header: 'Duration',
       render: (v) => {
         const secs = v as number
         return (
-          <span className="font-mono text-xs text-dim">
+          <span className="font-mono text-xs text-[var(--dim)]">
             {secs >= 60 ? `${Math.round(secs / 60)}m` : `${secs}s`}
           </span>
         )
@@ -569,27 +450,55 @@ function RunHistory({ slug, brandId }: { slug: string; brandId: string }) {
       key: 'actions_generated',
       header: 'Actions',
       render: (v) => (
-        <span className="font-mono text-sm text-ink">{formatNumber(v as number)}</span>
+        <span className="font-mono text-sm text-[var(--ink)]">{formatNumber(v as number)}</span>
+      ),
+    },
+    {
+      key: 'id',
+      header: '',
+      render: () => (
+        <button className="text-xs text-[var(--ember)] hover:underline font-medium">View</button>
       ),
     },
   ]
 
+  if (isLoading) return <SkeletonCard />
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Run History</CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        <DataTable
-          data={runs}
-          columns={columns}
-          loading={isLoading}
-          rowKey={(r) => String(r.id)}
-          emptyMessage="No runs yet. Schedule or trigger a run to get started."
-          pageSize={10}
-        />
-      </CardContent>
-    </Card>
+    <div className="rounded-xl border border-[var(--border)] overflow-hidden">
+      <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--surface)]">
+        <h2 className="font-display text-lg text-[var(--ink)]">Run History</h2>
+      </div>
+      <DataTable
+        data={runs}
+        columns={columns}
+        loading={false}
+        rowKey={(r) => String(r.id)}
+        emptyMessage="No runs yet. Schedule or trigger a run to get started."
+        pageSize={10}
+      />
+    </div>
+  )
+}
+
+// ─── Next Scheduled Runs ──────────────────────────────────────────────────────
+
+function NextRunsList({ schedule }: { schedule: Schedule }) {
+  const times = nextScheduledTimes(schedule)
+  if (times.length === 0) return null
+
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-white/70 p-5">
+      <h2 className="font-display text-lg text-[var(--ink)] mb-3">Upcoming Runs</h2>
+      <ul className="space-y-2">
+        {times.map((t, i) => (
+          <li key={i} className="flex items-center gap-2 text-sm text-[var(--dim)]">
+            <Calendar className="h-3.5 w-3.5 shrink-0" />
+            <span className="font-mono text-[var(--ink)] text-xs">{t}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
@@ -631,82 +540,78 @@ export default function AutonomousPage() {
     return (
       <div className="max-w-5xl mx-auto space-y-6">
         {[...Array(3)].map((_, i) => (
-          <div key={i} className="h-40 rounded-xl bg-surface border border-border animate-pulse" />
+          <div key={i} className="h-40 rounded-xl bg-[var(--surface)] border border-[var(--border)] animate-pulse" />
         ))}
       </div>
     )
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-5xl mx-auto space-y-6">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: SPRING }}
-        className="flex items-center justify-between mb-8"
       >
-        <div>
-          <h1 className="font-display text-3xl font-semibold text-ink">Autonomous Ops</h1>
-          <p className="text-sm text-dim font-sans mt-1">Scheduled intelligence runs</p>
-        </div>
-        <div className="flex items-center gap-4">
-          {/* Run Now */}
-          <Button
-            variant="outline"
-            onClick={() => runNowMutation.mutate()}
-            loading={runNowMutation.isPending || isRunning}
-            disabled={runNowMutation.isPending || isRunning}
-          >
-            <Play className="h-4 w-4" />
-            Run Now
-          </Button>
-
-          {/* Global Toggle */}
-          <div className="flex items-center gap-3 bg-surface border border-border rounded-xl px-4 py-2.5">
-            <span className="text-sm font-sans font-medium text-ink">Autonomous Mode</span>
-            <ToggleSwitch
-              checked={enabled}
-              onChange={(v) => toggleMutation.mutate(v)}
-              label="Toggle autonomous mode"
-              size="md"
-            />
-          </div>
-        </div>
+        <h1 className="font-display text-2xl font-semibold text-[var(--ink)]">Autonomous Mode</h1>
+        <p className="text-sm text-[var(--dim)] mt-1">Scheduled recurring AI analysis</p>
       </motion.div>
 
-      {/* Content */}
-      <div className="space-y-6">
-        {/* Schedule Config (shown when enabled) */}
-        <AnimatePresence>
-          {enabled && schedule && (
-            <motion.div
-              key="schedule-config"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.3, ease: SPRING }}
-              className="overflow-hidden"
-            >
-              <motion.div {...stagger(0)}>
-                <ScheduleConfigCard schedule={schedule} slug={slug} brandId={brandId} />
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+      {/* Master control card */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: SPRING, delay: 0.05 }}
+        className="rounded-2xl border border-[var(--border)] bg-white/70 p-6 mb-6 flex items-center justify-between"
+      >
+        <div>
+          <h2 className="font-display text-lg text-[var(--ink)]">Autonomous Analysis</h2>
+          <p className="text-sm text-[var(--dim)] mt-0.5">Enable to run analysis on your configured schedule automatically.</p>
+        </div>
+        <ToggleSwitch
+          checked={enabled}
+          onChange={(v) => toggleMutation.mutate(v)}
+        />
+      </motion.div>
 
-        {/* Status Card */}
-        {status && (
-          <motion.div {...stagger(1)}>
-            <ScheduleStatusCard status={status} />
+      {/* Status cards */}
+      {status && <ScheduleStatusCards status={status} />}
+
+      {/* Schedule card — only when enabled */}
+      <AnimatePresence>
+        {enabled && schedule && (
+          <motion.div
+            key="schedule"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3, ease: SPRING }}
+            className="overflow-hidden"
+          >
+            <ScheduleCard schedule={schedule} slug={slug} brandId={brandId} />
           </motion.div>
         )}
+      </AnimatePresence>
 
-        {/* Run History */}
-        <motion.div {...stagger(2)}>
-          <RunHistory slug={slug} brandId={brandId} />
-        </motion.div>
+      {/* Next scheduled runs */}
+      {enabled && schedule && <NextRunsList schedule={schedule} />}
+
+      {/* Run Now */}
+      <div className="flex justify-end">
+        <Button
+          variant="outline"
+          onClick={() => runNowMutation.mutate()}
+          loading={runNowMutation.isPending || isRunning}
+          disabled={runNowMutation.isPending || isRunning}
+        >
+          <Play className="h-4 w-4" />
+          Run Now
+        </Button>
       </div>
+
+      {/* Run History */}
+      <RunHistory slug={slug} brandId={brandId} />
     </div>
   )
 }

@@ -1,15 +1,12 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Plus,
-  ChevronDown,
-  ChevronUp,
   Copy,
-  Download,
   RefreshCw,
   Sparkles,
   FileText,
@@ -18,7 +15,6 @@ import {
 import { api, routes } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -27,17 +23,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter } from '@/components/ui/modal'
-import { Progress } from '@/components/ui/progress'
+import { Spinner } from '@/components/ui/spinner'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useToast } from '@/components/ui/toast'
-import { cn, scoreColor, relativeTime } from '@/lib/utils'
+import { cn, relativeTime } from '@/lib/utils'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 type BriefStatus = 'draft' | 'generating' | 'ready' | 'published'
 type Tone = 'professional' | 'conversational' | 'authoritative'
+type ContentTypeOption = 'blog' | 'whitepaper' | 'case_study' | 'video'
 
 interface Brief {
   id: string
@@ -48,6 +44,8 @@ interface Brief {
   status: BriefStatus
   created_at: string
   notes?: string
+  content_type?: ContentTypeOption
+  target_audience?: string
 }
 
 interface DraftSubScores {
@@ -81,443 +79,210 @@ function statusLabel(s: BriefStatus) {
   return map[s]
 }
 
-function subScoreLabel(key: keyof DraftSubScores) {
-  const map = { relevance: 'Relevance', readability: 'Readability', keyword_density: 'Keyword Density' }
-  return map[key]
+function typeLabel(t: ContentTypeOption): string {
+  const map: Record<ContentTypeOption, string> = {
+    blog: 'Blog',
+    whitepaper: 'Whitepaper',
+    case_study: 'Case Study',
+    video: 'Video',
+  }
+  return map[t] ?? t
 }
 
-function scoreBarColor(score: number) {
-  if (score >= 75) return 'bg-success'
-  if (score >= 50) return 'bg-warning'
-  return 'bg-danger'
-}
+// ─── Generation Form ───────────────────────────────────────────────────────────
 
-// ─── Pulsing Dots ──────────────────────────────────────────────────────────────
-
-function PulsingDots() {
-  return (
-    <span className="inline-flex items-center gap-1 ml-1">
-      {[0, 1, 2].map((i) => (
-        <motion.span
-          key={i}
-          className="inline-block w-1.5 h-1.5 rounded-full bg-ember"
-          animate={{ opacity: [0.3, 1, 0.3] }}
-          transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2, ease: 'easeInOut' }}
-        />
-      ))}
-    </span>
-  )
-}
-
-// ─── New Brief Modal ───────────────────────────────────────────────────────────
-
-interface BriefFormState {
+interface GenerateFormState {
   topic: string
-  target_keyword: string
+  content_type: ContentTypeOption
   tone: Tone
+  target_audience: string
+  target_keyword: string
   word_count: string
-  notes: string
 }
 
-function NewBriefModal({
-  open,
-  onClose,
-  onSubmit,
-  loading,
+function GenerationForm({
+  onGenerate,
+  generating,
 }: {
-  open: boolean
-  onClose: () => void
-  onSubmit: (data: Omit<Brief, 'id' | 'created_at' | 'status'>) => void
-  loading: boolean
+  onGenerate: (form: GenerateFormState) => void
+  generating: boolean
 }) {
-  const [form, setForm] = useState<BriefFormState>({
+  const [form, setForm] = useState<GenerateFormState>({
     topic: '',
-    target_keyword: '',
+    content_type: 'blog',
     tone: 'professional',
+    target_audience: '',
+    target_keyword: '',
     word_count: '1000',
-    notes: '',
   })
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!form.topic.trim() || !form.target_keyword.trim()) return
-    onSubmit({
-      topic: form.topic.trim(),
-      target_keyword: form.target_keyword.trim(),
-      tone: form.tone,
-      word_count: parseInt(form.word_count) || 1000,
-      notes: form.notes.trim() || undefined,
-    })
-  }
-
-  function patch(key: keyof BriefFormState, val: string) {
+  function patch<K extends keyof GenerateFormState>(key: K, val: GenerateFormState[K]) {
     setForm((f) => ({ ...f, [key]: val }))
   }
 
-  return (
-    <Modal open={open} onOpenChange={(v) => !v && onClose()}>
-      <ModalContent className="max-w-lg">
-        <ModalHeader>
-          <ModalTitle>New Content Brief</ModalTitle>
-        </ModalHeader>
-        <form onSubmit={handleSubmit}>
-          <ModalBody className="space-y-4">
-            <Input
-              label="Topic"
-              placeholder="e.g. How AI is transforming B2B sales"
-              value={form.topic}
-              onChange={(e) => patch('topic', e.target.value)}
-              required
-            />
-            <Input
-              label="Target Keyword"
-              placeholder="e.g. AI B2B sales software"
-              value={form.target_keyword}
-              onChange={(e) => patch('target_keyword', e.target.value)}
-              required
-            />
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-ink font-sans">Tone</label>
-              <Select value={form.tone} onValueChange={(v) => patch('tone', v as Tone)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="professional">Professional</SelectItem>
-                  <SelectItem value="conversational">Conversational</SelectItem>
-                  <SelectItem value="authoritative">Authoritative</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Input
-              label="Target Word Count"
-              type="number"
-              min={200}
-              max={10000}
-              step={100}
-              value={form.word_count}
-              onChange={(e) => patch('word_count', e.target.value)}
-            />
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-ink font-sans">Notes (optional)</label>
-              <textarea
-                value={form.notes}
-                onChange={(e) => patch('notes', e.target.value)}
-                rows={3}
-                placeholder="Additional context, competitor references, angle..."
-                className={cn(
-                  'w-full rounded-md border border-border bg-paper px-3 py-2 text-sm font-sans text-ink placeholder:text-dim resize-none',
-                  'transition-[border-color,box-shadow] duration-[150ms]',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember focus-visible:border-ember',
-                )}
-              />
-            </div>
-          </ModalBody>
-          <ModalFooter>
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" loading={loading}>
-              <Plus className="h-4 w-4" />
-              Create Brief
-            </Button>
-          </ModalFooter>
-        </form>
-      </ModalContent>
-    </Modal>
-  )
-}
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!form.topic.trim()) return
+    onGenerate(form)
+  }
 
-// ─── Brief List Item ───────────────────────────────────────────────────────────
-
-function BriefItem({
-  brief,
-  selected,
-  onClick,
-}: {
-  brief: Brief
-  selected: boolean
-  onClick: () => void
-}) {
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'w-full text-left p-4 rounded-lg border transition-all hover:shadow-sm',
-        selected
-          ? 'border-ember bg-ember/5 ring-1 ring-ember/30'
-          : 'border-border bg-paper hover:bg-surface',
-      )}
+    <form
+      onSubmit={handleSubmit}
+      className="rounded-2xl border border-[var(--border)] bg-white/70 p-6 space-y-4"
     >
-      <div className="flex items-start justify-between gap-2 mb-1.5">
-        <p className="text-sm font-medium text-ink line-clamp-2 leading-snug flex-1">{brief.topic}</p>
-        <Badge variant={statusVariant(brief.status)} size="sm" dot>{statusLabel(brief.status)}</Badge>
+      {/* Topic */}
+      <Input
+        label="Topic"
+        placeholder="What topic do you want to cover?"
+        value={form.topic}
+        onChange={(e) => patch('topic', e.target.value)}
+        className="text-base h-12"
+        required
+      />
+
+      {/* Content Type + Tone row */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-[var(--ink)] font-sans">Content Type</label>
+          <Select value={form.content_type} onValueChange={(v) => patch('content_type', v as ContentTypeOption)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="blog">Blog Post</SelectItem>
+              <SelectItem value="whitepaper">Whitepaper</SelectItem>
+              <SelectItem value="case_study">Case Study</SelectItem>
+              <SelectItem value="video">Video Script</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-[var(--ink)] font-sans">Tone</label>
+          <Select value={form.tone} onValueChange={(v) => patch('tone', v as Tone)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="professional">Professional</SelectItem>
+              <SelectItem value="conversational">Conversational</SelectItem>
+              <SelectItem value="authoritative">Authoritative</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-mono text-dim">{brief.target_keyword}</span>
-        <span className="text-xs text-dim">·</span>
-        <span className="text-xs text-dim capitalize">{brief.tone}</span>
-        <span className="text-xs text-dim">·</span>
-        <span className="text-xs text-dim">{relativeTime(brief.created_at)}</span>
-      </div>
-    </button>
+
+      {/* Target Audience */}
+      <Input
+        label="Target Audience"
+        placeholder="e.g. B2B SaaS founders, marketing managers"
+        value={form.target_audience}
+        onChange={(e) => patch('target_audience', e.target.value)}
+      />
+
+      {/* Generate button */}
+      <Button
+        type="submit"
+        className="w-full h-12 text-base"
+        disabled={!form.topic.trim() || generating}
+      >
+        {generating ? (
+          <>
+            <Spinner />
+            Generating…
+          </>
+        ) : (
+          <>
+            <Sparkles className="h-4 w-4" />
+            Generate Content
+          </>
+        )}
+      </Button>
+    </form>
   )
 }
 
-// ─── Score Bar ─────────────────────────────────────────────────────────────────
+// ─── Generated Result Card ─────────────────────────────────────────────────────
 
-function ScoreBar({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-dim font-sans">{label}</span>
-        <span className={cn('text-xs font-mono font-semibold', scoreColor(value))}>{value}</span>
-      </div>
-      <div className="h-1.5 w-full rounded-full bg-surface border border-border overflow-hidden">
-        <motion.div
-          className={cn('h-full rounded-full', scoreBarColor(value))}
-          initial={{ width: 0 }}
-          animate={{ width: `${value}%` }}
-          transition={{ duration: 0.9, ease: 'easeOut' }}
-        />
-      </div>
-    </div>
-  )
-}
-
-// ─── Draft Editor ──────────────────────────────────────────────────────────────
-
-function DraftEditor({
-  brief,
-  slug,
-  brandId,
+function GeneratedResultCard({
+  draft,
+  onRegenerate,
+  onSave,
+  regenerating,
 }: {
-  brief: Brief
-  slug: string
-  brandId: string
+  draft: Draft
+  onRegenerate: () => void
+  onSave: () => void
+  regenerating: boolean
 }) {
-  const qc = useQueryClient()
-  const { toast } = useToast()
-  const [briefOpen, setBriefOpen] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  const draftQuery = useQuery({
-    queryKey: ['draft', slug, brandId, brief.id],
-    queryFn: () =>
-      api.get<DraftResponse>(`${routes.contentGen(slug, brandId)}/${brief.id}/draft`),
-    enabled: brief.status === 'ready' || brief.status === 'published' || brief.status === 'generating',
-    refetchInterval: brief.status === 'generating' ? 3000 : false,
-  })
-
-  const generateMutation = useMutation({
-    mutationFn: () =>
-      api.post(`${routes.contentGen(slug, brandId)}/${brief.id}/generate`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['briefs', slug, brandId] })
-      qc.invalidateQueries({ queryKey: ['draft', slug, brandId, brief.id] })
-      toast({ title: 'Generation started', description: 'Your draft is being written.', variant: 'info' })
-    },
-    onError: () => {
-      toast({ title: 'Failed to start generation', variant: 'error' })
-    },
-  })
-
-  const draft = draftQuery.data?.draft
-  const status = draftQuery.data?.status ?? brief.status
-  const isGenerating = status === 'generating'
-  const hasDraft = status === 'ready' || status === 'published'
-
-  function copyDraft() {
-    if (!draft?.content) return
+  function copy() {
     navigator.clipboard.writeText(draft.content).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
   }
 
-  function exportDraft() {
-    if (!draft?.content) return
-    const blob = new Blob([draft.content], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${brief.topic.slice(0, 40).replace(/\s+/g, '-')}.txt`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
   return (
-    <div className="flex flex-col h-full min-h-0">
-      {/* Brief header (collapsible) */}
-      <div className="border-b border-border">
-        <button
-          onClick={() => setBriefOpen((v) => !v)}
-          className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-surface transition-colors"
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <FileText className="h-4 w-4 text-dim shrink-0" />
-            <p className="text-sm font-medium text-ink truncate">{brief.topic}</p>
-            <Badge variant={statusVariant(brief.status)} size="sm" dot>{statusLabel(brief.status)}</Badge>
-          </div>
-          {briefOpen ? <ChevronUp className="h-4 w-4 text-dim shrink-0" /> : <ChevronDown className="h-4 w-4 text-dim shrink-0" />}
-        </button>
-        <AnimatePresence>
-          {briefOpen && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.25, ease: SPRING }}
-              className="overflow-hidden"
-            >
-              <div className="px-5 pb-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                <div>
-                  <span className="text-xs text-dim uppercase tracking-wide font-semibold">Keyword</span>
-                  <p className="font-mono text-xs text-ink mt-0.5">{brief.target_keyword}</p>
-                </div>
-                <div>
-                  <span className="text-xs text-dim uppercase tracking-wide font-semibold">Tone</span>
-                  <p className="text-xs text-ink capitalize mt-0.5">{brief.tone}</p>
-                </div>
-                <div>
-                  <span className="text-xs text-dim uppercase tracking-wide font-semibold">Word Count</span>
-                  <p className="text-xs text-ink mt-0.5">{brief.word_count.toLocaleString()}</p>
-                </div>
-                {brief.notes && (
-                  <div className="col-span-2">
-                    <span className="text-xs text-dim uppercase tracking-wide font-semibold">Notes</span>
-                    <p className="text-xs text-ink mt-0.5 leading-relaxed">{brief.notes}</p>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ duration: 0.35, ease: SPRING }}
+      className="rounded-2xl border border-[var(--border)] bg-white/70 p-6 space-y-4"
+    >
+      {/* Heading + copy */}
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-display text-lg text-[var(--ink)]">Generated Content</h2>
+        <Button variant="outline" size="sm" onClick={copy}>
+          {copied ? <Check className="h-3.5 w-3.5 text-[var(--success)]" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? 'Copied!' : 'Copy'}
+        </Button>
       </div>
 
-      {/* Draft body */}
-      <div className="flex-1 overflow-y-auto">
-        <AnimatePresence mode="wait">
-          {/* No draft yet */}
-          {!isGenerating && !hasDraft && (
-            <motion.div
-              key="idle"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.3, ease: SPRING }}
-              className="flex flex-col items-center justify-center h-full py-24 px-6 text-center"
-            >
-              <div className="w-16 h-16 rounded-full bg-ember/10 flex items-center justify-center mb-4">
-                <Sparkles className="h-7 w-7 text-ember" />
-              </div>
-              <p className="font-display text-lg font-semibold text-ink mb-1">Ready to generate</p>
-              <p className="text-sm text-dim max-w-xs leading-relaxed mb-6">
-                The AI pipeline will write a full draft based on your brief, optimized for <span className="font-mono text-ink">{brief.target_keyword}</span>.
-              </p>
-              <Button onClick={() => generateMutation.mutate()} loading={generateMutation.isPending} size="lg">
-                <Sparkles className="h-4 w-4" />
-                Generate Draft
-              </Button>
-            </motion.div>
-          )}
+      {/* Content */}
+      <div className="max-h-64 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--paper)] p-4 font-serif text-sm text-[var(--ink)] leading-relaxed whitespace-pre-wrap break-words">
+        {draft.content}
+      </div>
 
-          {/* Generating */}
-          {isGenerating && (
-            <motion.div
-              key="generating"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              className="flex flex-col items-center justify-center h-full py-24 px-6 text-center"
-            >
-              <div className="w-16 h-16 rounded-full bg-ember/10 flex items-center justify-center mb-6">
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-                >
-                  <Sparkles className="h-7 w-7 text-ember" />
-                </motion.div>
-              </div>
-              <p className="font-display text-lg font-semibold text-ink mb-1 flex items-center gap-0">
-                Generating
-                <PulsingDots />
-              </p>
-              <p className="text-sm text-dim mb-6">Writing your draft — this usually takes 30–60 seconds.</p>
-              <div className="w-64">
-                <motion.div
-                  className="h-1.5 rounded-full bg-ember/20 overflow-hidden"
-                >
-                  <motion.div
-                    className="h-full bg-ember rounded-full"
-                    animate={{ x: ['-100%', '200%'] }}
-                    transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
-                    style={{ width: '50%' }}
-                  />
-                </motion.div>
-              </div>
-            </motion.div>
-          )}
+      {/* Actions */}
+      <div className="flex items-center gap-3">
+        <Button onClick={onSave} className="flex-1">
+          Save to Library
+        </Button>
+        <Button variant="outline" onClick={onRegenerate} loading={regenerating}>
+          <RefreshCw className="h-4 w-4" />
+          Regenerate
+        </Button>
+      </div>
+    </motion.div>
+  )
+}
 
-          {/* Draft ready */}
-          {hasDraft && draft && (
-            <motion.div
-              key="ready"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.35, ease: SPRING }}
-              className="p-5 space-y-5"
-            >
-              {/* Score section */}
-              <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-dim uppercase tracking-wide font-semibold">Draft Score</p>
-                  <span className={cn('text-2xl font-display font-semibold', scoreColor(draft.score))}>
-                    {draft.score}
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  {(Object.keys(draft.sub_scores) as (keyof DraftSubScores)[]).map((key) => (
-                    <ScoreBar key={key} label={subScoreLabel(key)} value={draft.sub_scores[key]} />
-                  ))}
-                </div>
-              </div>
+// ─── Recent Generations List ───────────────────────────────────────────────────
 
-              {/* Action buttons */}
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => generateMutation.mutate()}
-                  loading={generateMutation.isPending}
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  Regenerate
-                </Button>
-                <Button variant="outline" size="sm" onClick={copyDraft}>
-                  {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
-                  {copied ? 'Copied!' : 'Copy'}
-                </Button>
-                <Button variant="outline" size="sm" onClick={exportDraft}>
-                  <Download className="h-3.5 w-3.5" />
-                  Export
-                </Button>
-              </div>
+function RecentGenerations({ briefs }: { briefs: Brief[] }) {
+  if (briefs.length === 0) return null
 
-              {/* Draft content */}
-              <div
-                className={cn(
-                  'rounded-lg border border-border bg-paper p-5',
-                  'font-serif text-ink leading-relaxed text-sm',
-                  'whitespace-pre-wrap break-words',
-                  'max-h-[480px] overflow-y-auto',
-                )}
-              >
-                {draft.content}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+  return (
+    <div className="rounded-2xl border border-[var(--border)] bg-white/70 p-6">
+      <h2 className="font-display text-lg text-[var(--ink)] mb-4">Recent Generations</h2>
+      <div className="space-y-3">
+        {briefs.slice(0, 8).map((brief) => (
+          <div
+            key={brief.id}
+            className="flex items-center gap-3 py-2 border-b border-[var(--border)] last:border-0"
+          >
+            <FileText className="h-4 w-4 text-[var(--dim)] shrink-0" />
+            <p className="text-sm text-[var(--ink)] flex-1 line-clamp-1">{brief.topic}</p>
+            {brief.content_type && (
+              <Badge variant="outline" size="sm">{typeLabel(brief.content_type as ContentTypeOption)}</Badge>
+            )}
+            <span className="text-xs text-[var(--dim)] shrink-0">{relativeTime(brief.created_at)}</span>
+            <Badge variant={statusVariant(brief.status)} size="sm">{statusLabel(brief.status)}</Badge>
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -529,13 +294,12 @@ export default function ContentGenerationPage() {
   const { slug, brandId } = useParams<{ slug: string; brandId: string }>()
   const qc = useQueryClient()
   const { toast } = useToast()
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
+  const [currentBriefId, setCurrentBriefId] = useState<string | null>(null)
+  const [currentDraft, setCurrentDraft] = useState<Draft | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['briefs', slug, brandId],
-    queryFn: () =>
-      api.get<{ briefs: Brief[] }>(routes.contentGen(slug, brandId)),
+    queryFn: () => api.get<{ briefs: Brief[] }>(routes.contentGen(slug, brandId)),
   })
 
   const createMutation = useMutation({
@@ -543,131 +307,110 @@ export default function ContentGenerationPage() {
       api.post<Brief>(routes.contentGen(slug, brandId), body),
     onSuccess: (newBrief) => {
       qc.invalidateQueries({ queryKey: ['briefs', slug, brandId] })
-      setCreateOpen(false)
-      setSelectedId(newBrief.id)
-      toast({ title: 'Brief created', variant: 'success' })
+      setCurrentBriefId(newBrief.id)
+      generateMutation.mutate(newBrief.id)
     },
     onError: () => {
       toast({ title: 'Failed to create brief', variant: 'error' })
     },
   })
 
+  const generateMutation = useMutation({
+    mutationFn: (briefId: string) =>
+      api.post<DraftResponse>(`${routes.contentGen(slug, brandId)}/${briefId}/generate`),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['briefs', slug, brandId] })
+      if (res?.draft) setCurrentDraft(res.draft)
+      else toast({ title: 'Generation started — check back shortly.', variant: 'info' })
+    },
+    onError: () => {
+      toast({ title: 'Failed to generate content', variant: 'error' })
+    },
+  })
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      currentBriefId
+        ? api.post(`${routes.contentGen(slug, brandId)}/${currentBriefId}/publish`)
+        : Promise.reject(new Error('No brief')),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['briefs', slug, brandId] })
+      toast({ title: 'Saved to library', variant: 'success' })
+      setCurrentDraft(null)
+      setCurrentBriefId(null)
+    },
+    onError: () => {
+      toast({ title: 'Failed to save', variant: 'error' })
+    },
+  })
+
+  function handleGenerate(form: { topic: string; content_type: ContentTypeOption; tone: Tone; target_audience: string; target_keyword: string; word_count: string }) {
+    setCurrentDraft(null)
+    createMutation.mutate({
+      topic: form.topic,
+      target_keyword: form.target_keyword || form.topic,
+      tone: form.tone,
+      word_count: parseInt(form.word_count) || 1000,
+      content_type: form.content_type,
+      target_audience: form.target_audience || undefined,
+    })
+  }
+
   const briefs = data?.briefs ?? []
-  const selected = briefs.find((b) => b.id === selectedId) ?? null
+  const isGenerating = createMutation.isPending || generateMutation.isPending
 
   return (
-    <>
-      <NewBriefModal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onSubmit={(data) => createMutation.mutate(data)}
-        loading={createMutation.isPending}
-      />
+    <div className="max-w-3xl mx-auto space-y-6">
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: SPRING }}
+      >
+        <h1 className="font-display text-3xl font-semibold text-[var(--ink)]">Content Generation</h1>
+        <p className="text-sm text-[var(--dim)] mt-1">AI-optimized content for recommendation engines</p>
+      </motion.div>
 
-      <div className="max-w-7xl mx-auto space-y-5">
-        {/* Page header */}
+      {/* Generation form */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: SPRING, delay: 0.05 }}
+      >
+        <GenerationForm onGenerate={handleGenerate} generating={isGenerating} />
+      </motion.div>
+
+      {/* Generated result */}
+      <AnimatePresence mode="wait">
+        {currentDraft && (
+          <GeneratedResultCard
+            key="result"
+            draft={currentDraft}
+            onRegenerate={() => currentBriefId && generateMutation.mutate(currentBriefId)}
+            onSave={() => saveMutation.mutate()}
+            regenerating={generateMutation.isPending}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Recent generations */}
+      {isLoading ? (
+        <SkeletonCard />
+      ) : briefs.length === 0 && !currentDraft ? (
+        <EmptyState
+          icon={<Sparkles className="h-6 w-6" />}
+          title="No content generated yet"
+          description="Fill in the form above and click Generate Content to get started."
+        />
+      ) : (
         <motion.div
-          initial={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, ease: SPRING }}
+          transition={{ duration: 0.35, ease: SPRING, delay: 0.1 }}
         >
-          <h1 className="font-display text-3xl font-semibold text-ink">Content Generation</h1>
-          <p className="text-sm text-dim mt-1">AI-powered brief-to-draft pipeline</p>
+          <RecentGenerations briefs={briefs} />
         </motion.div>
-
-        {/* Two-panel layout */}
-        <div className="flex gap-0 rounded-xl border border-border bg-paper overflow-hidden shadow-sm" style={{ minHeight: 600 }}>
-          {/* Left: Brief List (40%) */}
-          <div className="w-[40%] shrink-0 flex flex-col border-r border-border">
-            {/* Panel header */}
-            <div className="flex items-center justify-between px-4 py-3.5 border-b border-border">
-              <p className="text-xs font-semibold text-dim uppercase tracking-wide">Briefs</p>
-              <Button size="sm" onClick={() => setCreateOpen(true)}>
-                <Plus className="h-3.5 w-3.5" />
-                New Brief
-              </Button>
-            </div>
-
-            {/* Brief list */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-2">
-              {isLoading && (
-                <>
-                  <SkeletonCard className="h-20" />
-                  <SkeletonCard className="h-20" />
-                  <SkeletonCard className="h-20" />
-                </>
-              )}
-
-              {!isLoading && briefs.length === 0 && (
-                <EmptyState
-                  icon={<FileText className="h-5 w-5" />}
-                  title="No briefs yet"
-                  description="Create a brief to start generating AI content."
-                  action={
-                    <Button size="sm" onClick={() => setCreateOpen(true)}>
-                      <Plus className="h-3.5 w-3.5" />
-                      New Brief
-                    </Button>
-                  }
-                />
-              )}
-
-              <AnimatePresence initial={false}>
-                {briefs.map((brief, i) => (
-                  <motion.div
-                    key={brief.id}
-                    initial={{ opacity: 0, y: 12, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-                    transition={{ duration: 0.3, ease: SPRING, delay: i * 0.04 }}
-                  >
-                    <BriefItem
-                      brief={brief}
-                      selected={brief.id === selectedId}
-                      onClick={() => setSelectedId(brief.id === selectedId ? null : brief.id)}
-                    />
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-          </div>
-
-          {/* Right: Draft Editor (60%) */}
-          <div className="flex-1 min-w-0 relative overflow-hidden">
-            <AnimatePresence mode="wait">
-              {selected ? (
-                <motion.div
-                  key={selected.id}
-                  initial={{ opacity: 0, x: 40 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  transition={{ duration: 0.35, ease: SPRING }}
-                  className="absolute inset-0 flex flex-col"
-                >
-                  <DraftEditor brief={selected} slug={slug} brandId={brandId} />
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="empty"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="absolute inset-0 flex flex-col items-center justify-center text-center px-8"
-                >
-                  <div className="w-16 h-16 rounded-full bg-surface border border-border flex items-center justify-center mb-4">
-                    <Sparkles className="h-6 w-6 text-dim" />
-                  </div>
-                  <p className="font-display text-base font-semibold text-ink mb-1">Select a brief</p>
-                  <p className="text-sm text-dim max-w-xs leading-relaxed">
-                    Choose a brief from the left to view or generate its draft.
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-      </div>
-    </>
+      )}
+    </div>
   )
 }
