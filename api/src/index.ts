@@ -35,6 +35,8 @@ import learning from './routes/learning.js'
 import reports from './routes/reports.js'
 import customerSuccess from './routes/customer-success.js'
 import whiteLabel from './routes/white-label.js'
+import marketing from './routes/marketing.js'
+import autonomous from './routes/autonomous.js'
 
 const app = new Hono()
 
@@ -80,6 +82,8 @@ app.route('/api/orgs/:slug/brands/:brandId/learning', learning)
 app.route('/api/orgs/:slug/brands/:brandId/reports', reports)
 app.route('/api/admin/customer-success', customerSuccess)
 app.route('/api/orgs/:slug/white-label', whiteLabel)
+app.route('/api/orgs/:slug/marketing', marketing)
+app.route('/api/orgs/:slug/brands/:brandId/autonomous', autonomous)
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404))
 app.onError((err, c) => {

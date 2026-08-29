@@ -239,6 +239,41 @@ model auth_events {
   @@index([user_id], map: "idx_auth_events_user")
 }
 
+model autonomous_run_logs {
+  id                   String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schedule_id          String               @db.Uuid
+  brand_id             String               @db.Uuid
+  status               String               @default("running") @db.VarChar(50)
+  tasks_executed       Json                 @default("[]")
+  summary              Json                 @default("{}")
+  error_message        String?
+  started_at           DateTime             @default(now()) @db.Timestamptz(6)
+  completed_at         DateTime?            @db.Timestamptz(6)
+  created_at           DateTime             @default(now()) @db.Timestamptz(6)
+  brands               brands               @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  autonomous_schedules autonomous_schedules @relation(fields: [schedule_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model autonomous_schedules {
+  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id            String                @db.Uuid
+  org_id              String                @db.Uuid
+  schedule_type       String                @db.VarChar(100)
+  cron_expression     String?               @db.VarChar(100)
+  enabled             Boolean               @default(true)
+  last_run_at         DateTime?             @db.Timestamptz(6)
+  next_run_at         DateTime?             @db.Timestamptz(6)
+  run_count           Int                   @default(0)
+  config              Json                  @default("{}")
+  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime              @default(now()) @db.Timestamptz(6)
+  autonomous_run_logs autonomous_run_logs[]
+  brands              brands                @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organizations       organizations         @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([brand_id], map: "idx_autonomous_schedules_brand")
+}
+
 model background_jobs {
   id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   type          job_type
@@ -340,6 +375,8 @@ model brands {
   actions                 actions[]
   analyses                analyses[]
   audiences               audiences[]
+  autonomous_run_logs     autonomous_run_logs[]
+  autonomous_schedules    autonomous_schedules[]
   brand_aliases           brand_aliases[]
   brand_categories        brand_categories[]        @ignore
   brand_keyword_rankings  brand_keyword_rankings[]
@@ -873,6 +910,22 @@ model growth_agent_runs {
   seo_agent_runs                seo_agent_runs? @relation(fields: [seo_run_id], references: [id], onUpdate: NoAction)
 }
 
+model growth_levers {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  org_id           String        @db.Uuid
+  lever_type       String        @db.VarChar(100)
+  title            String        @db.VarChar(500)
+  description      String?
+  estimated_impact Decimal?      @db.Decimal(5, 2)
+  effort_level     String        @default("medium") @db.VarChar(20)
+  status           String        @default("identified") @db.VarChar(50)
+  activated_at     DateTime?     @db.Timestamptz(6)
+  result_metrics   Json          @default("{}")
+  created_at       DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime      @default(now()) @db.Timestamptz(6)
+  organizations    organizations @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
 model gsc_connections {
   id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   brand_id          String    @unique @db.Uuid
@@ -1017,6 +1070,29 @@ model magic_link_tokens {
 
   @@index([email], map: "idx_mlt_email")
   @@index([token_hash], map: "idx_mlt_token")
+}
+
+model marketing_campaigns {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  org_id          String        @db.Uuid
+  name            String        @db.VarChar(255)
+  campaign_type   String        @db.VarChar(100)
+  status          String        @default("draft") @db.VarChar(50)
+  target_audience Json          @default("{}")
+  channels        String[]      @default([])
+  content_ids     String[]      @default([]) @db.Uuid
+  metrics         Json          @default("{}")
+  budget          Decimal?      @db.Decimal(10, 2)
+  started_at      DateTime?     @db.Timestamptz(6)
+  ended_at        DateTime?     @db.Timestamptz(6)
+  created_by      String?       @db.Uuid
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime      @default(now()) @db.Timestamptz(6)
+  deleted_at      DateTime?     @db.Timestamptz(6)
+  users           users?        @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  organizations   organizations @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([org_id], map: "idx_marketing_campaigns_org")
 }
 
 model measurement_annotations {
@@ -1196,6 +1272,7 @@ model organizations {
   agency_clients_agency_clients_client_org_idToorganizations agency_clients[]        @relation("agency_clients_client_org_idToorganizations")
   ai_usage                                                   ai_usage[]
   audit_events                                               audit_events[]
+  autonomous_schedules                                       autonomous_schedules[]
   brands                                                     brands[]
   categories                                                 categories[]
   crm_contacts                                               crm_contacts[]
@@ -1204,9 +1281,11 @@ model organizations {
   experiments                                                experiments[]
   geo_agent_runs                                             geo_agent_runs[]
   growth_agent_runs                                          growth_agent_runs[]
+  growth_levers                                              growth_levers[]
   integrations                                               integrations[]
   intents                                                    intents[]
   invitations                                                invitations[]
+  marketing_campaigns                                        marketing_campaigns[]
   memberships                                                memberships[]
   notifications                                              notifications[]
   org_ai_providers                                           org_ai_providers[]
@@ -1722,6 +1801,7 @@ model users {
   crm_notes                                    crm_notes[]
   experiments                                  experiments[]
   invitations                                  invitations[]
+  marketing_campaigns                          marketing_campaigns[]
   memberships                                  memberships[]
   notification_preferences                     notification_preferences[]
   notifications                                notifications[]
