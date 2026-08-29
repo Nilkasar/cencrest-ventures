@@ -23,6 +23,7 @@ import snapshots from './routes/snapshots.js'
 import opportunities from './routes/opportunities.js'
 import geoGaps from './routes/geo-gaps.js'
 import recommendations from './routes/recommendations.js'
+import content from './routes/content.js'
 
 const app = new Hono()
 
@@ -56,6 +57,7 @@ app.route('/api/snapshots', snapshots)
 app.route('/api/orgs/:slug/brands/:brandId/opportunities', opportunities)
 app.route('/api/orgs/:slug/brands/:brandId/geo-gaps', geoGaps)
 app.route('/api/orgs/:slug/brands/:brandId/recommendations', recommendations)
+app.route('/api/orgs/:slug/brands/:brandId/content', content)
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404))
 app.onError((err, c) => {

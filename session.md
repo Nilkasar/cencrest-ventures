@@ -67,8 +67,8 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | 12 | Unified SEO + GEO Opportunity Engine | ✅ Done | ✅ | Yes |
 | 13 | GEO Gap Engine | ✅ Done | ✅ | Yes |
 | 14 | Recommendation Engine | ✅ Done | ✅ | Yes |
-| 15 | Content Intelligence | 🔄 In Progress | — | No |
-| 16 | Content Generation | ⏳ Blocked by 8,14,15 | — | No |
+| 15 | Content Intelligence | ✅ Done | ✅ | Yes |
+| 16 | Content Generation | 🔄 In Progress | — | No |
 | 17 | GEO Agent | ⏳ Blocked by 13,16 | — | No |
 | 18 | SEO Agent | ⏳ Blocked by 6,16 | — | No |
 | 19 | Unified Growth Agent | ⏳ Blocked by 17,18 | — | No |
@@ -105,14 +105,14 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | Epic 12 (Opportunity Engine) | 164 |
 | Epic 13 (GEO Gap Engine) | 171 |
 | Epic 14 (Recommendation Engine) | 178 |
-| Epic 15 (Content Intelligence) | 🔄 in progress |
+| Epic 15 (Content Intelligence) | 189 |
 
 ### Current batch
-- Epic 15 (Content Intelligence) — 🔄 agent running
+- Epic 16 (Content Generation) — 🔄 in progress
 
-### Next after Epic 15
-- Epic 16 (Content Generation) — depends on 8 ✅ + 14 ✅ + 15
-- After 16: Epics 17+18 open up in parallel (GEO Agent + SEO Agent)
+### Next after Epic 16
+- Epics 17+18 open up in parallel (GEO Agent + SEO Agent)
+- After 17+18: Epic 19 (Unified Growth Agent)
 
 ### Known technical debt
 - DB migrations done via raw psql (not Prisma Migrate) — not reproducible without this exact DB
