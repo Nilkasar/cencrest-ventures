@@ -19,7 +19,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...authHeader,
       ...init?.headers,
     },
-    credentials: 'include',
   })
 
   if (!res.ok) {

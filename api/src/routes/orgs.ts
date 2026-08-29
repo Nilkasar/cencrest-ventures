@@ -11,6 +11,21 @@ const orgs = new Hono<AppEnv>()
 
 orgs.route('/:slug/agency', agency)
 
+// ── List orgs for current user ───────────────────────────────────────────────
+orgs.get('/', requireAuth, async (c) => {
+  const user = c.get('user')
+  const memberships = await db.memberships.findMany({
+    where: { user_id: user.id },
+    include: { organizations: { select: { id: true, name: true, slug: true } } },
+  })
+  return c.json(memberships.map(m => ({
+    id: m.organizations.id,
+    name: m.organizations.name,
+    slug: m.organizations.slug,
+    role: m.role,
+  })))
+})
+
 // ── Create org ───────────────────────────────────────────────────────────────
 const createOrgSchema = z.object({
   name: z.string().min(2).max(100),

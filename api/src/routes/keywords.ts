@@ -250,4 +250,29 @@ keywords.get('/competitor-overlap', requireAuth, requireOrgRole('viewer'), async
   return c.json({ total: overlap.length, data: overlap })
 })
 
+// GET /summary — keyword counts and difficulty average
+keywords.get('/summary', requireAuth, requireOrgRole('viewer'), async (c) => {
+  const { organizationId } = c.get('org')
+  const brandId = c.req.param('brandId')
+
+  const brand = await db.brands.findFirst({
+    where: { id: brandId, organization_id: organizationId, deleted_at: null },
+  })
+  if (!brand) return c.json({ error: 'Brand not found' }, 404)
+
+  const [total, agg] = await Promise.all([
+    db.keywords.count({ where: { brand_id: brandId } }),
+    db.keywords.aggregate({
+      where: { brand_id: brandId },
+      _avg: { difficulty: true },
+    }),
+  ])
+
+  return c.json({
+    total,
+    tracked: total,
+    avg_difficulty: Math.round(agg._avg.difficulty ?? 0),
+  })
+})
+
 export default keywords

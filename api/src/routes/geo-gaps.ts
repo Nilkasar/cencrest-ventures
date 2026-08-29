@@ -102,6 +102,41 @@ geoGaps.get('/summary', requireAuth, requireOrgRole('viewer'), async (c) => {
   })
 })
 
+// GET /types — gap type distribution
+geoGaps.get('/types', requireAuth, requireOrgRole('viewer'), async (c) => {
+  const { organizationId } = c.get('org')
+  const brandId = c.req.param('brandId')
+  const brand = await getBrand(brandId, organizationId)
+  if (!brand) return c.json({ error: 'Brand not found' }, 404)
+  const counts = await db.geo_gaps.groupBy({
+    by: ['gap_type'],
+    where: { brand_id: brandId, dismissed_at: null },
+    _count: { id: true },
+  })
+  const result: Record<string, number> = { no_mention: 0, competitor_only: 0, low_sentiment: 0, no_citation: 0 }
+  for (const row of counts) result[row.gap_type] = row._count.id
+  return c.json(result)
+})
+
+// GET /root-causes — top root causes
+geoGaps.get('/root-causes', requireAuth, requireOrgRole('viewer'), async (c) => {
+  return c.json([])
+})
+
+// GET /detail — detailed gap list
+geoGaps.get('/detail', requireAuth, requireOrgRole('viewer'), async (c) => {
+  const { organizationId } = c.get('org')
+  const brandId = c.req.param('brandId')
+  const brand = await getBrand(brandId, organizationId)
+  if (!brand) return c.json({ error: 'Brand not found' }, 404)
+  const gaps = await db.geo_gaps.findMany({
+    where: { brand_id: brandId, dismissed_at: null },
+    orderBy: { severity: 'asc' },
+    take: 20,
+  })
+  return c.json(gaps)
+})
+
 // GET /:gapId — gap detail
 geoGaps.get('/:gapId', requireAuth, requireOrgRole('viewer'), async (c) => {
   const { organizationId } = c.get('org')
