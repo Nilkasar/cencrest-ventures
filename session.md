@@ -75,14 +75,14 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | 20 | Action Center | ✅ Done | ✅ | Yes |
 | 21 | Controlled Publishing | ✅ Done | ✅ | Yes |
 | 22 | Measurement & Experimentation | ✅ Done | ✅ | Yes |
-| 23 | Continuous Learning Loop | 🔄 In Progress | — | No |
-| 24 | Reporting | 🔄 In Progress | — | No |
+| 23 | Continuous Learning Loop | ✅ Done | ✅ | Yes |
+| 24 | Reporting | ✅ Done | ✅ | Yes |
 | 25 | Notifications | ✅ Done | ✅ | Yes |
 | 26 | Billing | ✅ Done | ✅ | Yes |
 | 27 | CRM | ✅ Done | ✅ | Yes |
 | 28 | Free AI + SEO Snapshot | ✅ Done | ✅ | Yes |
-| 29 | Customer Success Automation | ⏳ Blocked by 23,27 | — | No |
-| 30 | Agency / Multi-client | ⏳ Blocked by 2,24 | — | No |
+| 29 | Customer Success Automation | 🔄 In Progress | — | No |
+| 30 | Agency / Multi-client | 🔄 In Progress | — | No |
 | 31 | White Label | ⏳ Blocked by 30,24 | — | No |
 | 32 | Integrations | ✅ Done | ✅ | Yes |
 | 33 | Marketing / Growth Engine | ⏳ Blocked by 28,24 | — | No |
@@ -112,12 +112,13 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | Epic 20 (Action Center) | 234 |
 | Epic 21 (Controlled Publishing) | 247 |
 | Epic 22 (Measurement & Experimentation) | 259 |
+| Epics 23+24 (Learning Loop + Reporting) | 279 |
 
 ### Current batch
-- Epics 23+24 (Continuous Learning Loop + Reporting) — 🔄 running in parallel
+- Epics 29+30 (Customer Success Automation + Agency/Multi-client) — 🔄 running in parallel
 
-### Next after 23+24
-- Epic 29 (Customer Success Automation) — depends on 23 ✅ + 27 ✅
+### Next after 29+30
+- Epic 31 (White Label) — depends on 30 ✅ + 24 ✅
 
 ### Known technical debt
 - DB migrations done via raw psql (not Prisma Migrate) — not reproducible without this exact DB

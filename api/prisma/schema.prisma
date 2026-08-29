@@ -343,6 +343,8 @@ model brands {
   gsc_connections         gsc_connections?
   keyword_clusters        keyword_clusters[]
   keywords                keywords[]
+  learning_insights       learning_insights[]
+  learning_signals        learning_signals[]
   measurement_points      measurement_points[]
   mentions                mentions[]
   opportunities           opportunities[]
@@ -926,6 +928,42 @@ model keywords {
 
   @@unique([brand_id, keyword])
   @@index([brand_id], map: "idx_keywords_brand")
+}
+
+model learning_insights {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id           String   @db.Uuid
+  insight_type       String   @db.VarChar(100)
+  title              String   @db.VarChar(500)
+  description        String?
+  confidence         Decimal  @default(0.5) @db.Decimal(4, 3)
+  supporting_signals Json     @default("[]")
+  action_taken       Boolean  @default(false)
+  action_type        String?  @db.VarChar(100)
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @default(now()) @db.Timestamptz(6)
+  brands             brands   @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([brand_id], map: "idx_learning_insights_brand")
+}
+
+model learning_signals {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id     String    @db.Uuid
+  signal_type  String    @db.VarChar(100)
+  source       String    @db.VarChar(100)
+  source_id    String?   @db.Uuid
+  metric_name  String    @db.VarChar(100)
+  metric_value Decimal?  @db.Decimal(10, 4)
+  delta        Decimal?  @db.Decimal(10, 4)
+  context      Json      @default("{}")
+  processed    Boolean   @default(false)
+  processed_at DateTime? @db.Timestamptz(6)
+  recorded_at  DateTime  @default(now()) @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  brands       brands    @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([brand_id], map: "idx_learning_signals_brand")
 }
 
 model magic_link_tokens {
