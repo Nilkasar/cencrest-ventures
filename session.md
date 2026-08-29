@@ -71,8 +71,8 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | 16 | Content Generation | ✅ Done | ✅ | Yes |
 | 17 | GEO Agent | ✅ Done | ✅ | Yes |
 | 18 | SEO Agent | ✅ Done | ✅ | Yes |
-| 19 | Unified Growth Agent | 🔄 In Progress | — | No |
-| 20 | Action Center | ⏳ Blocked by 14,19 | — | No |
+| 19 | Unified Growth Agent | ✅ Done | ✅ | Yes |
+| 20 | Action Center | 🔄 In Progress | — | No |
 | 21 | Controlled Publishing | ⏳ Blocked by 16,20 | — | No |
 | 22 | Measurement & Experimentation | ⏳ Blocked by 9,21 | — | No |
 | 23 | Continuous Learning Loop | ⏳ Blocked by 22 | — | No |
@@ -108,12 +108,13 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | Epic 15 (Content Intelligence) | 189 |
 | Epic 16 (Content Generation) | 201 |
 | Epics 17+18 (GEO Agent + SEO Agent) | 215 |
+| Epic 19 (Unified Growth Agent) | 223 |
 
 ### Current batch
-- Epic 19 (Unified Growth Agent) — 🔄 in progress
+- Epic 20 (Action Center) — 🔄 in progress
 
-### Next after 19
-- Epic 20 (Action Center) — depends on 14 ✅ + 19
+### Next after 20
+- Epic 21 (Controlled Publishing) — depends on 16 ✅ + 20
 
 ### Known technical debt
 - DB migrations done via raw psql (not Prisma Migrate) — not reproducible without this exact DB

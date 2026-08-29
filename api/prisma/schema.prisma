@@ -308,6 +308,7 @@ model brands {
   geo_agent_actions      geo_agent_actions[]
   geo_agent_runs         geo_agent_runs[]
   geo_gaps               geo_gaps[]
+  growth_agent_runs      growth_agent_runs[]
   gsc_connections        gsc_connections?
   keyword_clusters       keyword_clusters[]
   keywords               keywords[]
@@ -701,6 +702,7 @@ model geo_agent_runs {
   geo_agent_actions       geo_agent_actions[]
   brands                  brands              @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   organizations           organizations       @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  growth_agent_runs       growth_agent_runs[]
 }
 
 model geo_gaps {
@@ -724,6 +726,29 @@ model geo_gaps {
   @@unique([brand_id, query_id, provider_name, gap_type])
   @@index([brand_id, dismissed_at, business_impact_score(sort: Desc)], map: "idx_geo_gaps_brand")
   @@index([brand_id, gap_type], map: "idx_geo_gaps_type")
+}
+
+model growth_agent_runs {
+  id                            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id                      String          @db.Uuid
+  org_id                        String          @db.Uuid
+  status                        String          @default("pending") @db.VarChar(50)
+  trigger                       String          @default("manual") @db.VarChar(50)
+  geo_run_id                    String?         @db.Uuid
+  seo_run_id                    String?         @db.Uuid
+  total_gaps_processed          Int             @default(0)
+  total_opportunities_processed Int             @default(0)
+  total_content_generated       Int             @default(0)
+  summary                       Json            @default("{}")
+  error_message                 String?
+  started_at                    DateTime?       @db.Timestamptz(6)
+  completed_at                  DateTime?       @db.Timestamptz(6)
+  created_at                    DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime        @default(now()) @db.Timestamptz(6)
+  brands                        brands          @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  geo_agent_runs                geo_agent_runs? @relation(fields: [geo_run_id], references: [id], onUpdate: NoAction)
+  organizations                 organizations   @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  seo_agent_runs                seo_agent_runs? @relation(fields: [seo_run_id], references: [id], onUpdate: NoAction)
 }
 
 model gsc_connections {
@@ -1015,6 +1040,7 @@ model organizations {
   crm_contacts      crm_contacts[]
   crm_notes         crm_notes[]
   geo_agent_runs    geo_agent_runs[]
+  growth_agent_runs growth_agent_runs[]
   integrations      integrations[]
   intents           intents[]
   invitations       invitations[]
@@ -1395,6 +1421,7 @@ model seo_agent_runs {
   completed_at            DateTime?           @db.Timestamptz(6)
   created_at              DateTime            @default(now()) @db.Timestamptz(6)
   updated_at              DateTime            @default(now()) @db.Timestamptz(6)
+  growth_agent_runs       growth_agent_runs[]
   seo_agent_actions       seo_agent_actions[]
   brands                  brands              @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   organizations           organizations       @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
