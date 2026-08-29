@@ -51,7 +51,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-[var(--paper)]">
       <Sidebar />
-      <div className="lg:pl-60 flex flex-col min-h-screen">
+      <div className="lg:pl-[240px] flex flex-col min-h-screen">
         <Topbar />
         <motion.main
           className="flex-1 px-6 py-6"
