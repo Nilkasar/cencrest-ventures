@@ -669,6 +669,31 @@ model entities {
   @@index([name], map: "idx_entities_name")
 }
 
+model entrepreneur_stories {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  org_id        String        @db.Uuid
+  author_name   String        @db.VarChar(255)
+  author_title  String?       @db.VarChar(255)
+  company_name  String?       @db.VarChar(255)
+  story_type    String        @default("case_study") @db.VarChar(100)
+  title         String        @db.VarChar(500)
+  summary       String?
+  content       String?
+  tags          String[]      @default([])
+  industry      String?       @db.VarChar(100)
+  metrics       Json          @default("{}")
+  status        String        @default("draft") @db.VarChar(50)
+  featured      Boolean       @default(false)
+  published_at  DateTime?     @db.Timestamptz(6)
+  created_at    DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime      @default(now()) @db.Timestamptz(6)
+  deleted_at    DateTime?     @db.Timestamptz(6)
+  organizations organizations @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([org_id], map: "idx_entrepreneur_stories_org")
+  @@index([status], map: "idx_entrepreneur_stories_status")
+}
+
 model evaluation_datasets {
   id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name             String             @db.VarChar(255)
@@ -1278,6 +1303,7 @@ model organizations {
   crm_contacts                                               crm_contacts[]
   crm_notes                                                  crm_notes[]
   customer_health_checks                                     customer_health_checks?
+  entrepreneur_stories                                       entrepreneur_stories[]
   experiments                                                experiments[]
   geo_agent_runs                                             geo_agent_runs[]
   growth_agent_runs                                          growth_agent_runs[]

@@ -86,9 +86,9 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | 31 | White Label | ✅ Done | ✅ | Yes |
 | 32 | Integrations | ✅ Done | ✅ | Yes |
 | 33 | Marketing / Growth Engine | ✅ Done | ✅ | Yes |
-| 34 | Entrepreneur Story Ecosystem | 🔄 In Progress | — | No |
+| 34 | Entrepreneur Story Ecosystem | ✅ Done | ✅ | Yes |
 | 35 | Autonomous Operations | ✅ Done | ✅ | Yes |
-| 36 | Production Hardening | ⏳ Blocked by all | — | No |
+| 36 | Production Hardening | 🔄 In Progress | — | No |
 
 ### Test count history
 | Commit | Tests |
@@ -116,13 +116,10 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | Epics 29+30 (Customer Success + Agency) | 293 |
 | Epic 31 (White Label) | 303 |
 | Epics 33+35 (Marketing Engine + Autonomous Ops) | 328 |
+| Epic 34 (Entrepreneur Story Ecosystem) | 338 |
 
 ### Current batch
-- Epic 34 (Entrepreneur Story Ecosystem) — 🔄 in progress
-- Epic 36 (Production Hardening) — ⏳ next after 34
-
-### Remaining
-- Epic 36 (Production Hardening) — final epic, depends on all
+- Epic 36 (Production Hardening) — 🔄 final epic in progress
 
 ### Known technical debt
 - DB migrations done via raw psql (not Prisma Migrate) — not reproducible without this exact DB
