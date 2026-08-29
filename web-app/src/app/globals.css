@@ -79,3 +79,7 @@ body {
 .font-display { font-family: var(--font-fraunces, Georgia, serif); }
 .font-serif   { font-family: var(--font-spectral, Georgia, serif); }
 .font-mono    { font-family: var(--font-jetbrains, monospace); }
+
+/* App shell: push content past the fixed 240px sidebar on desktop */
+.app-main { margin-left: 0; }
+@media (min-width: 1024px) { .app-main { margin-left: 240px; } }

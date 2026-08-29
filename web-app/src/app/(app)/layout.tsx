@@ -49,9 +49,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   }, [slug, brandId, setBrand])
 
   return (
-    <div className="min-h-screen bg-[var(--paper)]">
+    <div className="min-h-screen bg-[var(--paper)] flex">
       <Sidebar />
-      <div className="lg:pl-[240px] flex flex-col min-h-screen">
+      <div className="app-main flex flex-col min-h-screen w-full">
         <Topbar />
         <motion.main
           className="flex-1 px-6 py-6"
