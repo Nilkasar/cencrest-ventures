@@ -485,12 +485,15 @@ export default function PublishingPage() {
         className="flex items-center justify-between mb-6 shrink-0"
       >
         <div>
-          <h1 className="font-display text-3xl font-semibold text-ink">Publishing</h1>
+          <h1 className="font-display text-3xl font-semibold text-ink">Publishing Queue</h1>
           <p className="text-sm text-dim mt-1">Approval &amp; scheduling pipeline</p>
         </div>
-        <Button onClick={() => setNewJobOpen(true)}>
+        <Button
+          onClick={() => setNewJobOpen(true)}
+          className="bg-[var(--ember)] text-white hover:bg-[var(--ember)]/90"
+        >
           <Plus className="h-4 w-4" />
-          New Job
+          Schedule Post
         </Button>
       </motion.div>
 

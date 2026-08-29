@@ -212,7 +212,7 @@ function StorySlideOver({ story, onClose }: { story: Story | null; onClose: () =
 // ─── Story Card ───────────────────────────────────────────────────────────────
 
 function StoryCard({ story, index, onRead }: { story: Story; index: number; onRead: () => void }) {
-  const excerpt = story.content.length > 200 ? story.content.slice(0, 200) + '…' : story.content
+  const excerpt = story.content.length > 300 ? story.content.slice(0, 300) + '…' : story.content
 
   return (
     <motion.div
@@ -221,34 +221,31 @@ function StoryCard({ story, index, onRead }: { story: Story; index: number; onRe
       layout
       whileHover={{ y: -3, boxShadow: '0 8px 24px rgba(22,20,15,0.10)' }}
       transition={spring}
-      className="bg-surface border border-border rounded-xl p-6 flex flex-col gap-4 cursor-default"
+      className="rounded-2xl border border-[var(--border)] bg-white/70 p-6 hover:shadow-md transition-shadow flex flex-col cursor-default"
     >
-      <div>
-        <h2 className="font-display text-xl font-semibold text-ink leading-tight mb-2 line-clamp-2">{story.title}</h2>
-        <div className="flex items-center gap-2 text-xs text-dim font-sans mb-3">
-          <User className="h-3 w-3" />
-          <span>{story.author}</span>
-          <span className="w-px h-3 bg-border" />
-          <Clock className="h-3 w-3" />
-          <span>{story.published_at ? relativeTime(story.published_at) : relativeTime(story.created_at)}</span>
-        </div>
-        {story.tags?.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-3">
-            {story.tags.slice(0, 4).map((tag) => (
-              <Badge key={tag} variant="outline" size="sm">
-                <Tag className="h-2.5 w-2.5" />
-                {tag}
-              </Badge>
-            ))}
-            {story.tags.length > 4 && <Badge variant="outline" size="sm">+{story.tags.length - 4}</Badge>}
-          </div>
-        )}
-        <p className="text-sm font-sans text-dim leading-relaxed line-clamp-3">{excerpt}</p>
+      {/* Status badge float right */}
+      <div className="flex justify-end mb-1">
+        <Badge variant={story.status === 'published' ? 'success' : 'outline'} size="sm">
+          {story.status}
+        </Badge>
       </div>
-      <Button size="sm" variant="outline" onClick={onRead} className="self-start gap-1.5">
-        <BookOpen className="h-3.5 w-3.5" />
-        Read
-      </Button>
+
+      {/* Title */}
+      <h2 className="font-display text-xl text-[var(--ink)] mt-2 line-clamp-2 leading-snug">{story.title}</h2>
+
+      {/* Excerpt */}
+      <p className="text-sm text-[var(--dim)] mt-2 line-clamp-3 leading-relaxed flex-1">{excerpt}</p>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between mt-4 pt-4 border-t border-[var(--border)]">
+        <span className="text-xs text-[var(--dim)]">
+          {story.published_at ? relativeTime(story.published_at) : relativeTime(story.created_at)}
+        </span>
+        <Button size="sm" variant="ghost" onClick={onRead} className="gap-1.5">
+          <BookOpen className="h-3.5 w-3.5" />
+          Edit
+        </Button>
+      </div>
     </motion.div>
   )
 }
@@ -365,7 +362,7 @@ export default function StoriesPage() {
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="font-display text-3xl font-semibold text-ink leading-tight">Stories</h1>
+            <h1 className="font-display text-3xl font-semibold text-ink leading-tight">Brand Stories</h1>
             <p className="text-sm text-dim font-sans mt-1">Founder intelligence &amp; market narratives</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -375,23 +372,27 @@ export default function StoriesPage() {
                 Public stories
               </a>
             </Button>
-            <Button size="sm" onClick={() => setModalOpen(true)}>
+            <Button
+              size="sm"
+              onClick={() => setModalOpen(true)}
+              className="bg-[var(--ember)] text-white hover:bg-[var(--ember)]/90"
+            >
               <Plus className="h-3.5 w-3.5" />
               New Story
             </Button>
           </div>
         </div>
 
-        {/* Published grid */}
+        {/* Stories grid */}
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} className="h-48" />)}
           </div>
         ) : published.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center gap-3 border border-dashed border-border rounded-xl">
             <BookOpen className="h-8 w-8 text-dim" />
-            <p className="text-sm text-dim font-sans">No published stories yet.</p>
-            <Button size="sm" onClick={() => setModalOpen(true)}>
+            <p className="text-sm text-dim font-sans">No stories yet.</p>
+            <Button size="sm" onClick={() => setModalOpen(true)} className="bg-[var(--ember)] text-white hover:bg-[var(--ember)]/90">
               <Plus className="h-3.5 w-3.5" /> Write the first story
             </Button>
           </div>
@@ -400,7 +401,7 @@ export default function StoriesPage() {
             variants={staggerContainer}
             initial="initial"
             animate="animate"
-            className="grid grid-cols-1 md:grid-cols-2 gap-4"
+            className="grid grid-cols-1 md:grid-cols-2 gap-5"
           >
             {published.map((story, i) => (
               <StoryCard

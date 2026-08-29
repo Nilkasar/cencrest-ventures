@@ -16,8 +16,11 @@ import {
   TrendingDown,
   Minus,
 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { EmptyState } from '@/components/ui/empty-state'
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type Module = 'seo' | 'geo' | 'competitive' | 'visibility'
 
@@ -118,54 +121,71 @@ function SnapshotRow({
   isLatest,
   prevScores,
   onDelete,
+  isLast,
 }: {
   snapshot: Snapshot
   isLatest: boolean
   prevScores?: Record<string, number>
   onDelete: (id: string) => void
+  isLast: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const scoreEntries = Object.entries(snapshot.scores)
+  const visibilityScore = snapshot.scores['visibility'] ?? snapshot.scores['score'] ?? (scoreEntries[0]?.[1] ?? 0)
+  const gapsCount = snapshot.scores['gaps'] ?? 0
+  const actionsCount = snapshot.scores['actions'] ?? 0
 
   return (
-    <div className="relative flex gap-4">
-      {/* Timeline spine + dot */}
-      <div className="flex flex-col items-center">
-        <div
-          className={cn(
-            'w-3 h-3 rounded-full mt-1 shrink-0 transition-shadow',
-            isLatest
-              ? 'bg-[var(--ember)] shadow-[0_0_0_4px_rgba(194,65,12,0.2)]'
-              : 'bg-[var(--dim)]'
-          )}
-        />
-        <div className="w-px flex-1 bg-[var(--border)] mt-1" />
+    <div className="flex gap-4 mb-4">
+      {/* Date col + vertical line */}
+      <div className="flex flex-col items-center w-24 shrink-0">
+        <p className="font-mono text-xs text-[var(--dim)] pt-1 text-right w-full">
+          {new Date(snapshot.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+        </p>
+        {!isLast && <div className="w-px flex-1 bg-[var(--border)] mt-2" />}
       </div>
 
-      {/* Content */}
-      <div className="flex-1 pb-6">
+      {/* Card */}
+      <div className="flex-1 rounded-xl border border-[var(--border)] bg-white/70 p-4 mb-2">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className="text-sm font-semibold text-[var(--ink)]">{snapshot.label}</p>
+          <div className="flex-1">
+            {/* Visibility score */}
+            <div className="flex items-baseline gap-1 mb-2">
+              <span className="text-2xl font-bold text-[var(--ember)]">{Math.round(visibilityScore)}</span>
+              <span className="text-sm text-[var(--dim)]">/100</span>
               {isLatest && (
-                <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--ember)] bg-[var(--ember)]/10 px-2 py-0.5 rounded-full">
+                <span className="ml-2 text-[10px] font-bold uppercase tracking-widest text-[var(--ember)] bg-[var(--ember)]/10 px-2 py-0.5 rounded-full">
                   Latest
                 </span>
               )}
             </div>
-            <p className="text-xs text-[var(--dim)] mt-0.5">{relativeTime(snapshot.created_at)}</p>
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {snapshot.modules.map((m) => (
-                <ModuleBadge key={m} module={m} />
-              ))}
+            <p className="text-sm font-medium text-[var(--ink)] mb-2">{snapshot.label}</p>
+            {/* Chips row */}
+            <div className="flex flex-wrap gap-1.5">
+              {snapshot.modules.map((m) => <ModuleBadge key={m} module={m} />)}
+              {gapsCount > 0 && (
+                <Badge variant="outline" size="sm">{gapsCount} gaps</Badge>
+              )}
+              {actionsCount > 0 && (
+                <Badge variant="outline" size="sm">{actionsCount} actions</Badge>
+              )}
             </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {/* Delete with inline confirm */}
+            {/* Compare ghost button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? <ChevronUp size={12} className="mr-1" /> : <GitCompare size={12} className="mr-1" />}
+              {expanded ? 'Hide' : 'Compare'}
+            </Button>
+
+            {/* Delete */}
             <button
               onClick={() => {
                 if (confirmDelete) {
@@ -184,15 +204,6 @@ function SnapshotRow({
             >
               <Trash2 size={12} />
               {confirmDelete ? 'Confirm?' : 'Delete'}
-            </button>
-
-            {/* Expand/collapse */}
-            <button
-              onClick={() => setExpanded((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[var(--surface)] border border-[var(--border)] text-[var(--ink)] hover:border-[var(--ember)] transition-colors cursor-pointer"
-            >
-              {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-              {expanded ? 'Hide' : 'View'}
             </button>
           </div>
         </div>
@@ -246,7 +257,7 @@ function ComparisonView({ snapshots }: { snapshots: Snapshot[] }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
       transition={{ duration: 0.3 }}
-      className="rounded-xl border border-[var(--border)] bg-[var(--paper)] overflow-hidden"
+      className="rounded-xl border border-[var(--border)] bg-[var(--paper)] overflow-hidden mb-8"
     >
       {/* Selectors */}
       <div className="grid grid-cols-3 gap-px bg-[var(--border)]">
@@ -366,35 +377,36 @@ export default function SnapshotsPage() {
 
       <div className="max-w-3xl mx-auto px-6 py-10">
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-2xl font-bold font-display text-[var(--ink)]">Snapshots</h1>
-            <p className="text-sm text-[var(--dim)] mt-0.5">Point-in-time intelligence captures</p>
-          </div>
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <h1 className="font-display text-2xl font-bold text-[var(--ink)]">Brand Snapshots</h1>
           <div className="flex items-center gap-3 shrink-0">
             {snapshots.length >= 2 && (
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setCompareMode((v) => !v)}
-                className={cn(
-                  'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors cursor-pointer',
-                  compareMode
-                    ? 'bg-[var(--ink)] text-[var(--paper)] border-[var(--ink)]'
-                    : 'bg-[var(--paper)] text-[var(--ink)] border-[var(--border)] hover:border-[var(--ink)]'
-                )}
               >
-                <GitCompare size={14} />
-                Compare Two Snapshots
-              </button>
+                <GitCompare size={14} className="mr-1.5" />
+                Compare
+              </Button>
             )}
-            <button
+            <Button
               onClick={() => takeMutation.mutate()}
               disabled={takeMutation.isPending}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-[var(--ember)] text-white hover:bg-[var(--ember)]/90 disabled:opacity-60 transition-colors cursor-pointer"
+              className="bg-[var(--ember)] text-white hover:bg-[var(--ember)]/90"
             >
-              <Camera size={14} />
-              {takeMutation.isPending ? 'Capturing…' : 'Take Snapshot'}
-            </button>
+              <Camera size={14} className="mr-1.5" />
+              {takeMutation.isPending ? 'Capturing…' : 'Capture Now'}
+            </Button>
           </div>
+        </div>
+
+        {/* Info banner */}
+        <div className="rounded-xl bg-[var(--info)]/8 border border-[var(--info)]/20 px-4 py-3 flex items-center gap-3 mb-6">
+          <Camera size={16} className="text-[var(--info)] shrink-0" />
+          <p className="text-sm text-[var(--ink)]">
+            Snapshots capture your brand&apos;s AI visibility at a point in time. Compare snapshots to track progress.
+          </p>
         </div>
 
         {/* Comparison view */}
@@ -405,7 +417,7 @@ export default function SnapshotsPage() {
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
               transition={{ duration: 0.3 }}
-              className="overflow-hidden mb-8"
+              className="overflow-hidden"
             >
               <ComparisonView snapshots={snapshots} />
             </motion.div>
@@ -414,27 +426,30 @@ export default function SnapshotsPage() {
 
         {/* Timeline */}
         {isLoading ? (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {[1, 2, 3].map((i) => (
               <div key={i} className="flex gap-4 animate-pulse">
-                <div className="w-3 h-3 rounded-full bg-[var(--border)] mt-1 shrink-0" />
-                <div className="flex-1 space-y-2 pb-6">
-                  <div className="h-4 bg-[var(--border)] rounded w-40" />
-                  <div className="h-3 bg-[var(--border)] rounded w-24" />
-                  <div className="flex gap-2 mt-2">
-                    <div className="h-5 bg-[var(--border)] rounded-full w-16" />
-                    <div className="h-5 bg-[var(--border)] rounded-full w-20" />
-                  </div>
-                </div>
+                <div className="w-24 shrink-0 h-4 bg-[var(--border)] rounded" />
+                <div className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] h-24" />
               </div>
             ))}
           </div>
         ) : snapshots.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <Camera size={32} className="text-[var(--dim)] mb-3" />
-            <p className="text-sm font-medium text-[var(--ink)]">No snapshots yet</p>
-            <p className="text-xs text-[var(--dim)] mt-1">Take your first snapshot to begin tracking intelligence over time.</p>
-          </div>
+          <EmptyState
+            icon={<Camera size={28} />}
+            title="No snapshots yet"
+            description="Capture your first to start tracking."
+            action={
+              <Button
+                onClick={() => takeMutation.mutate()}
+                disabled={takeMutation.isPending}
+                className="bg-[var(--ember)] text-white"
+              >
+                <Camera size={14} className="mr-1.5" />
+                Capture Now
+              </Button>
+            }
+          />
         ) : (
           <div>
             {snapshots.map((snap, i) => (
@@ -444,6 +459,7 @@ export default function SnapshotsPage() {
                 isLatest={i === 0}
                 prevScores={snapshots[i + 1]?.scores}
                 onDelete={handleDelete}
+                isLast={i === snapshots.length - 1}
               />
             ))}
           </div>

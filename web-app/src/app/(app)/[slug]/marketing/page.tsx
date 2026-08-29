@@ -9,8 +9,8 @@ import {
   ScatterChart, Scatter, ZAxis, Cell, PieChart, Pie, Legend,
 } from 'recharts'
 import {
-  Plus, Filter, TrendingUp, Target, DollarSign, BarChart2,
-  ChevronDown, ChevronUp, ToggleLeft, ToggleRight, Trash2,
+  Plus, TrendingUp, Target, DollarSign, BarChart2,
+  ChevronDown, ChevronUp, ToggleLeft, ToggleRight, Trash2, Zap,
 } from 'lucide-react'
 import { api, routes } from '@/lib/api'
 import { cn, formatNumber, formatPercent, relativeTime } from '@/lib/utils'
@@ -683,8 +683,16 @@ export default function MarketingPage() {
     >
       {/* Header */}
       <div>
-        <h1 className="font-display text-3xl font-semibold text-ink leading-tight">Marketing</h1>
-        <p className="text-sm text-dim font-sans mt-1">Campaign tracking &amp; growth levers</p>
+        <h1 className="font-display text-3xl font-semibold text-ink leading-tight">Marketing Intelligence</h1>
+        <p className="text-sm text-dim font-sans mt-1">Campaign performance and AI visibility correlation</p>
+      </div>
+
+      {/* Insight card */}
+      <div className="rounded-xl bg-[var(--ember)]/8 border border-[var(--ember)]/20 p-5 flex items-start gap-3">
+        <Zap className="h-5 w-5 text-[var(--ember)] shrink-0 mt-0.5" />
+        <p className="text-sm text-[var(--ink)]">
+          Campaigns with thought leadership content show <strong>3&times;</strong> higher AI visibility across ChatGPT, Gemini, and Perplexity.
+        </p>
       </div>
 
       {/* Tabs */}

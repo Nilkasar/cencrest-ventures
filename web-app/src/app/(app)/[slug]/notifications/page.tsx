@@ -5,15 +5,11 @@ import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Bell,
-  AtSign,
-  AlertTriangle,
-  FileText,
-  Settings,
   X,
   Trash2,
   CheckCheck,
   BellOff,
+  CheckCircle2,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn, relativeTime } from '@/lib/utils'
@@ -24,7 +20,7 @@ import { spring, fastTransition } from '@/design-system/motion'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 type NotifType = 'mention' | 'alert' | 'report' | 'system'
-type FilterKey = 'all' | 'unread' | 'mentions' | 'alerts' | 'reports'
+type FilterKey = 'all' | 'unread' | 'analysis' | 'alerts'
 
 interface Notification {
   id: string
@@ -44,35 +40,61 @@ interface NotifResponse {
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'unread', label: 'Unread' },
-  { key: 'mentions', label: 'Mentions' },
+  { key: 'analysis', label: 'Analysis' },
   { key: 'alerts', label: 'Alerts' },
-  { key: 'reports', label: 'Reports' },
 ]
 
-function typeIcon(type: NotifType) {
+// Sample static notifications shown when no real data
+const SAMPLE_NOTIFICATIONS: Notification[] = [
+  {
+    id: 'sample-1',
+    type: 'alert',
+    title: 'Visibility drop detected',
+    body: 'ChatGPT mentions of your brand dropped 18% this week. Consider refreshing your content corpus.',
+    read: false,
+    created_at: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+  },
+  {
+    id: 'sample-2',
+    type: 'report',
+    title: 'Monthly analysis complete',
+    body: 'Your July Recommendation Intelligence report is ready. Overall score: 74/100.',
+    read: false,
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+  },
+  {
+    id: 'sample-3',
+    type: 'mention',
+    title: 'New citation in Perplexity',
+    body: 'Perplexity cited your case study "Enterprise AI Adoption" in a recommendation response.',
+    read: true,
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
+  },
+  {
+    id: 'sample-4',
+    type: 'system',
+    title: 'Analysis run scheduled',
+    body: 'Your weekly competitive analysis will run tonight at 2:00 AM UTC.',
+    read: true,
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+  },
+]
+
+function typeDotColor(type: NotifType): string {
   switch (type) {
-    case 'mention': return <AtSign className="h-3.5 w-3.5" />
-    case 'alert':   return <AlertTriangle className="h-3.5 w-3.5" />
-    case 'report':  return <FileText className="h-3.5 w-3.5" />
-    case 'system':  return <Settings className="h-3.5 w-3.5" />
+    case 'mention': return 'bg-[var(--ember)]'
+    case 'alert':   return 'bg-[var(--danger)]'
+    case 'report':  return 'bg-[var(--info)]'
+    case 'system':  return 'bg-[var(--dim)]'
   }
 }
 
-function typeDotClass(type: NotifType) {
-  switch (type) {
-    case 'mention': return 'bg-ember text-paper'
-    case 'alert':   return 'bg-danger text-white'
-    case 'report':  return 'bg-info text-white'
-    case 'system':  return 'bg-dim text-paper'
-  }
-}
 
 function filterNotifs(notifs: Notification[], filter: FilterKey): Notification[] {
   switch (filter) {
     case 'unread':   return notifs.filter((n) => !n.read)
-    case 'mentions': return notifs.filter((n) => n.type === 'mention')
+    case 'analysis': return notifs.filter((n) => n.type === 'report')
     case 'alerts':   return notifs.filter((n) => n.type === 'alert')
-    case 'reports':  return notifs.filter((n) => n.type === 'report')
     default:         return notifs
   }
 }
@@ -100,8 +122,8 @@ function NotifCard({
         'relative flex gap-3 px-4 py-3.5 rounded-lg border cursor-pointer select-none group',
         'transition-colors duration-200',
         notif.read
-          ? 'bg-paper border-border'
-          : 'bg-surface border-border'
+          ? 'bg-paper border-transparent'
+          : 'bg-white/50 border-[var(--border)]'
       )}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -119,15 +141,8 @@ function NotifCard({
         />
       )}
 
-      {/* Icon dot */}
-      <div
-        className={cn(
-          'shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-0.5',
-          typeDotClass(notif.type)
-        )}
-      >
-        {typeIcon(notif.type)}
-      </div>
+      {/* Left dot indicator */}
+      <div className={cn('w-2.5 h-2.5 rounded-full mt-1.5 shrink-0', typeDotColor(notif.type))} />
 
       {/* Content */}
       <div className="flex-1 min-w-0">
@@ -176,8 +191,10 @@ export default function NotificationsPage() {
     queryFn: () => api.get<NotifResponse>(`/api/orgs/${slug}/notifications`),
   })
 
-  const notifications: Notification[] = (data as NotifResponse | undefined)?.notifications ?? []
-  const unreadCount: number = (data as NotifResponse | undefined)?.unread_count ?? 0
+  const rawNotifications: Notification[] = (data as NotifResponse | undefined)?.notifications ?? []
+  // Show sample data when no real notifications have loaded yet
+  const notifications: Notification[] = rawNotifications.length > 0 ? rawNotifications : (!isLoading ? SAMPLE_NOTIFICATIONS : [])
+  const unreadCount: number = (data as NotifResponse | undefined)?.unread_count ?? notifications.filter((n) => !n.read).length
 
   // Optimistic helpers
   function optimisticMarkRead(id: string) {
@@ -244,23 +261,21 @@ export default function NotificationsPage() {
         className="flex items-center justify-between gap-4 mb-6"
       >
         <div className="flex items-center gap-3">
-          <h1 className="font-display text-2xl font-semibold text-ink">Notifications</h1>
+          <h1 className="font-display text-2xl font-semibold text-[var(--ink)]">Notifications</h1>
           {unreadCount > 0 && (
             <Badge variant="ember" size="sm">{unreadCount}</Badge>
           )}
         </div>
         <div className="flex items-center gap-2">
-          {unreadCount > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => markAllReadMutation.mutate()}
-              loading={markAllReadMutation.isPending}
-            >
-              <CheckCheck className="h-4 w-4" />
-              Mark all read
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => markAllReadMutation.mutate()}
+            loading={markAllReadMutation.isPending}
+          >
+            <CheckCheck className="h-4 w-4" />
+            Mark all read
+          </Button>
           {notifications.length > 0 && (
             <Button
               variant="ghost"
@@ -313,11 +328,21 @@ export default function NotificationsPage() {
           ))}
         </div>
       ) : visible.length === 0 ? (
-        <EmptyState
-          icon={<BellOff className="h-6 w-6" />}
-          title={filter === 'all' ? 'No notifications' : `No ${filter} notifications`}
-          description={filter === 'unread' ? 'You\'re all caught up.' : 'Nothing here yet.'}
-        />
+        filter === 'unread' ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-14 h-14 rounded-full bg-[var(--success)]/10 flex items-center justify-center mb-4">
+              <CheckCircle2 className="h-7 w-7 text-[var(--success)]" />
+            </div>
+            <h3 className="font-display text-base font-semibold text-[var(--ink)] mb-1">You&apos;re all caught up!</h3>
+            <p className="text-sm text-[var(--dim)]">No new notifications</p>
+          </div>
+        ) : (
+          <EmptyState
+            icon={<BellOff className="h-6 w-6" />}
+            title={filter === 'all' ? 'No notifications' : `No ${filter === 'analysis' ? 'analysis' : filter} notifications`}
+            description="Nothing here yet."
+          />
+        )
       ) : (
         <AnimatePresence mode="popLayout">
           <motion.div className="space-y-2">

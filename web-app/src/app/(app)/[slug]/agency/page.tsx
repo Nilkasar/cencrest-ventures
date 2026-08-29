@@ -1,19 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Users, BarChart3, FileText, TrendingUp, X, Eye, Trash2, Building2 } from 'lucide-react'
+import { Plus, Users, X, Trash2 } from 'lucide-react'
 import { api, routes } from '@/lib/api'
-import { cn, relativeTime, formatNumber } from '@/lib/utils'
+import { cn, relativeTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { StatCard } from '@/components/ui/stat-card'
 import { Badge } from '@/components/ui/badge'
 import { ScoreRing } from '@/components/ui/score-ring'
 import { Input } from '@/components/ui/input'
-import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import {
   Modal,
@@ -80,55 +78,43 @@ function ClientCard({
   onView: (client: Client) => void
   onRemove: (client: Client) => void
 }) {
+  const initials = client.org_name
+    .split(' ')
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .join('')
+
   return (
     <motion.div
       {...stagger(index)}
       whileHover={{ y: -3 }}
       transition={{ duration: 0.2, ease: 'easeOut' }}
-      className={cn(
-        'group relative bg-surface border border-border rounded-xl p-6 shadow-sm',
-        'hover:border-ember hover:shadow-md transition-[border-color,box-shadow] duration-200'
-      )}
+      className="rounded-xl border border-[var(--border)] bg-white/70 p-5 hover:shadow-sm transition-shadow"
     >
-      {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-lg bg-ember/10 flex items-center justify-center flex-shrink-0">
-            <Building2 className="h-5 w-5 text-ember" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="font-display font-semibold text-ink text-base leading-tight truncate">
-              {client.org_name}
-            </h3>
-            <Badge variant="outline" size="sm" className="mt-1 font-mono text-xs">
-              {client.org_slug}
-            </Badge>
-          </div>
-        </div>
-        <ScoreRing score={client.health_score} size={56} strokeWidth={5} />
+      {/* Initials avatar */}
+      <div className="w-10 h-10 rounded-xl bg-[var(--ember)] flex items-center justify-center text-white text-sm font-bold font-sans">
+        {initials}
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 mb-5">
-        <div className="bg-paper rounded-lg p-3 border border-border">
-          <p className="text-xs text-dim font-sans mb-0.5">Brands</p>
-          <p className="font-display text-xl font-semibold text-ink">{client.brand_count}</p>
-        </div>
-        <div className="bg-paper rounded-lg p-3 border border-border">
-          <p className="text-xs text-dim font-sans mb-0.5">Last active</p>
-          <p className="text-sm text-ink font-sans">{relativeTime(client.last_activity)}</p>
-        </div>
-      </div>
+      {/* Name */}
+      <h3 className="font-display text-lg text-[var(--ink)] mt-3 leading-tight truncate">
+        {client.org_name}
+      </h3>
 
-      {/* Actions */}
-      <div className="flex gap-2">
+      {/* Slug */}
+      <p className="font-mono text-xs text-[var(--dim)] mt-0.5">{client.org_slug}</p>
+
+      {/* Brands count */}
+      <p className="text-sm text-[var(--dim)] mt-2">{client.brand_count} brand{client.brand_count !== 1 ? 's' : ''}</p>
+
+      {/* View + Remove */}
+      <div className="flex gap-2 mt-4">
         <Button
           variant="outline"
           size="sm"
           className="flex-1"
           onClick={() => onView(client)}
         >
-          <Eye className="h-4 w-4" />
           View
         </Button>
         <Button
@@ -464,23 +450,25 @@ export default function AgencyPage() {
         className="flex items-center justify-between mb-8"
       >
         <div>
-          <h1 className="font-display text-3xl font-semibold text-ink">Agency</h1>
-          <p className="text-sm text-dim font-sans mt-1">Manage your client organisations</p>
+          <h1 className="font-display text-3xl font-semibold text-ink">Agency Dashboard</h1>
+          <p className="text-sm text-dim font-sans mt-1">Manage client organizations</p>
         </div>
-        <Button onClick={() => setAddOpen(true)}>
+        <Button
+          onClick={() => setAddOpen(true)}
+          className="bg-[var(--ember)] text-white hover:bg-[var(--ember)]/90"
+        >
           <Plus className="h-4 w-4" />
           Add Client
         </Button>
       </motion.div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      {/* Stats row — 3 cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         {[
-          { label: 'Total Clients', value: stats.total_clients, icon: Users },
-          { label: 'Active Brands', value: stats.active_brands, icon: BarChart3 },
-          { label: 'Reports Sent', value: stats.reports_sent, icon: FileText },
-          { label: 'Avg Client Score', value: stats.avg_score, icon: TrendingUp },
-        ].map(({ label, value, icon: Icon }, i) => (
+          { label: 'Total Clients', value: stats.total_clients },
+          { label: 'Total Brands', value: stats.active_brands },
+          { label: 'Active Runs', value: stats.reports_sent },
+        ].map(({ label, value }, i) => (
           <motion.div key={label} {...stagger(i)}>
             {isLoading ? (
               <div className="h-32 rounded-lg bg-surface border border-border animate-pulse" />

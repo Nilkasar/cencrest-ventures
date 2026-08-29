@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink, Save, Trash2, Globe, Palette, Mail, Link2, Building, Sparkles } from 'lucide-react'
+import { ExternalLink, Save, Trash2, Globe, Palette, Mail, Building, Sparkles } from 'lucide-react'
 import { api, routes } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,7 @@ import { spring } from '@/design-system/motion'
 
 interface WhiteLabelConfig {
   company_name: string
+  tagline: string
   primary_color: string
   logo_url: string
   custom_domain: string
@@ -142,6 +143,14 @@ function ConfigForm({
           </div>
         </div>
 
+        {/* Tagline */}
+        <Input
+          label="Tagline"
+          value={form.tagline}
+          onChange={update('tagline')}
+          placeholder="AI visibility, made clear"
+        />
+
         {/* Primary Color */}
         <div>
           <label className="text-sm font-medium text-ink font-sans block mb-1.5">Primary color</label>
@@ -241,19 +250,20 @@ function ConfigForm({
         {/* Actions */}
         <div className="flex gap-3 pt-2">
           <Button
-            className="flex-1"
+            className="flex-1 bg-[var(--ember)] text-white hover:bg-[var(--ember)]/90"
             onClick={() => saveMutation.mutate()}
             loading={saveMutation.isPending}
           >
             <Save className="h-4 w-4" />
-            Save Configuration
+            Save Settings
           </Button>
           <Button
-            variant="danger"
+            variant="ghost"
             size="icon"
             onClick={() => deleteMutation.mutate()}
             loading={deleteMutation.isPending}
             aria-label="Delete configuration"
+            className="text-dim hover:text-danger"
           >
             <Trash2 className="h-4 w-4" />
           </Button>
@@ -283,98 +293,65 @@ function LivePreview({
   })
 
   return (
-    <Card className="h-fit">
-      <CardHeader>
-        <CardTitle>Live Preview</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Browser Chrome Mockup */}
-        <div className="rounded-xl border border-border overflow-hidden shadow-md">
-          {/* Browser Bar */}
-          <div className="bg-surface border-b border-border px-3 py-2.5 flex items-center gap-2">
-            {/* Traffic lights */}
-            <div className="flex gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-danger/60" />
-              <span className="w-3 h-3 rounded-full bg-warning/60" />
-              <span className="w-3 h-3 rounded-full bg-success/60" />
-            </div>
-            {/* URL bar */}
-            <div className="flex-1 mx-2 bg-paper rounded-md px-3 py-1 flex items-center gap-1.5 border border-border">
-              <Link2 className="h-3 w-3 text-dim flex-shrink-0" />
-              <span className="text-xs text-dim font-mono truncate">
-                {config.custom_domain || 'app.yourcompany.com'}
-              </span>
-            </div>
-          </div>
+    <div className="rounded-2xl border-2 border-dashed border-[var(--border)] p-5 sticky top-24">
+      {/* Preview label */}
+      <p className="text-xs text-[var(--dim)] uppercase tracking-wider mb-3">Preview</p>
 
-          {/* Simulated Dashboard */}
-          <div
-            className="p-4 space-y-3"
-            style={{ '--preview-color': color } as React.CSSProperties}
-          >
-            {/* Topbar simulation */}
-            <div
-              className="rounded-lg px-4 py-2.5 flex items-center gap-3"
-              style={{ backgroundColor: color }}
-            >
-              {config.logo_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={config.logo_url} alt="" className="h-5 object-contain" />
-              ) : (
-                <div className="text-paper font-display font-semibold text-sm">
-                  {config.company_name || 'YourBrand'}
-                </div>
-              )}
-              <div className="flex-1" />
-              <div className="w-6 h-6 rounded-full bg-paper/20" />
-            </div>
-
-            {/* Stat row */}
-            <div className="grid grid-cols-3 gap-2">
-              {['Score', 'Brands', 'Runs'].map((label, i) => (
-                <div key={label} className="bg-paper rounded-lg p-2.5 border border-border/50">
-                  <div className="text-xs text-dim font-sans">{label}</div>
-                  <div
-                    className="font-display text-lg font-semibold mt-0.5"
-                    style={{ color }}
-                  >
-                    {[74, 6, 23][i]}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Graph bar simulation */}
-            <div className="bg-paper rounded-lg p-3 border border-border/50 space-y-1.5">
-              {[65, 80, 55, 90, 72].map((w, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <div className="w-16 h-1.5 bg-surface rounded-full overflow-hidden">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${w}%` }}
-                      transition={{ delay: i * 0.07, duration: 0.5, ease: 'easeOut' }}
-                      className="h-full rounded-full"
-                      style={{ backgroundColor: color }}
-                    />
-                  </div>
-                  <span className="text-xs text-dim font-mono">{w}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* Mock mini sidebar */}
+      <div className="rounded-xl border border-[var(--border)] overflow-hidden bg-[var(--paper)]">
+        {/* Sidebar header */}
+        <div className="px-4 py-3 border-b border-[var(--border)]" style={{ backgroundColor: color }}>
+          <p className="font-display text-sm font-semibold text-white">
+            {config.company_name || 'Your Company'}
+          </p>
+          {config.tagline && (
+            <p className="text-[10px] mt-0.5" style={{ color: 'rgba(255,255,255,0.7)' }}>
+              {config.tagline}
+            </p>
+          )}
         </div>
 
-        <Button
-          variant="outline"
-          className="w-full"
-          onClick={() => previewMutation.mutate()}
-          loading={previewMutation.isPending}
-        >
-          <ExternalLink className="h-4 w-4" />
-          Preview as Client
-        </Button>
-      </CardContent>
-    </Card>
+        {/* Fake nav items */}
+        <div className="p-3 space-y-1">
+          {['Dashboard', 'Brands', 'Reports'].map((item, i) => (
+            <div
+              key={item}
+              className={cn(
+                'px-3 py-2 rounded-md text-xs font-sans',
+                i === 0 ? 'text-white' : 'text-[var(--dim)]'
+              )}
+              style={i === 0 ? { backgroundColor: color } : {}}
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+
+        {/* Mini stats */}
+        <div className="grid grid-cols-3 gap-1.5 px-3 pb-3">
+          {['Score', 'Brands', 'Runs'].map((label, i) => (
+            <div key={label} className="bg-[var(--surface)] rounded-lg p-2 border border-[var(--border)]">
+              <p className="text-[9px] text-[var(--dim)]">{label}</p>
+              <p className="font-display text-sm font-semibold mt-0.5" style={{ color }}>
+                {[74, 6, 23][i]}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <p className="text-xs text-[var(--dim)] mt-4 text-center">Your clients see this branding</p>
+
+      <Button
+        variant="outline"
+        className="w-full mt-3"
+        onClick={() => previewMutation.mutate()}
+        loading={previewMutation.isPending}
+      >
+        <ExternalLink className="h-4 w-4" />
+        Preview as Client
+      </Button>
+    </div>
   )
 }
 
@@ -436,6 +413,7 @@ export default function WhiteLabelPage() {
 
   const [liveConfig, setLiveConfig] = useState<WhiteLabelConfig>({
     company_name: '',
+    tagline: '',
     primary_color: '#C2410C',
     logo_url: '',
     custom_domain: '',
@@ -471,7 +449,7 @@ export default function WhiteLabelPage() {
       >
         <div>
           <h1 className="font-display text-3xl font-semibold text-ink">White Label</h1>
-          <p className="text-sm text-dim font-sans mt-1">Brand the platform as your own</p>
+          <p className="text-sm text-dim font-sans mt-1">Customize BeBest for your agency clients</p>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm font-sans text-dim">
@@ -499,7 +477,7 @@ export default function WhiteLabelPage() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+            className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-6"
           >
             <ConfigForm
               config={liveConfig}

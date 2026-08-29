@@ -8,7 +8,7 @@ import {
 } from 'recharts'
 import {
   RefreshCcw, AlertTriangle, Activity, Cpu, HardDrive, Zap, Shield,
-  Building2, Search,
+  Building2, Search, ShieldCheck, Users, BarChart3, PlayCircle,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn, relativeTime, formatNumber, formatPercent } from '@/lib/utils'
@@ -413,11 +413,35 @@ export default function AdminPage() {
     >
       {/* Header */}
       <div className="flex items-center gap-4">
-        <div className="flex-1">
-          <h1 className="font-display text-3xl font-semibold text-ink leading-tight">Admin Dashboard</h1>
-          <p className="text-sm text-dim font-sans mt-1">Super-admin system view</p>
+        <div className="flex items-center gap-3 flex-1">
+          <ShieldCheck className="h-7 w-7 text-[var(--danger)]" />
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="font-display text-3xl font-semibold text-ink leading-tight">Admin Panel</h1>
+              <Badge variant="danger" size="sm" className="ml-2">Admin Access</Badge>
+            </div>
+            <p className="text-sm text-dim font-sans mt-0.5">Super-admin system view</p>
+          </div>
         </div>
         <SystemStatusBadge status={status} />
+      </div>
+
+      {/* Stats row — 4 cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Orgs', value: 0, icon: Building2 },
+          { label: 'Total Users', value: 0, icon: Users },
+          { label: 'Total Brands', value: 0, icon: BarChart3 },
+          { label: 'Runs Today', value: 0, icon: PlayCircle },
+        ].map(({ label, value, icon: Icon }) => (
+          <div key={label} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-sans font-medium text-[var(--dim)] uppercase tracking-wide">{label}</span>
+              <Icon className="h-4 w-4 text-[var(--dim)]" />
+            </div>
+            <p className="font-display text-3xl font-semibold text-[var(--ink)]">{value}</p>
+          </div>
+        ))}
       </div>
 
       {/* Tabs */}
