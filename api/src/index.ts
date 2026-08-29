@@ -29,6 +29,7 @@ import geoAgent from './routes/geo-agent.js'
 import seoAgent from './routes/seo-agent.js'
 import growthAgent from './routes/growth-agent.js'
 import actions from './routes/actions.js'
+import publishing from './routes/publishing.js'
 
 const app = new Hono()
 
@@ -68,6 +69,7 @@ app.route('/api/orgs/:slug/brands/:brandId/geo-agent', geoAgent)
 app.route('/api/orgs/:slug/brands/:brandId/seo-agent', seoAgent)
 app.route('/api/orgs/:slug/brands/:brandId/growth-agent', growthAgent)
 app.route('/api/orgs/:slug/brands/:brandId/actions', actions)
+app.route('/api/orgs/:slug/brands/:brandId/publishing', publishing)
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404))
 app.onError((err, c) => {

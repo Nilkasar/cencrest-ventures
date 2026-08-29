@@ -23,26 +23,27 @@ model account_health {
 }
 
 model actions {
-  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  brand_id      String        @db.Uuid
-  org_id        String        @db.Uuid
-  action_type   String        @db.VarChar(100)
-  title         String        @db.VarChar(500)
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id      String         @db.Uuid
+  org_id        String         @db.Uuid
+  action_type   String         @db.VarChar(100)
+  title         String         @db.VarChar(500)
   description   String?
-  priority      String        @default("medium") @db.VarChar(20)
-  status        String        @default("pending") @db.VarChar(50)
-  source        String?       @db.VarChar(100)
-  source_id     String?       @db.Uuid
-  assigned_to   String?       @db.Uuid
-  due_date      DateTime?     @db.Timestamptz(6)
-  completed_at  DateTime?     @db.Timestamptz(6)
-  metadata      Json          @default("{}")
-  created_at    DateTime      @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime      @default(now()) @db.Timestamptz(6)
-  deleted_at    DateTime?     @db.Timestamptz(6)
-  users         users?        @relation(fields: [assigned_to], references: [id], onUpdate: NoAction)
-  brands        brands        @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  organizations organizations @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  priority      String         @default("medium") @db.VarChar(20)
+  status        String         @default("pending") @db.VarChar(50)
+  source        String?        @db.VarChar(100)
+  source_id     String?        @db.Uuid
+  assigned_to   String?        @db.Uuid
+  due_date      DateTime?      @db.Timestamptz(6)
+  completed_at  DateTime?      @db.Timestamptz(6)
+  metadata      Json           @default("{}")
+  created_at    DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime       @default(now()) @db.Timestamptz(6)
+  deleted_at    DateTime?      @db.Timestamptz(6)
+  users         users?         @relation(fields: [assigned_to], references: [id], onUpdate: NoAction)
+  brands        brands         @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organizations organizations  @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  publish_jobs  publish_jobs[]
 
   @@index([brand_id], map: "idx_actions_brand")
   @@index([priority], map: "idx_actions_priority")
@@ -346,6 +347,7 @@ model brands {
   pages                  pages[]
   products               products[]
   prompt_runs            prompt_runs[]
+  publish_jobs           publish_jobs[]
   query_sets             query_sets[]
   questions              questions[]
   recommendations        recommendations[]
@@ -690,6 +692,7 @@ model generated_content {
   updated_at               DateTime       @default(now()) @db.Timestamptz(6)
   brands                   brands         @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   content_briefs           content_briefs @relation(fields: [brief_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  publish_jobs             publish_jobs[]
 }
 
 model geo_agent_actions {
@@ -1077,6 +1080,7 @@ model organizations {
   notifications     notifications[]
   org_ai_providers  org_ai_providers[]
   users             users               @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "organizations_created_by_users_id_fk")
+  publish_jobs      publish_jobs[]
   seo_agent_runs    seo_agent_runs[]
   snapshot_requests snapshot_requests[]
   subscriptions     subscriptions?
@@ -1221,6 +1225,38 @@ model prompt_versions {
   @@unique([template_id, version], map: "prompt_versions_template_id_version_unique")
   @@index([is_active], map: "idx_prompt_versions_active")
   @@index([template_id], map: "idx_prompt_versions_template")
+}
+
+model publish_jobs {
+  id                                    String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id                              String             @db.Uuid
+  org_id                                String             @db.Uuid
+  generated_content_id                  String?            @db.Uuid
+  action_id                             String?            @db.Uuid
+  destination                           String             @db.VarChar(100)
+  destination_config                    Json               @default("{}")
+  status                                String             @default("draft") @db.VarChar(50)
+  scheduled_at                          DateTime?          @db.Timestamptz(6)
+  published_at                          DateTime?          @db.Timestamptz(6)
+  published_url                         String?
+  approval_required                     Boolean            @default(true)
+  approved_by                           String?            @db.Uuid
+  approved_at                           DateTime?          @db.Timestamptz(6)
+  rejection_reason                      String?
+  publish_log                           Json               @default("[]")
+  created_by                            String?            @db.Uuid
+  created_at                            DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at                            DateTime           @default(now()) @db.Timestamptz(6)
+  deleted_at                            DateTime?          @db.Timestamptz(6)
+  actions                               actions?           @relation(fields: [action_id], references: [id], onUpdate: NoAction)
+  users_publish_jobs_approved_byTousers users?             @relation("publish_jobs_approved_byTousers", fields: [approved_by], references: [id], onUpdate: NoAction)
+  brands                                brands             @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_publish_jobs_created_byTousers  users?             @relation("publish_jobs_created_byTousers", fields: [created_by], references: [id], onUpdate: NoAction)
+  generated_content                     generated_content? @relation(fields: [generated_content_id], references: [id], onUpdate: NoAction)
+  organizations                         organizations      @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([brand_id], map: "idx_publish_jobs_brand")
+  @@index([status], map: "idx_publish_jobs_status")
 }
 
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
@@ -1538,31 +1574,33 @@ model usage_records {
 }
 
 model users {
-  id                       String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email                    String                     @unique(map: "users_email_unique") @db.VarChar(255)
-  password_hash            String                     @db.VarChar(255)
-  name                     String                     @db.VarChar(255)
-  email_verified           Boolean?                   @default(false)
-  last_login_at            DateTime?                  @db.Timestamp(6)
-  created_at               DateTime                   @default(now()) @db.Timestamp(6)
-  updated_at               DateTime                   @default(now()) @db.Timestamp(6)
-  deleted_at               DateTime?                  @db.Timestamp(6)
-  actions                  actions[]
-  audit_events             audit_events[]
-  auth_events              auth_events[]
-  brands                   brands[]
-  crm_notes                crm_notes[]
-  invitations              invitations[]
-  memberships              memberships[]
-  notification_preferences notification_preferences[]
-  notifications            notifications[]
-  organizations            organizations[]
-  password_reset_tokens    password_reset_tokens[]
-  query_sets               query_sets[]
-  questions                questions[]
-  refresh_tokens           refresh_tokens[]
-  reports                  reports[]
-  sessions                 sessions[]
+  id                                           String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                                        String                     @unique(map: "users_email_unique") @db.VarChar(255)
+  password_hash                                String                     @db.VarChar(255)
+  name                                         String                     @db.VarChar(255)
+  email_verified                               Boolean?                   @default(false)
+  last_login_at                                DateTime?                  @db.Timestamp(6)
+  created_at                                   DateTime                   @default(now()) @db.Timestamp(6)
+  updated_at                                   DateTime                   @default(now()) @db.Timestamp(6)
+  deleted_at                                   DateTime?                  @db.Timestamp(6)
+  actions                                      actions[]
+  audit_events                                 audit_events[]
+  auth_events                                  auth_events[]
+  brands                                       brands[]
+  crm_notes                                    crm_notes[]
+  invitations                                  invitations[]
+  memberships                                  memberships[]
+  notification_preferences                     notification_preferences[]
+  notifications                                notifications[]
+  organizations                                organizations[]
+  password_reset_tokens                        password_reset_tokens[]
+  publish_jobs_publish_jobs_approved_byTousers publish_jobs[]             @relation("publish_jobs_approved_byTousers")
+  publish_jobs_publish_jobs_created_byTousers  publish_jobs[]             @relation("publish_jobs_created_byTousers")
+  query_sets                                   query_sets[]
+  questions                                    questions[]
+  refresh_tokens                               refresh_tokens[]
+  reports                                      reports[]
+  sessions                                     sessions[]
 
   @@index([email], map: "idx_users_email")
 }
