@@ -59,7 +59,7 @@ export default function SignupPage() {
     try {
       await api.post('/api/auth/register', data)
       setSubmitted(true)
-      setTimeout(() => router.push('/onboarding'), 1200)
+      setTimeout(() => router.push('/create-org'), 1200)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Registration failed. Try again.'
       if (msg.toLowerCase().includes('404') || msg.toLowerCase().includes('not found')) {

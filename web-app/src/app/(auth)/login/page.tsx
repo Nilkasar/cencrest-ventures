@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { motion } from 'framer-motion'
-import { Loader2, TriangleAlert } from 'lucide-react'
+import { TriangleAlert } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
@@ -18,24 +18,7 @@ const schema = z.object({
 })
 type FormData = z.infer<typeof schema>
 
-const FIELDS = [
-  {
-    name: 'email' as const,
-    label: 'Work email',
-    type: 'email',
-    autoComplete: 'email',
-    placeholder: 'you@company.com',
-    autoFocus: true,
-  },
-  {
-    name: 'password' as const,
-    label: 'Password',
-    type: 'password',
-    autoComplete: 'current-password',
-    placeholder: '••••••••',
-    autoFocus: false,
-  },
-]
+const SPRING = [0.16, 1, 0.3, 1] as const
 
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
@@ -52,7 +35,6 @@ export default function LoginPage() {
       const res = await api.post<{
         accessToken: string
         user: { id: string; email: string; name: string }
-        orgs?: Array<{ slug: string }>
       }>('/api/auth/login', data)
       setToken(res.accessToken)
       setStoredUser(res.user)
@@ -62,10 +44,9 @@ export default function LoginPage() {
       )
       if (orgsRes.ok) {
         const orgs = (await orgsRes.json()) as Array<{ slug: string }>
-        const slug = orgs[0]?.slug
-        window.location.href = slug ? `/${slug}/dashboard` : '/onboarding'
+        window.location.href = orgs[0]?.slug ? `/${orgs[0].slug}/dashboard` : '/create-org'
       } else {
-        window.location.href = '/onboarding'
+        window.location.href = '/create-org'
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Login failed. Try again.')
@@ -73,144 +54,125 @@ export default function LoginPage() {
   }
 
   return (
-    <div>
+    <div className="w-full">
       {/* Heading */}
       <motion.div
-        initial={{ opacity: 0, y: 8 }}
+        initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.4, ease: SPRING }}
+        className="mb-8"
       >
-        <h1
-          className="font-display font-semibold"
-          style={{ fontSize: 28, color: 'var(--ink)', letterSpacing: '-0.02em', marginBottom: 6 }}
-        >
-          Sign in
+        <h1 className="font-display font-semibold text-[var(--ink)] text-[28px] leading-tight tracking-[-0.02em]">
+          Welcome back
         </h1>
-        <p className="font-sans" style={{ fontSize: 14, color: 'var(--dim)', marginBottom: 32 }}>
-          Welcome back. Continue where you left off.
+        <p className="font-sans text-sm text-[var(--dim)] mt-1.5">
+          Sign in to your BeBest account
         </p>
       </motion.div>
 
-      {/* Global error — card with red left-border stripe */}
+      {/* Global error */}
       {error && (
         <motion.div
-          initial={{ opacity: 0, x: -4 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="mb-5 flex items-start gap-3 rounded-lg font-sans"
-          style={{
-            borderLeft: '4px solid var(--danger)',
-            background: 'rgba(220,38,38,0.07)',
-            padding: '12px 14px',
-          }}
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-5 flex items-start gap-2.5 rounded-lg border-l-4 border-danger bg-danger/8 px-3.5 py-3"
         >
-          <TriangleAlert
-            size={15}
-            style={{ color: 'var(--danger)', flexShrink: 0, marginTop: 1 }}
-          />
-          <span style={{ fontSize: 13, color: 'var(--danger)', lineHeight: 1.5 }}>{error}</span>
+          <TriangleAlert size={14} className="text-danger shrink-0 mt-0.5" />
+          <span className="font-sans text-[13px] text-danger leading-snug">{error}</span>
         </motion.div>
       )}
 
-      <form onSubmit={handleSubmit(onSubmit)}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {FIELDS.map((field, i) => (
-            <motion.div
-              key={field.name}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{
-                duration: 0.4,
-                delay: i === 0 ? 0 : i === 1 ? 0.06 : 0.12,
-                ease: [0.16, 1, 0.3, 1],
-              }}
+      <form onSubmit={handleSubmit(onSubmit)} noValidate>
+        <div className="flex flex-col gap-5">
+          {/* Email */}
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, delay: 0.06, ease: SPRING }}
+          >
+            <label
+              htmlFor="email"
+              className="block font-sans text-[13px] font-medium text-[var(--ink)] mb-1.5"
             >
+              Work email
+            </label>
+            <Input
+              id="email"
+              {...register('email')}
+              type="email"
+              placeholder="you@company.com"
+              autoComplete="email"
+              autoFocus
+              disabled={isSubmitting}
+              error={errors.email?.message}
+              className="w-full"
+            />
+          </motion.div>
+
+          {/* Password */}
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, delay: 0.12, ease: SPRING }}
+          >
+            <div className="flex items-center justify-between mb-1.5">
               <label
-                htmlFor={field.name}
-                className="font-sans"
-                style={{
-                  display: 'block',
-                  fontSize: 13,
-                  fontWeight: 500,
-                  color: 'var(--dim)',
-                  marginBottom: 6,
-                }}
+                htmlFor="password"
+                className="font-sans text-[13px] font-medium text-[var(--ink)]"
               >
-                {field.label}
+                Password
               </label>
-              <Input
-                id={field.name}
-                {...register(field.name)}
-                type={field.type}
-                placeholder={field.placeholder}
-                autoComplete={field.autoComplete}
-                autoFocus={field.autoFocus}
-                disabled={isSubmitting}
-                error={errors[field.name]?.message}
-                className="w-full"
-              />
-            </motion.div>
-          ))}
+              <Link
+                href="/forgot-password"
+                className="font-sans text-[12px] text-[var(--dim)] hover:text-[var(--ember)] transition-colors"
+              >
+                Forgot password?
+              </Link>
+            </div>
+            <Input
+              id="password"
+              {...register('password')}
+              type="password"
+              placeholder="••••••••"
+              autoComplete="current-password"
+              disabled={isSubmitting}
+              error={errors.password?.message}
+              className="w-full"
+            />
+          </motion.div>
         </div>
 
+        {/* Submit button */}
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.18, ease: [0.16, 1, 0.3, 1] }}
-          style={{ marginTop: 28 }}
+          transition={{ duration: 0.35, delay: 0.18, ease: SPRING }}
+          className="mt-7"
         >
           <Button
             type="submit"
-            disabled={isSubmitting}
+            size="lg"
             loading={isSubmitting}
-            className="w-full font-sans font-medium"
-            style={{
-              height: 42,
-              fontSize: 14,
-            }}
+            disabled={isSubmitting}
+            className="w-full bg-ember hover:bg-ember-light active:bg-ember-dark text-paper font-sans font-semibold text-[15px] h-11 rounded-lg shadow-ember transition-colors"
           >
-            {isSubmitting ? (
-              <span className="flex items-center justify-center gap-2">
-                <Loader2 size={15} className="animate-spin" />
-                Signing in…
-              </span>
-            ) : (
-              'Sign in'
-            )}
+            {isSubmitting ? 'Signing in…' : 'Sign in'}
           </Button>
-
-          {/* Two-column row below button */}
-          <div className="flex items-center justify-between mt-3">
-            <Link
-              href="/forgot-password"
-              className="font-sans transition-colors"
-              style={{ fontSize: 13, color: 'var(--dim)' }}
-            >
-              Forgot password?
-            </Link>
-            <Link
-              href="/signup"
-              className="font-sans transition-colors"
-              style={{ fontSize: 13, color: 'var(--ember)', fontWeight: 500 }}
-            >
-              Create account
-            </Link>
-          </div>
         </motion.div>
       </form>
 
+      {/* Footer */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.4, delay: 0.35 }}
-        className="text-center"
-        style={{ marginTop: 28, paddingTop: 24, borderTop: '1px solid var(--border)' }}
+        transition={{ duration: 0.4, delay: 0.28 }}
+        className="mt-7 pt-6 border-t border-[var(--border)] text-center"
       >
-        <p className="font-sans" style={{ fontSize: 13, color: 'var(--dim)' }}>
-          No account?{' '}
+        <p className="font-sans text-[13px] text-[var(--dim)]">
+          Don&apos;t have an account?{' '}
           <Link
             href="/signup"
-            className="cursor-pointer transition-colors"
-            style={{ color: 'var(--ember)', fontWeight: 500 }}
+            className="text-[var(--ember)] font-medium hover:underline underline-offset-2 transition-colors"
           >
             Apply for access →
           </Link>
