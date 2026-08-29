@@ -301,8 +301,10 @@ model brands {
   competitor_visibility  competitor_visibility[]
   competitors            competitors[]
   content_analyses       content_analyses[]
+  content_briefs         content_briefs[]
   crawl_jobs             crawl_jobs[]
   gap_analysis           gap_analysis[]
+  generated_content      generated_content[]
   geo_gaps               geo_gaps[]
   gsc_connections        gsc_connections?
   keyword_clusters       keyword_clusters[]
@@ -469,6 +471,27 @@ model content_analyses {
   pages                           pages    @relation(fields: [page_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
+model content_briefs {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id          String              @db.Uuid
+  page_id           String?             @db.Uuid
+  content_type      String              @db.VarChar(50)
+  title             String              @db.VarChar(500)
+  target_query      String?
+  target_stage      String?             @db.VarChar(50)
+  target_intent     String?             @db.VarChar(50)
+  keywords          String[]            @default([])
+  outline           Json                @default("[]")
+  status            String              @default("draft") @db.VarChar(50)
+  created_by        String?             @db.VarChar(255)
+  created_at        DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime            @default(now()) @db.Timestamptz(6)
+  deleted_at        DateTime?           @db.Timestamptz(6)
+  brands            brands              @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  pages             pages?              @relation(fields: [page_id], references: [id], onUpdate: NoAction)
+  generated_content generated_content[]
+}
+
 model crawl_jobs {
   id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   brand_id      String       @db.Uuid
@@ -610,6 +633,28 @@ model gap_analysis {
   @@index([category], map: "idx_gap_analysis_category")
   @@index([status], map: "idx_gap_analysis_status")
   @@index([gap_type], map: "idx_gap_analysis_type")
+}
+
+model generated_content {
+  id                       String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brief_id                 String         @db.Uuid
+  brand_id                 String         @db.Uuid
+  provider_name            String         @db.VarChar(100)
+  model_name               String?        @db.VarChar(100)
+  content_type             String         @db.VarChar(50)
+  title                    String?        @db.VarChar(500)
+  body                     String
+  word_count               Int?
+  ai_readiness_score       Decimal?       @db.Decimal(5, 2)
+  entity_count             Int?
+  structured_data_included Boolean        @default(false)
+  status                   String         @default("draft") @db.VarChar(50)
+  feedback                 Json           @default("{}")
+  generated_at             DateTime       @default(now()) @db.Timestamptz(6)
+  created_at               DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime       @default(now()) @db.Timestamptz(6)
+  brands                   brands         @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  content_briefs           content_briefs @relation(fields: [brief_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 model geo_gaps {
@@ -961,6 +1006,7 @@ model pages {
   schema_types     String[]          @default([])
   crawled_at       DateTime          @default(now()) @db.Timestamptz(6)
   content_analyses content_analyses?
+  content_briefs   content_briefs[]
   page_issues      page_issues[]
   brands           brands            @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   crawl_jobs       crawl_jobs        @relation(fields: [crawl_job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
