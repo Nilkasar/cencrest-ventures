@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect } from 'react'
+import { useRouter, useParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Providers } from '@/components/providers'
 import { Sidebar } from '@/components/shell/sidebar'
@@ -7,10 +9,44 @@ import { Topbar } from '@/components/shell/topbar'
 import { CommandPalette } from '@/components/shell/command-palette'
 import { useAppStore } from '@/store/app-store'
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut'
+import { getToken, getStoredUser } from '@/lib/auth-storage'
+import { api, routes } from '@/lib/api'
 
 function AppShellInner({ children }: { children: React.ReactNode }) {
   const togglePalette = useAppStore((s) => s.toggleCommandPalette)
+  const setOrg = useAppStore((s) => s.setOrg)
+  const setBrand = useAppStore((s) => s.setBrand)
+  const currentBrand = useAppStore((s) => s.currentBrand)
+  const router = useRouter()
+  const params = useParams()
+  const slug = params?.slug as string | undefined
+  const brandId = params?.brandId as string | undefined
+
   useKeyboardShortcut('k', togglePalette, { meta: true })
+
+  useEffect(() => {
+    const token = getToken()
+    if (!token) {
+      router.replace('/login')
+      return
+    }
+
+    if (slug) {
+      api.get<{ id: string; name: string; slug: string }>(routes.org(slug))
+        .then((org) => setOrg({ id: org.id, name: org.name, slug: org.slug }))
+        .catch(() => router.replace('/login'))
+    }
+  }, [slug, setOrg, router])
+
+  useEffect(() => {
+    if (slug && brandId) {
+      api.get<{ id: string; name: string }>(routes.brand(slug, brandId))
+        .then((brand) => setBrand({ id: brand.id, name: brand.name }))
+        .catch(() => {})
+    } else if (!brandId) {
+      setBrand(null)
+    }
+  }, [slug, brandId, setBrand])
 
   return (
     <div className="min-h-screen bg-[var(--paper)]">

@@ -15,6 +15,38 @@ const checkoutSchema = z.object({
   cancel_url: z.string().url(),
 })
 
+billing.get('/', requireAuth, requireOrgRole('viewer'), async (c) => {
+  const { organizationId } = c.get('org')
+
+  const limits = getPlanLimits('starter')
+
+  const brandIds = await db.brands.findMany({
+    where: { organization_id: organizationId, deleted_at: null },
+    select: { id: true },
+  })
+  const ids = brandIds.map(b => b.id)
+  const [brandCount, keywordCount] = await Promise.all([
+    brandIds.length,
+    db.keywords.count({ where: { brand_id: { in: ids } } }),
+  ])
+
+  return c.json({
+    plan: {
+      name: 'Starter',
+      tier: 'starter',
+      billing_period: 'monthly',
+      renewal_date: null,
+    },
+    usage: {
+      brands: { used: brandCount, limit: limits.maxBrands },
+      runs: { used: 0, limit: limits.maxRunsPerMonth },
+      keywords: { used: keywordCount, limit: limits.maxKeywordsPerBrand },
+    },
+    payment_method: null,
+    invoices: [],
+  })
+})
+
 // POST /checkout
 billing.post('/checkout', requireAuth, requireOrgRole('admin'), zValidator('json', checkoutSchema), async (c) => {
   const { organizationId } = c.get('org')

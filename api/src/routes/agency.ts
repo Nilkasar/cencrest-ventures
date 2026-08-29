@@ -8,6 +8,29 @@ import { addClient, removeClient, listClients, getClientSummary } from '../lib/a
 
 const agency = new Hono<AppEnv>()
 
+agency.get('/', requireAuth, requireOrgRole('owner'), async (c) => {
+  const { organizationId } = c.get('org')
+
+  const clients = await db.agency_clients.findMany({
+    where: { agency_org_id: organizationId },
+    include: {
+      organizations_agency_clients_client_org_idToorganizations: {
+        select: { id: true, name: true, slug: true },
+      },
+    },
+  })
+
+  return c.json({
+    clients: clients.map(c => ({
+      id: c.id,
+      org_slug: c.organizations_agency_clients_client_org_idToorganizations.slug,
+      org_name: c.organizations_agency_clients_client_org_idToorganizations.name,
+      notes: c.notes,
+      added_at: c.added_at,
+    })),
+  })
+})
+
 // GET /clients
 agency.get('/clients', requireAuth, requireOrgRole('owner'), async (c) => {
   const { organizationId } = c.get('org')

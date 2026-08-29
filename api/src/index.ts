@@ -39,6 +39,7 @@ import marketing from './routes/marketing.js'
 import autonomous from './routes/autonomous.js'
 import stories from './routes/stories.js'
 import system from './routes/system.js'
+import brandSnapshots from './routes/brand-snapshots.js'
 
 const app = new Hono()
 
@@ -47,7 +48,7 @@ app.use('*', cors({
   origin: process.env.NODE_ENV === 'production'
     ? ['https://bebestwith.ai', 'https://www.bebestwith.ai']
     : '*',
-  allowMethods: ['GET', 'POST', 'OPTIONS'],
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }))
 app.use('*', requestLogger)
 
@@ -88,6 +89,7 @@ app.route('/api/orgs/:slug/marketing', marketing)
 app.route('/api/orgs/:slug/brands/:brandId/autonomous', autonomous)
 app.route('/api/orgs/:slug/stories', stories)
 app.route('/api/system', system)
+app.route('/api/orgs/:slug/brands/:brandId/snapshots', brandSnapshots)
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404))
 app.onError((err, c) => {

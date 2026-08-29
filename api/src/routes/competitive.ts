@@ -5,6 +5,54 @@ import { requireAuth, requireOrgRole } from '../middleware/auth.js'
 
 const competitive = new Hono<AppEnv>()
 
+competitive.get('/', requireAuth, requireOrgRole('viewer'), async (c) => {
+  const { organizationId } = c.get('org')
+  const brandId = c.req.param('brandId')
+
+  const brand = await db.brands.findFirst({
+    where: { id: brandId, organization_id: organizationId, deleted_at: null },
+  })
+  if (!brand) return c.json({ error: 'Brand not found' }, 404)
+
+  // Get competitors (from share_of_voice entity_type=competitor)
+  const sovEntries = await db.share_of_voice.findMany({
+    where: { brand_id: brandId, entity_type: 'competitor' },
+    orderBy: { calculated_at: 'desc' },
+    take: 10,
+  })
+
+  // Deduplicate competitors by entity_name
+  const competitorMap = new Map<string, typeof sovEntries[0]>()
+  for (const entry of sovEntries) {
+    if (!competitorMap.has(entry.entity_name)) {
+      competitorMap.set(entry.entity_name, entry)
+    }
+  }
+  const competitors = Array.from(competitorMap.values()).map(e => ({
+    id: e.id,
+    name: e.entity_name,
+    sov_percent: e.sov_percent,
+    calculated_at: e.calculated_at,
+  }))
+
+  // Your brand SOV
+  const yourSov = await db.share_of_voice.findFirst({
+    where: { brand_id: brandId, entity_type: 'brand' },
+    orderBy: { calculated_at: 'desc' },
+  })
+
+  return c.json({
+    competitors,
+    summary: {
+      your_sov: yourSov?.sov_percent ?? 0,
+      total_competitors: competitors.length,
+      last_updated: yourSov?.calculated_at ?? null,
+    },
+    timeline: [],
+    radar_data: [],
+  })
+})
+
 async function getBrand(brandId: string, organizationId: string) {
   return db.brands.findFirst({
     where: { id: brandId, organization_id: organizationId, deleted_at: null },
