@@ -25,6 +25,8 @@ import geoGaps from './routes/geo-gaps.js'
 import recommendations from './routes/recommendations.js'
 import content from './routes/content.js'
 import contentGeneration from './routes/content-generation.js'
+import geoAgent from './routes/geo-agent.js'
+import seoAgent from './routes/seo-agent.js'
 
 const app = new Hono()
 
@@ -60,6 +62,8 @@ app.route('/api/orgs/:slug/brands/:brandId/geo-gaps', geoGaps)
 app.route('/api/orgs/:slug/brands/:brandId/recommendations', recommendations)
 app.route('/api/orgs/:slug/brands/:brandId/content', content)
 app.route('/api/orgs/:slug/brands/:brandId/content-generation', contentGeneration)
+app.route('/api/orgs/:slug/brands/:brandId/geo-agent', geoAgent)
+app.route('/api/orgs/:slug/brands/:brandId/seo-agent', seoAgent)
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404))
 app.onError((err, c) => {
