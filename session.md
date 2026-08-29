@@ -74,9 +74,9 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | 19 | Unified Growth Agent | ✅ Done | ✅ | Yes |
 | 20 | Action Center | ✅ Done | ✅ | Yes |
 | 21 | Controlled Publishing | ✅ Done | ✅ | Yes |
-| 22 | Measurement & Experimentation | 🔄 In Progress | — | No |
-| 23 | Continuous Learning Loop | ⏳ Blocked by 22 | — | No |
-| 24 | Reporting | ⏳ Blocked by 10,11,22 | — | No |
+| 22 | Measurement & Experimentation | ✅ Done | ✅ | Yes |
+| 23 | Continuous Learning Loop | 🔄 In Progress | — | No |
+| 24 | Reporting | 🔄 In Progress | — | No |
 | 25 | Notifications | ✅ Done | ✅ | Yes |
 | 26 | Billing | ✅ Done | ✅ | Yes |
 | 27 | CRM | ✅ Done | ✅ | Yes |
@@ -111,12 +111,13 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | Epic 19 (Unified Growth Agent) | 223 |
 | Epic 20 (Action Center) | 234 |
 | Epic 21 (Controlled Publishing) | 247 |
+| Epic 22 (Measurement & Experimentation) | 259 |
 
 ### Current batch
-- Epic 22 (Measurement & Experimentation) — 🔄 in progress
+- Epics 23+24 (Continuous Learning Loop + Reporting) — 🔄 running in parallel
 
-### Next after 22
-- Epics 23+24 open in parallel (Continuous Learning Loop + Reporting)
+### Next after 23+24
+- Epic 29 (Customer Success Automation) — depends on 23 ✅ + 27 ✅
 
 ### Known technical debt
 - DB migrations done via raw psql (not Prisma Migrate) — not reproducible without this exact DB

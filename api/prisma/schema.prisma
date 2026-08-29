@@ -301,63 +301,65 @@ model brand_services {
 }
 
 model brands {
-  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organization_id        String                   @db.Uuid
-  name                   String                   @db.VarChar(255)
-  description            String?
-  website_url            String?                  @db.VarChar(500)
-  industry               String?                  @db.VarChar(100)
-  logo_url               String?                  @db.VarChar(500)
-  created_by             String                   @db.Uuid
-  created_at             DateTime                 @default(now()) @db.Timestamp(6)
-  updated_at             DateTime                 @default(now()) @db.Timestamp(6)
-  deleted_at             DateTime?                @db.Timestamp(6)
-  aliases                String[]
-  positioning            String?
-  value_proposition      String?
-  key_differentiators    String[]
-  actions                actions[]
-  analyses               analyses[]
-  audiences              audiences[]
-  brand_aliases          brand_aliases[]
-  brand_categories       brand_categories[]       @ignore
-  brand_keyword_rankings brand_keyword_rankings[]
-  brand_services         brand_services[]
-  users                  users                    @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "brands_created_by_users_id_fk")
-  organizations          organizations            @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "brands_organization_id_organizations_id_fk")
-  buyer_journeys         buyer_journeys[]
-  category_associations  category_associations[]
-  competitor_visibility  competitor_visibility[]
-  competitors            competitors[]
-  content_analyses       content_analyses[]
-  content_briefs         content_briefs[]
-  crawl_jobs             crawl_jobs[]
-  gap_analysis           gap_analysis[]
-  generated_content      generated_content[]
-  geo_agent_actions      geo_agent_actions[]
-  geo_agent_runs         geo_agent_runs[]
-  geo_gaps               geo_gaps[]
-  growth_agent_runs      growth_agent_runs[]
-  gsc_connections        gsc_connections?
-  keyword_clusters       keyword_clusters[]
-  keywords               keywords[]
-  measurement_points     measurement_points[]
-  mentions               mentions[]
-  opportunities          opportunities[]
-  pages                  pages[]
-  products               products[]
-  prompt_runs            prompt_runs[]
-  publish_jobs           publish_jobs[]
-  query_sets             query_sets[]
-  questions              questions[]
-  recommendations        recommendations[]
-  reports                reports[]
-  score_history          score_history[]
-  scores                 scores[]
-  seo_agent_actions      seo_agent_actions[]
-  seo_agent_runs         seo_agent_runs[]
-  share_of_voice         share_of_voice[]
-  visibility_scores      visibility_scores[]
+  id                      String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id         String                    @db.Uuid
+  name                    String                    @db.VarChar(255)
+  description             String?
+  website_url             String?                   @db.VarChar(500)
+  industry                String?                   @db.VarChar(100)
+  logo_url                String?                   @db.VarChar(500)
+  created_by              String                    @db.Uuid
+  created_at              DateTime                  @default(now()) @db.Timestamp(6)
+  updated_at              DateTime                  @default(now()) @db.Timestamp(6)
+  deleted_at              DateTime?                 @db.Timestamp(6)
+  aliases                 String[]
+  positioning             String?
+  value_proposition       String?
+  key_differentiators     String[]
+  actions                 actions[]
+  analyses                analyses[]
+  audiences               audiences[]
+  brand_aliases           brand_aliases[]
+  brand_categories        brand_categories[]        @ignore
+  brand_keyword_rankings  brand_keyword_rankings[]
+  brand_services          brand_services[]
+  users                   users                     @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "brands_created_by_users_id_fk")
+  organizations           organizations             @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "brands_organization_id_organizations_id_fk")
+  buyer_journeys          buyer_journeys[]
+  category_associations   category_associations[]
+  competitor_visibility   competitor_visibility[]
+  competitors             competitors[]
+  content_analyses        content_analyses[]
+  content_briefs          content_briefs[]
+  crawl_jobs              crawl_jobs[]
+  experiment_measurements experiment_measurements[]
+  experiments             experiments[]
+  gap_analysis            gap_analysis[]
+  generated_content       generated_content[]
+  geo_agent_actions       geo_agent_actions[]
+  geo_agent_runs          geo_agent_runs[]
+  geo_gaps                geo_gaps[]
+  growth_agent_runs       growth_agent_runs[]
+  gsc_connections         gsc_connections?
+  keyword_clusters        keyword_clusters[]
+  keywords                keywords[]
+  measurement_points      measurement_points[]
+  mentions                mentions[]
+  opportunities           opportunities[]
+  pages                   pages[]
+  products                products[]
+  prompt_runs             prompt_runs[]
+  publish_jobs            publish_jobs[]
+  query_sets              query_sets[]
+  questions               questions[]
+  recommendations         recommendations[]
+  reports                 reports[]
+  score_history           score_history[]
+  scores                  scores[]
+  seo_agent_actions       seo_agent_actions[]
+  seo_agent_runs          seo_agent_runs[]
+  share_of_voice          share_of_voice[]
+  visibility_scores       visibility_scores[]
 
   @@index([created_by], map: "idx_brands_creator")
   @@index([industry], map: "idx_brands_industry")
@@ -632,6 +634,52 @@ model evaluation_runs {
   @@index([dataset_id], map: "idx_evaluation_runs_dataset")
   @@index([model_id], map: "idx_evaluation_runs_model")
   @@index([prompt_version_id], map: "idx_evaluation_runs_prompt_version")
+}
+
+model experiment_measurements {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  experiment_id String      @db.Uuid
+  brand_id      String      @db.Uuid
+  variant       String      @default("control") @db.VarChar(20)
+  metric_name   String      @db.VarChar(100)
+  metric_value  Decimal     @db.Decimal(10, 4)
+  measured_at   DateTime    @default(now()) @db.Timestamptz(6)
+  metadata      Json        @default("{}")
+  created_at    DateTime    @default(now()) @db.Timestamptz(6)
+  brands        brands      @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  experiments   experiments @relation(fields: [experiment_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([experiment_id], map: "idx_experiment_measurements_exp")
+}
+
+model experiments {
+  id                      String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  brand_id                String                    @db.Uuid
+  org_id                  String                    @db.Uuid
+  name                    String                    @db.VarChar(255)
+  description             String?
+  hypothesis              String?
+  experiment_type         String                    @db.VarChar(100)
+  status                  String                    @default("draft") @db.VarChar(50)
+  control_config          Json                      @default("{}")
+  variant_config          Json                      @default("{}")
+  success_metric          String?                   @db.VarChar(100)
+  baseline_value          Decimal?                  @db.Decimal(10, 4)
+  target_value            Decimal?                  @db.Decimal(10, 4)
+  started_at              DateTime?                 @db.Timestamptz(6)
+  ended_at                DateTime?                 @db.Timestamptz(6)
+  winner                  String?                   @db.VarChar(20)
+  result_summary          Json                      @default("{}")
+  created_by              String?                   @db.Uuid
+  created_at              DateTime                  @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime                  @default(now()) @db.Timestamptz(6)
+  deleted_at              DateTime?                 @db.Timestamptz(6)
+  experiment_measurements experiment_measurements[]
+  brands                  brands                    @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                   users?                    @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  organizations           organizations             @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([brand_id], map: "idx_experiments_brand")
 }
 
 model form_submissions {
@@ -1071,6 +1119,7 @@ model organizations {
   categories        categories[]
   crm_contacts      crm_contacts[]
   crm_notes         crm_notes[]
+  experiments       experiments[]
   geo_agent_runs    geo_agent_runs[]
   growth_agent_runs growth_agent_runs[]
   integrations      integrations[]
@@ -1588,6 +1637,7 @@ model users {
   auth_events                                  auth_events[]
   brands                                       brands[]
   crm_notes                                    crm_notes[]
+  experiments                                  experiments[]
   invitations                                  invitations[]
   memberships                                  memberships[]
   notification_preferences                     notification_preferences[]
