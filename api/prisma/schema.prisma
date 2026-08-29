@@ -1216,6 +1216,7 @@ model organizations {
   snapshot_requests                                          snapshot_requests[]
   subscriptions                                              subscriptions?
   usage_records                                              usage_records[]
+  white_label_configs                                        white_label_configs?
 }
 
 model page_issues {
@@ -1766,6 +1767,25 @@ model webhook_deliveries {
   integrations   integrations @relation(fields: [integration_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([integration_id, delivered_at(sort: Desc)], map: "idx_webhook_deliveries_integ")
+}
+
+model white_label_configs {
+  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agency_org_id      String        @unique @db.Uuid
+  brand_name         String        @db.VarChar(255)
+  logo_url           String?
+  primary_color      String?       @db.VarChar(7)
+  secondary_color    String?       @db.VarChar(7)
+  custom_domain      String?
+  support_email      String?       @db.VarChar(255)
+  hide_powered_by    Boolean       @default(false)
+  custom_terms_url   String?
+  custom_privacy_url String?
+  enabled            Boolean       @default(true)
+  config             Json          @default("{}")
+  created_at         DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime      @default(now()) @db.Timestamptz(6)
+  organizations      organizations @relation(fields: [agency_org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 enum action_type {
