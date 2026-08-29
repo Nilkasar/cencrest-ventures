@@ -88,7 +88,7 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | 33 | Marketing / Growth Engine | ✅ Done | ✅ | Yes |
 | 34 | Entrepreneur Story Ecosystem | ✅ Done | ✅ | Yes |
 | 35 | Autonomous Operations | ✅ Done | ✅ | Yes |
-| 36 | Production Hardening | 🔄 In Progress | — | No |
+| 36 | Production Hardening | ✅ Done | ✅ | Yes |
 
 ### Test count history
 | Commit | Tests |
@@ -117,9 +117,19 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | Epic 31 (White Label) | 303 |
 | Epics 33+35 (Marketing Engine + Autonomous Ops) | 328 |
 | Epic 34 (Entrepreneur Story Ecosystem) | 338 |
+| Epic 36 (Production Hardening) | 345 |
 
-### Current batch
-- Epic 36 (Production Hardening) — 🔄 final epic in progress
+### ✅ ALL 37 EPICS COMPLETE
+
+**Final state: 345 tests passing across 39 test files.**
+
+### Known technical debt (still open)
+- DB migrations done via raw psql — not reproducible without this exact DB
+- Crawler + prompt runner use setImmediate, not a proper queue (pgboss)
+- No CI/CD (no GitHub Actions)
+- API not yet deployed to Vercel
+- Rate limiting is in-memory only (not distributed — will not work across multiple instances)
+- OpenAPI docs are a minimal stub, not exhaustive
 
 ### Known technical debt
 - DB migrations done via raw psql (not Prisma Migrate) — not reproducible without this exact DB
