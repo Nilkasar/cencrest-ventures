@@ -55,18 +55,19 @@ export default function LoginPage() {
 
   return (
     <div className="w-full">
+
       {/* Heading */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: SPRING }}
-        className="mb-8"
+        className="mb-7"
       >
-        <h1 className="font-display font-semibold text-[var(--ink)] text-[28px] leading-tight tracking-[-0.02em]">
+        <h1 className="font-display font-semibold text-[var(--ink)] text-3xl leading-tight tracking-[-0.02em]">
           Welcome back
         </h1>
-        <p className="font-sans text-sm text-[var(--dim)] mt-1.5">
-          Sign in to your BeBest account
+        <p className="font-sans text-[14px] text-[var(--dim)] mt-2 leading-relaxed">
+          Sign in to your BeBest account to continue.
         </p>
       </motion.div>
 
@@ -75,24 +76,25 @@ export default function LoginPage() {
         <motion.div
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-5 flex items-start gap-2.5 rounded-lg border-l-4 border-danger bg-danger/8 px-3.5 py-3"
+          className="mb-5 flex items-start gap-3 rounded-lg border-l-[3px] border-danger bg-[var(--danger)]/[0.06] px-4 py-3"
         >
-          <TriangleAlert size={14} className="text-danger shrink-0 mt-0.5" />
+          <TriangleAlert size={15} className="text-danger shrink-0 mt-px" />
           <span className="font-sans text-[13px] text-danger leading-snug">{error}</span>
         </motion.div>
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
-        <div className="flex flex-col gap-5">
-          {/* Email */}
+        <div className="flex flex-col gap-4">
+
+          {/* Email field */}
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, delay: 0.06, ease: SPRING }}
+            transition={{ duration: 0.35, delay: 0.05, ease: SPRING }}
           >
             <label
               htmlFor="email"
-              className="block font-sans text-[13px] font-medium text-[var(--ink)] mb-1.5"
+              className="block font-sans text-[13px] font-medium text-[var(--ink)] mb-2"
             >
               Work email
             </label>
@@ -105,17 +107,16 @@ export default function LoginPage() {
               autoFocus
               disabled={isSubmitting}
               error={errors.email?.message}
-              className="w-full"
             />
           </motion.div>
 
-          {/* Password */}
+          {/* Password field */}
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, delay: 0.12, ease: SPRING }}
+            transition={{ duration: 0.35, delay: 0.1, ease: SPRING }}
           >
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center justify-between mb-2">
               <label
                 htmlFor="password"
                 className="font-sans text-[13px] font-medium text-[var(--ink)]"
@@ -137,36 +138,35 @@ export default function LoginPage() {
               autoComplete="current-password"
               disabled={isSubmitting}
               error={errors.password?.message}
-              className="w-full"
             />
           </motion.div>
         </div>
 
-        {/* Submit button */}
+        {/* Submit */}
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: 0.18, ease: SPRING }}
-          className="mt-7"
+          transition={{ duration: 0.35, delay: 0.16, ease: SPRING }}
+          className="mt-6"
         >
           <Button
             type="submit"
             size="lg"
             loading={isSubmitting}
             disabled={isSubmitting}
-            className="w-full bg-ember hover:bg-ember-light active:bg-ember-dark text-paper font-sans font-semibold text-[15px] h-11 rounded-lg shadow-ember transition-colors"
+            className="w-full h-11 rounded-lg font-sans font-semibold text-[15px] bg-ember hover:bg-ember-light active:bg-ember-dark text-paper shadow-ember transition-colors"
           >
             {isSubmitting ? 'Signing in…' : 'Sign in'}
           </Button>
         </motion.div>
       </form>
 
-      {/* Footer */}
+      {/* Footer divider + signup link */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.4, delay: 0.28 }}
-        className="mt-7 pt-6 border-t border-[var(--border)] text-center"
+        transition={{ duration: 0.4, delay: 0.24 }}
+        className="mt-6 pt-5 border-t border-[var(--border)] text-center"
       >
         <p className="font-sans text-[13px] text-[var(--dim)]">
           Don&apos;t have an account?{' '}

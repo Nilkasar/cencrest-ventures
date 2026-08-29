@@ -14,11 +14,11 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     const inputId = id ?? label?.toLowerCase().replace(/\s+/g, '-')
 
     return (
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1.5">
         {label && (
           <label
             htmlFor={inputId}
-            className="text-sm font-medium text-ink font-sans"
+            className="text-[13px] font-medium text-ink font-sans leading-none"
           >
             {label}
           </label>
@@ -27,13 +27,20 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           id={inputId}
           className={cn(
-            'h-10 w-full rounded-md border bg-paper px-3 py-2 text-sm font-sans text-ink placeholder:text-dim',
-            'transition-[border-color,box-shadow] duration-[150ms] ease-spring',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember focus-visible:ring-offset-0 focus-visible:border-ember',
-            'disabled:cursor-not-allowed disabled:opacity-50',
+            // Size & spacing
+            'h-11 w-full rounded-lg border px-4 text-[15px] font-sans text-ink',
+            // Background & placeholder
+            'bg-white placeholder:text-[var(--dim)] placeholder:font-normal',
+            // Transitions
+            'transition-[border-color,box-shadow] duration-150 ease-spring',
+            // Focus
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember/30 focus-visible:ring-offset-0 focus-visible:border-ember',
+            // Disabled
+            'disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-[var(--surface)]',
+            // Error vs normal border
             error
-              ? 'border-danger focus-visible:ring-danger focus-visible:border-danger'
-              : 'border-border hover:border-border-strong',
+              ? 'border-danger focus-visible:ring-danger/30 focus-visible:border-danger'
+              : 'border-[var(--border)] hover:border-[var(--border-strong)]',
             className
           )}
           aria-invalid={error ? 'true' : undefined}
@@ -43,12 +50,12 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           {...props}
         />
         {error && (
-          <p id={`${inputId}-error`} className="text-xs text-danger font-sans">
+          <p id={`${inputId}-error`} className="text-[12px] text-danger font-sans leading-none mt-0.5">
             {error}
           </p>
         )}
         {!error && hint && (
-          <p id={`${inputId}-hint`} className="text-xs text-dim font-sans">
+          <p id={`${inputId}-hint`} className="text-[12px] text-dim font-sans leading-none mt-0.5">
             {hint}
           </p>
         )}
