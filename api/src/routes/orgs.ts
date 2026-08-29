@@ -5,8 +5,11 @@ import { db } from '../lib/db.js'
 import { requireAuth, requireOrgRole } from '../middleware/auth.js'
 import { toSlug } from '../lib/slug.js'
 import type { AppEnv } from '../types/context.js'
+import agency from './agency.js'
 
 const orgs = new Hono<AppEnv>()
+
+orgs.route('/:slug/agency', agency)
 
 // ── Create org ───────────────────────────────────────────────────────────────
 const createOrgSchema = z.object({

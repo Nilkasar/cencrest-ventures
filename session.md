@@ -81,9 +81,9 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | 26 | Billing | ✅ Done | ✅ | Yes |
 | 27 | CRM | ✅ Done | ✅ | Yes |
 | 28 | Free AI + SEO Snapshot | ✅ Done | ✅ | Yes |
-| 29 | Customer Success Automation | 🔄 In Progress | — | No |
-| 30 | Agency / Multi-client | 🔄 In Progress | — | No |
-| 31 | White Label | ⏳ Blocked by 30,24 | — | No |
+| 29 | Customer Success Automation | ✅ Done | ✅ | Yes |
+| 30 | Agency / Multi-client | ✅ Done | ✅ | Yes |
+| 31 | White Label | 🔄 In Progress | — | No |
 | 32 | Integrations | ✅ Done | ✅ | Yes |
 | 33 | Marketing / Growth Engine | ⏳ Blocked by 28,24 | — | No |
 | 34 | Entrepreneur Story Ecosystem | ⏳ Blocked by 33 | — | No |
@@ -113,12 +113,13 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 | Epic 21 (Controlled Publishing) | 247 |
 | Epic 22 (Measurement & Experimentation) | 259 |
 | Epics 23+24 (Learning Loop + Reporting) | 279 |
+| Epics 29+30 (Customer Success + Agency) | 293 |
 
 ### Current batch
-- Epics 29+30 (Customer Success Automation + Agency/Multi-client) — 🔄 running in parallel
+- Epic 31 (White Label) — 🔄 in progress
 
-### Next after 29+30
-- Epic 31 (White Label) — depends on 30 ✅ + 24 ✅
+### Next after 31
+- Epics 33+35 (Marketing Engine + Autonomous Operations) open up
 
 ### Known technical debt
 - DB migrations done via raw psql (not Prisma Migrate) — not reproducible without this exact DB

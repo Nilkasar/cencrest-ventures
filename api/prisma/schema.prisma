@@ -50,6 +50,27 @@ model actions {
   @@index([status], map: "idx_actions_status")
 }
 
+model agency_clients {
+  id                                                        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agency_org_id                                             String        @db.Uuid
+  client_org_id                                             String        @db.Uuid
+  relationship_type                                         String        @default("managed") @db.VarChar(50)
+  access_level                                              String        @default("full") @db.VarChar(50)
+  monthly_fee                                               Decimal?      @db.Decimal(10, 2)
+  contract_start                                            DateTime?     @db.Timestamptz(6)
+  contract_end                                              DateTime?     @db.Timestamptz(6)
+  status                                                    String        @default("active") @db.VarChar(50)
+  notes                                                     String?
+  created_at                                                DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at                                                DateTime      @default(now()) @db.Timestamptz(6)
+  deleted_at                                                DateTime?     @db.Timestamptz(6)
+  organizations_agency_clients_agency_org_idToorganizations organizations @relation("agency_clients_agency_org_idToorganizations", fields: [agency_org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organizations_agency_clients_client_org_idToorganizations organizations @relation("agency_clients_client_org_idToorganizations", fields: [client_org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([agency_org_id, client_org_id])
+  @@index([agency_org_id], map: "idx_agency_clients_agency")
+}
+
 model ai_models {
   id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   provider_id     String            @db.Uuid
@@ -574,6 +595,26 @@ model crm_notes {
   organizations organizations @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([org_id], map: "idx_crm_notes_org")
+}
+
+model customer_health_checks {
+  id                             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  org_id                         String        @unique @db.Uuid
+  health_score                   Int           @default(50)
+  churn_risk                     String        @default("low") @db.VarChar(20)
+  last_active_at                 DateTime?     @db.Timestamptz(6)
+  days_since_last_run            Int?
+  actions_completed_30d          Int           @default(0)
+  signals_processed_30d          Int           @default(0)
+  recommendations_dismissed_rate Decimal       @default(0) @db.Decimal(4, 3)
+  intervention_type              String?       @db.VarChar(100)
+  intervention_sent_at           DateTime?     @db.Timestamptz(6)
+  notes                          String?
+  created_at                     DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at                     DateTime      @default(now()) @db.Timestamptz(6)
+  organizations                  organizations @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([org_id], map: "idx_customer_health_org")
 }
 
 model entities {
@@ -1142,36 +1183,39 @@ model org_ai_providers {
 }
 
 model organizations {
-  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name              String              @db.VarChar(255)
-  slug              String              @unique(map: "organizations_slug_unique") @db.VarChar(255)
-  created_by        String              @db.Uuid
-  created_at        DateTime            @default(now()) @db.Timestamp(6)
-  updated_at        DateTime            @default(now()) @db.Timestamp(6)
-  deleted_at        DateTime?           @db.Timestamp(6)
-  account_health    account_health?
-  actions           actions[]
-  ai_usage          ai_usage[]
-  audit_events      audit_events[]
-  brands            brands[]
-  categories        categories[]
-  crm_contacts      crm_contacts[]
-  crm_notes         crm_notes[]
-  experiments       experiments[]
-  geo_agent_runs    geo_agent_runs[]
-  growth_agent_runs growth_agent_runs[]
-  integrations      integrations[]
-  intents           intents[]
-  invitations       invitations[]
-  memberships       memberships[]
-  notifications     notifications[]
-  org_ai_providers  org_ai_providers[]
-  users             users               @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "organizations_created_by_users_id_fk")
-  publish_jobs      publish_jobs[]
-  seo_agent_runs    seo_agent_runs[]
-  snapshot_requests snapshot_requests[]
-  subscriptions     subscriptions?
-  usage_records     usage_records[]
+  id                                                         String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                                                       String                  @db.VarChar(255)
+  slug                                                       String                  @unique(map: "organizations_slug_unique") @db.VarChar(255)
+  created_by                                                 String                  @db.Uuid
+  created_at                                                 DateTime                @default(now()) @db.Timestamp(6)
+  updated_at                                                 DateTime                @default(now()) @db.Timestamp(6)
+  deleted_at                                                 DateTime?               @db.Timestamp(6)
+  account_health                                             account_health?
+  actions                                                    actions[]
+  agency_clients_agency_clients_agency_org_idToorganizations agency_clients[]        @relation("agency_clients_agency_org_idToorganizations")
+  agency_clients_agency_clients_client_org_idToorganizations agency_clients[]        @relation("agency_clients_client_org_idToorganizations")
+  ai_usage                                                   ai_usage[]
+  audit_events                                               audit_events[]
+  brands                                                     brands[]
+  categories                                                 categories[]
+  crm_contacts                                               crm_contacts[]
+  crm_notes                                                  crm_notes[]
+  customer_health_checks                                     customer_health_checks?
+  experiments                                                experiments[]
+  geo_agent_runs                                             geo_agent_runs[]
+  growth_agent_runs                                          growth_agent_runs[]
+  integrations                                               integrations[]
+  intents                                                    intents[]
+  invitations                                                invitations[]
+  memberships                                                memberships[]
+  notifications                                              notifications[]
+  org_ai_providers                                           org_ai_providers[]
+  users                                                      users                   @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "organizations_created_by_users_id_fk")
+  publish_jobs                                               publish_jobs[]
+  seo_agent_runs                                             seo_agent_runs[]
+  snapshot_requests                                          snapshot_requests[]
+  subscriptions                                              subscriptions?
+  usage_records                                              usage_records[]
 }
 
 model page_issues {
