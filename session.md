@@ -164,3 +164,35 @@ New machine / new Claude Code session. Repo cloned fresh from `https://github.co
 - Confirm `git push` of commit `b7e1a5d` happened.
 - Decide whether to correct `PROJECT_STATUS.md` (see discrepancy above) or replace it with this session.md as the single source of truth for status.
 - No functional work done on Epic 1+ this session — next session should pick up wherever the product build actually left off (verify against this file's Epic Progress Tracker, not `PROJECT_STATUS.md`).
+
+---
+
+## Session: 2026-09-02 (cont.) — Platform rebuild kickoff
+
+### Context
+User decided the existing `api/` + `web-app/` code, while functionally complete (37 epics, 345 tests per the tracker above), is not organizationally or visually production-grade: no monorepo, no clean domain boundaries, and a frontend that reads as "just another AI platform" rather than something built for the high-value customers (CMOs/founders paying $24k-$65k engagements) it serves. Decision: **full rebuild, in new folders, old code untouched until proven.**
+
+### Decisions locked (via AskUserQuestion, all in this session)
+- Git safety: rebuild happens on branch **`rebuild/platform`** (created off `main`, which was clean at branch time). Never commit to `main` during the rebuild. Never touch the live Vercel project or Supabase database. No force-push, no destructive git commands.
+- Domain model: **port and harden**, don't discard — `api/prisma/schema.prisma` (2,201 lines, already matches `docs/06-database/SCHEMA.md`) is the starting point. `backend-architect` audits and refines anything weak (indexing for load, audit columns, constraints, RLS-as-migration-not-just-doc) rather than redesigning from zero.
+- Monorepo tooling: **pnpm workspaces + Turborepo**.
+- Build order: **epic by epic**, backend and frontend built together per epic (not backend-first), starting with **CRM**, ending with the **marketing site rebuild**, with a **final audit report** (done vs. pending) as the last step.
+- **No database migrations are executed by Claude during this build** — schema/migration files are generated and committed, but applying them against any database (local or Supabase) is the user's own step, done once everything is built.
+- No stopping between epics to ask permission — proceed continuously; the user reviews via this log and the git history on `rebuild/platform`.
+
+### New structure created this session
+```
+platform/                    ← new monorepo, additive, does not touch api/ or web-app/
+  apps/{api,web}/             (scaffolding started)
+  packages/{database,config,types,ui}/
+  package.json, pnpm-workspace.yaml, turbo.json, .gitignore
+  EPICS.md                    ← epic-by-epic tracker for the rebuild (Epic 0-21, mirrors the
+                                 original 37-epic roadmap consolidated, ends with Marketing Site
+                                 Rebuild + Final Audit)
+```
+`packages/config` has the shared `tsconfig.base.json`, ESLint flat config, and Prettier config every app/package will extend.
+
+Four project subagents already exist from the prior session (`.claude/agents/growth-strategist.md`, `backend-architect.md`, `frontend-engineer.md`, `qa-flow-tester.md`) and are being used for this build per the plan approved in plan mode (saved at the time to `C:\Users\nilesh.kasar\.claude\plans\moonlit-nibbling-matsumoto.md` on the machine running that session).
+
+### Status at the end of this entry
+Epic 0 (Monorepo & Platform Foundation) is **IN PROGRESS** — scaffold done, schema audit + auth/orgs/RBAC/multi-tenancy/audit-logging build starting next via `backend-architect`, with `frontend-engineer` starting the premium design system in parallel. This log will be updated again as each epic in `platform/EPICS.md` completes — treat `platform/EPICS.md` + this file together as the authoritative status, not `PROJECT_STATUS.md`.

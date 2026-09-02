@@ -1,0 +1,14 @@
+{
+  "name": "@bebest/config",
+  "private": true,
+  "version": "0.0.0",
+  "main": "index.js",
+  "files": [
+    "tsconfig.base.json",
+    "eslint.config.mjs",
+    "prettier.config.mjs"
+  ],
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
