@@ -612,3 +612,155 @@ deprecate-and-migrate dance) is safe.
   file" rule §13 itself established.
 - As with every other section: `prisma validate`/`generate` only, nothing
   applied to a database.
+
+---
+
+## 16. Epic 5 (Intent & Query Universe) schema additions
+
+`docs/epics/05-intent-query-universe.md`'s domain model points at
+`docs/06-database/SCHEMA.md` §3's literal `query_sets`/`queries` DDL. The
+ported schema already had a `query_sets` table (hardened in §1's
+`organization_id` denormalization pass) but was missing three columns that
+DDL requires: `query_count INTEGER NOT NULL DEFAULT 0`, `version INTEGER
+NOT NULL DEFAULT 1`, `status VARCHAR(50) NOT NULL DEFAULT 'draft'`. Added
+per the same "audit against the epic spec, fix forward" rule §13/§15 used
+— not a redesign, filling a documented gap.
+
+**`queries` is a genuinely new table, not a repurposing of the ported
+`questions`/`query_set_questions` pair.** That pair is a many-to-many join
+(a `question` can sit in several `query_sets`) built for the legacy
+`questions -> runs -> responses` AI pipeline, with none of
+`intent_type`/`category`/`tags`/`priority` — fields the epic's template
+generator and its "group the review UI by the ten categories" surface
+cannot work without. `docs/epics/07-ai-visibility-engine.md`'s own domain
+model independently confirms the split: it defines brand-new
+`ai_runs`/`ai_responses`/`brand_observations` tables (not the legacy
+`runs`/`responses`) that consume a query_set's `queries` directly — so
+`questions`/`query_set_questions`/`runs`/`responses` are left untouched,
+same treatment §12/§13 gave the pre-existing `entities` table when
+`brand_entities` was added for Epic 2. `queries.query_set_id` is therefore
+a direct one-to-many FK per the DDL's literal
+`query_set_id UUID NOT NULL REFERENCES query_sets(id)` — Cascade on
+delete (§5's "true composition child" rule: a query has zero independent
+meaning once its query_set is gone, same as `query_set_questions`).
+
+**Pre-existing gap fixed while touching `query_sets` for this epic:**
+it had no index on `organization_id` at all, even though it's one of the
+58 tables in §1's denormalization list that's supposed to get one (§11 —
+required for RLS policy evaluation to use an index scan). Added
+`idx_query_sets_organization` alongside this epic's other changes rather
+than leaving it as a second, unrelated gap for a future epic to trip over.
+
+**CHECK constraints, closed vs. open taxonomies** —
+`prisma/migrations/0004_query_universe/checks.sql`:
+- `query_sets.status` (`draft`/`active`/`archived`) and
+  `queries.intent_type` (`informational`/`commercial`/`comparison`/
+  `transactional`) both get a CHECK: genuinely closed, stable vocabularies,
+  same rule §6 applied to `subscriptions.plan`/`actions.status`.
+- `queries.category` — deliberately left UNCONSTRAINED even though the
+  epic documents exactly ten template categories. Those ten are what the
+  TEMPLATE GENERATOR emits; the epic's own "manual add" surface (human
+  curation, called out as a paid-tier feature) must be able to tag a
+  hand-added query with any label without the database rejecting the
+  insert. This is the `queries.category` case for §6's "deliberately not
+  constrained" rule, not a closed enum.
+- `queries.priority` (1=high/2=medium/3=low) — no DB-level CHECK, same
+  precedent as `competitors.priority` (§15): a plain ranking int, validated
+  by Zod at the API boundary in `apps/api/src/routes/query-sets.ts`, not a
+  closed taxonomy enforced in the schema.
+
+**RLS** — `prisma/migrations/0004_query_universe/rls.sql` adds the one new
+policy this epic needs (`queries`); `query_sets` already had its
+`tenant_isolation` policy from `0000_init` and the new columns don't change
+that.
+
+As with every other section: `prisma validate`/`generate` only — nothing
+applied to a database. `apps/api`'s consumption of these two tables
+(the template generator, entitlement cap, generate/activate/archive/manual
+CRUD routes) is documented in
+`platform/docs/epics/05-intent-query-universe-backend.md`.
+
+## 17. Epic 3 (Website Intelligence / Crawler) schema additions
+
+Unlike Epic 2/5, this epic's three core tables (`crawl_jobs`, `pages`,
+`page_issues`) already existed in the ported schema — Epic 0's
+denormalization pass (§1) had already added `organization_id` to all
+three. `docs/epics/03-website-intelligence.md`'s domain model section says
+this schema group is "not detailed in SCHEMA.md, define now" — i.e. the
+epic spec's own literal field list is the actual source of truth here,
+same rule §13/§15/§16 all used — and against that list, the ported tables
+had real gaps, not just naming quibbles:
+
+- **`crawl_jobs.root_url` did not exist at all.** A genuine functional
+  gap: without it, nothing records which URL a job actually crawled,
+  independent of whatever `brands.website_url` says *now* — a brand-profile
+  edit after a crawl completes would otherwise silently rewrite history.
+  Added as a required `VarChar(2048)`, captured at job-creation time by
+  `apps/api`.
+- **`crawl_jobs.status` (`crawl_status` enum)** was `pending | running |
+  completed | failed | cancelled`; the spec's literal list is `queued |
+  running | completed | failed`. `pending` renamed to `queued` to match
+  the spec's word exactly. `cancelled` kept as an additive extra value (a
+  real state a future "cancel this crawl" action needs somewhere to land),
+  not a spec deviation — nothing currently sets it.
+- **`crawl_jobs` had `pages_found` but no `pages_failed`**, and an
+  `error_message` column where the spec's literal name is `error`. Added
+  `pages_failed Int @default(0)`; renamed `error_message` → `error`.
+  `pages_found` (total links discovered so far, independent of failure
+  count) is kept additively — genuinely useful for progress-percentage
+  math, not a naming collision with anything the spec defines.
+- **`crawl_jobs.created_by` (new, nullable, `SetNull`)** — added per §4's
+  rule: triggering a crawl is a human action (the "crawl" button), unlike
+  every subsequent status transition, which the pipeline itself makes —
+  same reasoning as `query_sets.created_by`, not the "pipeline table, no
+  human author" case.
+- **`page_issues.severity` (`issue_severity` enum)** was `critical |
+  warning | info`; the spec's literal list is `low | medium | high`.
+  Changed the enum's values outright (schema never applied to a database,
+  so this is a rename, not a migration).
+- **`pages.canonical` renamed to `pages.canonical_url`** to match the
+  spec's literal field name (name-only fix, same type).
+- **`pages.raw_html_hash` did not exist** (the spec's explicit "dedupe"
+  field). Added as `VarChar(64)` (a SHA-256 hex digest), with its own
+  index for dedupe lookups. **`pages.schema_types` (`String[]`, already
+  present) was kept instead of adding the spec's literal
+  `has_schema_markup` boolean** — a boolean that only ever equals
+  `schema_types.length > 0` would be a denormalized column that can drift
+  from the array it's summarizing; `apps/api`'s serializer computes
+  `hasSchemaMarkup` from the array at read time instead. Same instinct as
+  §15's `competitors.priority` fix (prefer the representation that can't
+  disagree with itself over a second column that duplicates it).
+- **`sitemaps` is a genuinely new table** — didn't exist under any name.
+  Modeled as an upsert-per-URL reference record (`@@unique([brand_id,
+  url])`), not an append-only history row per crawl — a sitemap URL's row
+  means "the last time we looked, this sitemap had N URLs," refreshed in
+  place on each re-crawl. No `created_by`/`updated_by` (discovered and
+  refreshed by the crawler itself, not human-authored — §4's "pipeline
+  table" rule) and no `deleted_at` (nothing here is user-managed data that
+  needs an undo; if a sitemap disappears from a site, the next crawl
+  simply stops refreshing `last_fetched_at` for it).
+
+**RLS** — `prisma/migrations/0005_website_intelligence/rls.sql` adds the
+one new policy this epic needs (`sitemaps`); `crawl_jobs`/`pages`/
+`page_issues` already had their `tenant_isolation` policy from `0000_init`,
+and none of the field changes above touch `organization_id`, so no RLS
+change was needed for those three. **Indexes** —
+`prisma/migrations/0005_website_intelligence/indexes.sql` adds one partial
+index, `idx_crawl_jobs_queue_pending` (`WHERE status = 'queued'`),
+mirroring `idx_background_jobs_queue_pending`'s pattern for "which jobs are
+waiting to run" — not expressible in Prisma's `@@index` DSL (§11's
+recurring reason for a hand-written indexes.sql file).
+
+**Migration numbering note**: this folder was going to be `0004_website_
+intelligence`, but Epic 5 was being built concurrently in the same repo and
+landed its own migration at `0004_query_universe` first — renumbered to
+`0005_website_intelligence` to resolve the collision, same situation (and
+same resolution) as §14's CRM/`0001`→`0002` renumbering.
+
+As with every other section: `prisma validate`/`generate` only — nothing
+applied to a database. `apps/api`'s consumption of these four tables (the
+SSRF-safe crawler, the trigger/status/pages routes) is documented in
+`platform/docs/epics/03-website-intelligence-backend.md`, including a
+"Frontend contract reconciliation needed" section for the enum/field-name
+mismatches this fix-forward pass creates against the Epic 3 frontend,
+which was built earlier against the pre-fix-forward ported schema.

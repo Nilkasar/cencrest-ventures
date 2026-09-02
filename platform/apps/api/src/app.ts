@@ -16,6 +16,10 @@ import competitors from './routes/competitors.js';
 import brandEntities from './routes/brand-entities.js';
 import useCases from './routes/use-cases.js';
 import brandClaims from './routes/brand-claims.js';
+import querySets from './routes/query-sets.js';
+import crawl from './routes/crawl.js';
+import crawlJobs from './routes/crawl-jobs.js';
+import pages from './routes/pages.js';
 import { ConsoleEmailSender } from './lib/email.js';
 import type { AppEnv } from './types/context.js';
 
@@ -82,6 +86,21 @@ app.route('/api/brands/me/competitors', competitors);
 app.route('/api/brands/me/entities', brandEntities);
 app.route('/api/brands/me/use-cases', useCases);
 app.route('/api/brands/me/claims', brandClaims);
+
+// Epic 5 — Intent & Query Universe. Same single-brand-per-org convention as
+// Epic 2's routes above (docs/epics/05-intent-query-universe.md's literal
+// `/brands/:id/query-sets/...` is adapted to `/brands/me/query-sets/...`,
+// consistent with every other Epic 2+ brand-child resource in this file).
+app.route('/api/brands/me/query-sets', querySets);
+
+// Epic 3 — Website Intelligence (Crawler). Same single-brand-per-org
+// convention as Epic 2/5 above: docs/epics/03-website-intelligence.md's
+// literal `/brands/:id/crawl` and `/brands/:id/pages` are adapted to
+// `/brands/me/...`. `/api/crawl-jobs/:id` matches the spec exactly (a
+// crawl_jobs row is addressed by its own id, not a brand's).
+app.route('/api/brands/me/crawl', crawl);
+app.route('/api/crawl-jobs', crawlJobs);
+app.route('/api/brands/me/pages', pages);
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 

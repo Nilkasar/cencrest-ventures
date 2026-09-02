@@ -215,6 +215,17 @@ export type {
   lead_status,
   deal_stage,
   activity_type,
+  // Epic 5 (Intent & Query Universe)
+  query_sets,
+  queries,
+  // Epic 3 (Website Intelligence)
+  crawl_jobs,
+  pages,
+  page_issues,
+  sitemaps,
+  crawl_status,
+  issue_type,
+  issue_severity,
 } from '@prisma/client';
 
 export type PrismaTransactionClient = Prisma.TransactionClient;

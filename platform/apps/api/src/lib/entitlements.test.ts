@@ -67,6 +67,36 @@ describe('resolvePlanLimits', () => {
       expect(result.limits.competitors_tracked).toBeNull();
     },
   );
+
+  // Epic 5 (Intent & Query Universe) — docs/11-geo/GEO_ENGINE.md's "Query
+  // Universe Size" table, transcribed verbatim: Free 20-50 (50 used as the
+  // cap), Starter 200, Growth 500, Pro 1,400+, Enterprise Custom (5,000+,
+  // 5000 used as the documented floor). agency/managed have no documented
+  // number so stay the same `null` placeholder as `competitors_tracked`.
+  it.each([
+    ['free', 50],
+    ['starter', 200],
+    ['growth', 500],
+    ['pro', 1400],
+    ['enterprise', 5000],
+  ])('resolves %s to a queries_per_query_set limit of %d', async (plan, limit) => {
+    db.subscriptions.findUnique.mockResolvedValue({ plan });
+    const { resolvePlanLimits } = await import('./entitlements.js');
+
+    const result = await resolvePlanLimits('org-1');
+    expect(result.limits.queries_per_query_set).toBe(limit);
+  });
+
+  it.each(['agency', 'managed'])(
+    '%s tier is unlimited (null) for queries_per_query_set — no documented number',
+    async (plan) => {
+      db.subscriptions.findUnique.mockResolvedValue({ plan });
+      const { resolvePlanLimits } = await import('./entitlements.js');
+
+      const result = await resolvePlanLimits('org-1');
+      expect(result.limits.queries_per_query_set).toBeNull();
+    },
+  );
 });
 
 describe('checkUsageLimit', () => {

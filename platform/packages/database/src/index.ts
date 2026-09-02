@@ -37,4 +37,15 @@ export {
   type lead_status,
   type deal_stage,
   type activity_type,
+  // Epic 5 (Intent & Query Universe)
+  type query_sets,
+  type queries,
+  // Epic 3 (Website Intelligence)
+  type crawl_jobs,
+  type pages,
+  type page_issues,
+  type sitemaps,
+  type crawl_status,
+  type issue_type,
+  type issue_severity,
 } from './client.js';

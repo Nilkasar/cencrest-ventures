@@ -33,6 +33,14 @@ export type PlanTier = (typeof PLAN_TIERS)[number];
 export interface PlanLimits {
   /** `null` means unlimited. */
   competitors_tracked: number | null;
+  // Epic 5 (Intent & Query Universe) addition. docs/11-geo/GEO_ENGINE.md's
+  // "Query Universe Size" table gives this per-tier, per-generated-set (not
+  // a cumulative org-wide total): "Free Snapshot: 20-50 sample queries,
+  // Starter: 200, Growth: 500, Pro: 1,400+, Enterprise: Custom (5,000+)."
+  // Free is a *range* in the doc; 50 (the upper bound) is used as the cap so
+  // a free-tier generate produces the richest sample the tier allows, same
+  // as every other tier reading as "up to N," not "as low as N."
+  queries_per_query_set: number | null;
 }
 
 // Mirrors docs/16-billing/BILLING_ARCHITECTURE.md's "Plan Limits" JSON
@@ -40,25 +48,31 @@ export interface PlanLimits {
 // (and to `PlanLimits` above) the next time a plan-limited resource ships —
 // do NOT duplicate this map or write a parallel one elsewhere.
 const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
-  free: { competitors_tracked: 2 },
-  starter: { competitors_tracked: 5 },
-  growth: { competitors_tracked: 10 },
-  pro: { competitors_tracked: 20 },
+  free: { competitors_tracked: 2, queries_per_query_set: 50 },
+  starter: { competitors_tracked: 5, queries_per_query_set: 200 },
+  growth: { competitors_tracked: 10, queries_per_query_set: 500 },
+  pro: { competitors_tracked: 20, queries_per_query_set: 1400 },
   // "Agency: per-client" per the epic spec — that's a multi-client
   // entitlement model (Epic 18: agency_clients), not a flat cap on the
   // agency org itself, so there is no single number to enforce here yet.
   // `null` (unlimited) is the correct placeholder until Epic 18 defines
   // the per-client shape; it is NOT a claim that agency tracking is
-  // actually unbounded in the product.
-  agency: { competitors_tracked: null },
+  // actually unbounded in the product. GEO_ENGINE.md's query-universe-size
+  // table has no `agency` row either, so `queries_per_query_set` gets the
+  // same documented placeholder.
+  agency: { competitors_tracked: null, queries_per_query_set: null },
   // `managed` ("Enterprise lite — human + AI service hybrid") and
   // `enterprise` ("Custom SLAs + dedicated support") are both in
   // BILLING_ARCHITECTURE.md's plan list but have no limits example in that
   // doc's JSON (custom-negotiated by definition). `null` (unlimited) here
   // is the same documented placeholder as `agency` above, not a real
   // product claim — Epic 16 replaces this whole map with `plans.limits`.
-  managed: { competitors_tracked: null },
-  enterprise: { competitors_tracked: null },
+  // `enterprise.queries_per_query_set` is the one exception: GEO_ENGINE.md
+  // explicitly gives it a documented floor ("Custom (5,000+)"), so 5000 is
+  // used instead of `null` — a real number, not unlimited, but flagged here
+  // as a floor a real Epic 16 `plans` row would override, not a hard cap.
+  managed: { competitors_tracked: null, queries_per_query_set: null },
+  enterprise: { competitors_tracked: null, queries_per_query_set: 5000 },
 };
 
 const DEFAULT_PLAN: PlanTier = 'free';

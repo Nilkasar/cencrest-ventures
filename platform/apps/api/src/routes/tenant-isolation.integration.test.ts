@@ -207,3 +207,89 @@ describe.skip('Epic 2 tenant isolation — brand_claims (NEEDS LIVE DB)', () => 
     'a user in Org A cannot PATCH or DELETE a brand_claims row that belongs to Org B via its id',
   );
 });
+
+/**
+ * Epic 5 (Intent & Query Universe) — `query_sets`, `queries`. Same
+ * NEEDS LIVE DB constraint as every block above. `queries` is the one new
+ * RLS policy this epic adds (`query_sets` already had one from 0000_init —
+ * see @bebest/database prisma/migrations/0004_query_universe/rls.sql and
+ * DECISIONS.md); both tables' tenant boundary is otherwise the same
+ * `organization_id = app.current_org` template as every other table here,
+ * per docs/epics/05-intent-query-universe.md's "End-to-end flow" step 6.
+ */
+describe.skip('Epic 5 tenant isolation — query_sets / queries (NEEDS LIVE DB)', () => {
+  it.todo(
+    'a user in Org A gets zero rows from GET /brands/me/query-sets for Org B\'s query sets, ' +
+      'even when both orgs generated a set from an identical brand profile',
+  );
+
+  it.todo(
+    'inserting a query_sets or queries row with organization_id set to a foreign org is ' +
+      'rejected by WITH CHECK (covers POST /query-sets/generate\'s query_sets.create with a ' +
+      'nested queries.create, and the standalone POST /:id/queries manual-add path)',
+  );
+
+  it.todo(
+    'a user in Org A cannot GET/PATCH/DELETE a query_sets or queries row that belongs to Org ' +
+      'B via its id, even when given the id directly (id-guessing must 404, not leak, activate, ' +
+      'or mutate another org\'s query universe)',
+  );
+
+  it.todo(
+    'checkUsageLimit-style capping in POST /query-sets/generate — resolvePlanLimits(orgA) reads ' +
+      'ONLY Org A\'s subscription; Org B being on a different plan tier must never change the ' +
+      'cap applied to Org A\'s generated query set',
+  );
+});
+
+/**
+ * Epic 3 (Website Intelligence) — `crawl_jobs`, `pages`, `page_issues`,
+ * `sitemaps`. Same NEEDS LIVE DB constraint as every block above. All four
+ * tables use the same `organization_id = app.current_org` template as
+ * every other table here (`crawl_jobs`/`pages`/`page_issues` already had
+ * their RLS policy from 0000_init; `sitemaps` is the one new policy this
+ * epic adds — see @bebest/database prisma/migrations/0005_website_
+ * intelligence/rls.sql and DECISIONS.md's Epic 3 section), so there is no
+ * bespoke policy shape to prove here the way CRM's fixed-internal-org
+ * design or memberships' dual-clause policy needed. What IS specific to
+ * this epic, and worth its own named coverage per
+ * docs/epics/03-website-intelligence.md's end-to-end flow step 6, is that
+ * `pages`/`page_issues` are two tables away from `organizations` in the
+ * schema (via `crawl_jobs`/`brands`) yet carry their OWN denormalized
+ * `organization_id` — exactly the "reachable through a join two levels
+ * deep" case the generic top-level block's `citations` example already
+ * names, called out again here so it's an explicit, nameable item for
+ * this epic's own DoD checklist rather than only implied coverage.
+ */
+describe.skip('Epic 3 tenant isolation — crawl_jobs / pages / page_issues / sitemaps (NEEDS LIVE DB)', () => {
+  it.todo(
+    'a user in Org A gets zero rows from GET /crawl-jobs/:id for a job id that belongs to Org ' +
+      'B, even when given the id directly (routes/crawl-jobs.ts\'s findFirst is scoped by ' +
+      'organization_id, not id alone)',
+  );
+
+  it.todo(
+    'a user in Org A gets zero rows from GET /brands/me/pages for Org B\'s pages, even when ' +
+      'both orgs crawled the exact same public URL (raw_html_hash colliding across tenants ' +
+      'must never cause a cross-tenant read)',
+  );
+
+  it.todo(
+    'inserting a crawl_jobs, pages, page_issues, or sitemaps row with organization_id set to a ' +
+      'foreign org is rejected by WITH CHECK — covers POST /brands/me/crawl\'s crawl_jobs.create ' +
+      'and every write the background crawl engine (lib/crawler/engine.ts) makes for that job',
+  );
+
+  it.todo(
+    'withOrgContext(orgA, ...) never returns Org B\'s pages/page_issues rows even though both ' +
+      'are reachable only via a JOIN through crawl_jobs -> brands -> organizations, not a direct ' +
+      'organizations FK — the denormalized organization_id column on pages/page_issues is what ' +
+      'RLS actually filters on, and this proves it, not the join path',
+  );
+
+  it.todo(
+    'POST /brands/me/crawl\'s "already queued or running" 409 check (existingActive lookup) is ' +
+      'scoped to Org A\'s own crawl_jobs only — Org B having a running crawl for an unrelated ' +
+      'brand must never block or be visible to Org A\'s trigger attempt',
+  );
+});

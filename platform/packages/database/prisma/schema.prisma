@@ -138,6 +138,10 @@ model organizations {
   publish_jobs              publish_jobs[]
   query_set_questions       query_set_questions[]      @ignore
   query_sets                query_sets[]
+  // Epic 5 (Intent & Query Universe) addition — see the comment block above
+  // the `queries` model for why this is a new table rather than a reuse of
+  // `questions`/`query_set_questions`.
+  queries                   queries[]
   questions                 questions[]
   recommendations           recommendations[]
   reports                   reports[]
@@ -148,6 +152,7 @@ model organizations {
   seo_agent_actions         seo_agent_actions[]
   seo_agent_runs            seo_agent_runs[]
   share_of_voice            share_of_voice[]
+  sitemaps                  sitemaps[]
   snapshot_requests         snapshot_requests[]
   subscriptions             subscriptions?
   usage_records             usage_records[]
@@ -183,6 +188,8 @@ model users {
   brands_updated              brands[]                   @relation("brands_updated_by")
   competitors_created         competitors[]              @relation("competitors_created_by")
   competitors_updated         competitors[]              @relation("competitors_updated_by")
+  // Epic 3 (Website Intelligence) addition — who triggered the crawl.
+  crawl_jobs_created          crawl_jobs[]               @relation("crawl_jobs_created_by")
   crm_contacts_created        crm_contacts[]
   crm_notes                   crm_notes[]
   experiments_created         experiments[]              @relation("experiments_created_by")
@@ -217,6 +224,9 @@ model users {
   publish_jobs_updated        publish_jobs[]             @relation("publish_jobs_updated_by")
   query_sets_created          query_sets[]               @relation("query_sets_created_by")
   query_sets_updated          query_sets[]               @relation("query_sets_updated_by")
+  // Epic 5 (Intent & Query Universe) additions
+  queries_created             queries[]                  @relation("queries_created_by")
+  queries_updated             queries[]                  @relation("queries_updated_by")
   questions_created           questions[]                @relation("questions_created_by")
   questions_updated           questions[]                @relation("questions_updated_by")
   recommendations_updated     recommendations[]
@@ -1111,6 +1121,7 @@ model brands {
   seo_agent_actions       seo_agent_actions[]
   seo_agent_runs          seo_agent_runs[]
   share_of_voice          share_of_voice[]
+  sitemaps                sitemaps[]
   use_cases               use_cases[]
   visibility_scores       visibility_scores[]
 
@@ -1414,24 +1425,53 @@ model buyer_journeys {
 // WEBSITE INTELLIGENCE (crawler)
 // ============================================================================
 
+// Epic 3 (Website Intelligence) fix-forward on the ported `crawl_jobs`
+// model — docs/epics/03-website-intelligence.md's literal field list is
+// `id, organization_id, brand_id, root_url, status, pages_crawled,
+// pages_failed, started_at, completed_at, error`. The ported model was
+// missing `root_url` entirely (there was no way to record WHICH URL a job
+// actually crawled — a genuine gap, not a naming quibble, since brands.website_url
+// can change after a job starts) and `pages_failed` (only `pages_found`
+// existed, which is progress-toward-total, not error count). Both added.
+// `error_message`/`pages_found` are kept ADDITIVELY alongside the spec's
+// `error`/`pages_failed` names rather than dropped, because they carry
+// distinct meaning `error` doesn't fully cover on their own... except
+// `error_message` really is just `error` under a different name with no
+// other reader, so it's renamed outright (see below); `pages_found` (total
+// links discovered, independent of pages_failed) is kept as a genuinely
+// useful additional counter for progress-percentage math, not a spec
+// deviation.
 model crawl_jobs {
   id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organization_id String        @db.Uuid
   brand_id        String        @db.Uuid
-  status          crawl_status  @default(pending)
+  // The URL actually crawled, captured at job-creation time (usually
+  // brands.website_url, but recorded independently so a later brand-profile
+  // edit can never rewrite what an already-completed job says it crawled).
+  root_url        String        @db.VarChar(2048)
+  status          crawl_status  @default(queued)
   pages_crawled   Int           @default(0)
   pages_found     Int           @default(0)
-  error_message   String?
+  pages_failed    Int           @default(0)
+  error           String?
   started_at      DateTime?     @db.Timestamptz(6)
   completed_at    DateTime?     @db.Timestamptz(6)
+  // Nullable, human-triggered (the crawl button), SetNull on user deletion —
+  // same "required attribution, not required data" reasoning as
+  // DECISIONS.md §4's other created_by columns. No `updated_by`: once
+  // queued, every further status transition (running/completed/failed) is
+  // made by the crawl pipeline itself, not a human edit.
+  created_by      String?       @db.Uuid
   created_at      DateTime      @default(now()) @db.Timestamptz(6)
   updated_at      DateTime      @default(now()) @db.Timestamptz(6)
   organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   brands          brands        @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  created_by_user users?        @relation("crawl_jobs_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
   pages           pages[]
 
   @@index([brand_id], map: "idx_crawl_jobs_brand")
   @@index([status], map: "idx_crawl_jobs_status")
+  @@index([organization_id], map: "idx_crawl_jobs_org")
 }
 
 model pages {
@@ -1443,13 +1483,28 @@ model pages {
   title            String?           @db.VarChar(500)
   meta_description String?
   h1               String?           @db.VarChar(500)
-  canonical        String?           @db.VarChar(2048)
+  // Renamed from `canonical` to `canonical_url` — matches
+  // docs/epics/03-website-intelligence.md's literal field name.
+  canonical_url    String?           @db.VarChar(2048)
   status_code      Int?
   word_count       Int               @default(0)
   load_ms          Int?
   internal_links   Int               @default(0)
   external_links   Int               @default(0)
+  // `schema_types` (which schema.org @types were found) is kept ADDITIVELY
+  // instead of the spec's flat `has_schema_markup` boolean — a denormalized
+  // boolean that only ever equals `schema_types.length > 0` would just be a
+  // column that can drift from the truth; the API serializer computes
+  // `hasSchemaMarkup` from this array instead. See
+  // docs/epics/03-website-intelligence-backend.md.
   schema_types     String[]          @default([])
+  // SHA-256 hex digest of the sanitized page content, for the spec's
+  // "raw_html_hash (dedupe)" requirement — named `raw_html_hash` per the
+  // spec's literal field name even though what's hashed is the sanitized
+  // extracted text, never the raw HTML itself (see
+  // docs/epics/03-website-intelligence-backend.md's "sanitize before
+  // storage" note for why raw HTML is never persisted at all).
+  raw_html_hash    String?           @db.VarChar(64)
   crawled_at       DateTime          @default(now()) @db.Timestamptz(6)
   deleted_at       DateTime?         @db.Timestamptz(6)
   content_analyses content_analyses?
@@ -1461,6 +1516,7 @@ model pages {
 
   @@index([brand_id], map: "idx_pages_brand")
   @@index([crawl_job_id], map: "idx_pages_crawl_job")
+  @@index([raw_html_hash], map: "idx_pages_raw_html_hash")
 }
 
 model page_issues {
@@ -1478,6 +1534,36 @@ model page_issues {
 
   @@index([page_id], map: "idx_page_issues_page")
   @@index([brand_id, severity], map: "idx_page_issues_brand_severity")
+}
+
+// New table (didn't exist under any name in the ported schema) — the
+// spec's fourth Website Intelligence table:
+// `sitemaps — id, brand_id, organization_id, url, url_count,
+// last_fetched_at`. Modeled as an upsert-per-URL reference record (unique
+// on brand_id+url), not an append-only history row per fetch — a sitemap
+// URL's row is what "the last time we looked, this sitemap had N URLs"
+// means; unlike `crawl_jobs`, the spec's End-to-end-flow item 5
+// ("re-crawl... history preserved") is stated for crawl jobs specifically,
+// not sitemaps. No created_by/updated_by: discovered and refreshed by the
+// crawler itself (checking robots.txt / the default /sitemap.xml path),
+// not a human-authored row — same reasoning as DECISIONS.md §4's
+// "pipeline tables" list. No deleted_at: if a sitemap disappears from a
+// site the next crawl simply stops refreshing `last_fetched_at` for it;
+// nothing here is user-managed data that needs an undo.
+model sitemaps {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String        @db.Uuid
+  brand_id        String        @db.Uuid
+  url             String        @db.VarChar(2048)
+  url_count       Int?
+  last_fetched_at DateTime?     @db.Timestamptz(6)
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime      @default(now()) @db.Timestamptz(6)
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands          brands        @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([brand_id, url])
+  @@index([organization_id], map: "idx_sitemaps_org")
 }
 
 model content_analyses {
@@ -1590,24 +1676,112 @@ model gsc_connections {
 // QUERY UNIVERSE / QUESTIONS
 // ============================================================================
 
+// ── Epic 5 (Intent & Query Universe) additions ──────────────────────────────
+// docs/epics/05-intent-query-universe.md's domain model section points at
+// docs/06-database/SCHEMA.md §3's literal `query_sets`/`queries` DDL. The
+// ported schema already had a `query_sets` table, but it was missing three
+// fields that DDL requires (`query_count`, `version`, `status`) — added
+// below, following the "audit against the epic spec, fix forward" rule this
+// package has used throughout (see DECISIONS.md §13/§15).
+//
+// The ported schema's existing `questions`/`query_set_questions` pair is
+// NOT reused for the epic's `queries` concept, even though the names are
+// close. That pair is a many-to-many join (a `question` can belong to
+// several `query_sets`) built for the legacy `questions -> runs ->
+// responses` AI pipeline, with no `intent_type`/`category`/`tags`/
+// `priority` fields at all — none of which this epic's template generator
+// or its "group by the ten categories" review UI can work without. Epic
+// 7's own spec (docs/epics/07-ai-visibility-engine.md) independently
+// confirms this split: it defines brand-new `ai_runs`/`ai_responses`
+// tables (not the legacy `runs`/`responses`) that consume a query_set's
+// `queries` directly — so `questions`/`query_set_questions`/`runs`/
+// `responses` are left untouched, exactly as `entities` was left untouched
+// when `brand_entities` was added in Epic 2 (see DECISIONS.md §12/§13).
+// `queries.query_set_id` is a direct one-to-many FK (not a join table) per
+// the DDL's literal `query_set_id UUID NOT NULL REFERENCES query_sets(id)`.
 model query_sets {
-  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organization_id     String                @db.Uuid
-  brand_id            String                @db.Uuid
-  name                String                @db.VarChar(255)
-  description         String?
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String    @db.Uuid
+  brand_id        String    @db.Uuid
+  name            String    @db.VarChar(255)
+  description     String?
+  // Denormalized count of this set's non-deleted `queries` rows — kept in
+  // sync by apps/api on every generate/add/remove (see
+  // docs/epics/05-intent-query-universe-backend.md), not a computed column,
+  // matching the literal DDL (`query_count INTEGER NOT NULL DEFAULT 0`).
+  query_count Int @default(0)
+  // Frozen at `activate` time (draft -> active): docs/epics/
+  // 05-intent-query-universe.md step 4 requires that a subsequent edit "must
+  // not silently mutate the same version other epics may already be
+  // referencing." apps/api enforces this by rejecting queries mutations
+  // once status != 'draft' — see routes/query-sets.ts.
+  version Int @default(1)
+  // draft | active | archived — literal DDL is VARCHAR+comment, not a native
+  // enum (matches the `subscriptions.plan` precedent: closed vocabulary,
+  // CHECK constraint in prisma/migrations/0004_query_universe/checks.sql,
+  // not a Postgres ENUM type). See DECISIONS.md §6 for why closed VARCHARs
+  // get a CHECK instead of a native enum in this schema.
+  status              String                @default("draft") @db.VarChar(50)
   created_by          String                @db.Uuid
   updated_by          String?               @db.Uuid
   created_at          DateTime              @default(now()) @db.Timestamptz(6)
   updated_at          DateTime              @default(now()) @db.Timestamptz(6)
   deleted_at          DateTime?             @db.Timestamptz(6)
   query_set_questions query_set_questions[] @ignore
+  queries             queries[]
   organizations       organizations         @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   brands              brands                @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   created_by_user     users                 @relation("query_sets_created_by", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
   updated_by_user     users?                @relation("query_sets_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([brand_id], map: "idx_query_sets_brand")
+  // Pre-existing gap fixed while touching this table for this epic: every
+  // OTHER `organization_id` column added by Epic 0's hardening pass got its
+  // own index (DECISIONS.md §1/§11 — required for RLS policy evaluation to
+  // use an index scan); this table's was missing one.
+  @@index([organization_id], map: "idx_query_sets_organization")
+  @@index([status], map: "idx_query_sets_status")
+}
+
+/// The ten query-generation categories the template generator produces
+/// (docs/11-geo/GEO_ENGINE.md's "Query Categories" list, verbatim), plus the
+/// four buyer-intent classifications (docs/06-database/SCHEMA.md §3's
+/// `queries.intent_type` column comment) a human can also assign when
+/// manually adding a query. `priority` (1=high/2=medium/3=low) deliberately
+/// has NO db-level CHECK — same precedent as `competitors.priority`
+/// (DECISIONS.md §15): a plain ranking int, validated by Zod at the API
+/// boundary, not a closed taxonomy.
+model queries {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String    @db.Uuid
+  query_set_id    String    @db.Uuid
+  text            String
+  // informational | commercial | comparison | transactional
+  intent_type String? @db.VarChar(50)
+  // category | problem | commercial | comparison | feature | industry |
+  // size | geography | intent | authority — the ten template categories;
+  // this is what the review UI groups by (epic spec's "UI surface" section).
+  category  String?  @db.VarChar(100)
+  tags      String[] @default([])
+  priority  Int      @default(2) @db.SmallInt
+  created_by      String?   @db.Uuid
+  updated_by      String?   @db.Uuid
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at      DateTime? @db.Timestamptz(6)
+
+  organizations organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  // Cascade: a query has zero independent meaning once its query_set is
+  // gone — true composition child, same rule as `query_set_questions`
+  // (DECISIONS.md §5).
+  query_sets      query_sets @relation(fields: [query_set_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  created_by_user users?     @relation("queries_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  updated_by_user users?     @relation("queries_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([query_set_id], map: "idx_queries_query_set")
+  @@index([organization_id], map: "idx_queries_organization")
+  @@index([category], map: "idx_queries_category")
+  @@index([intent_type], map: "idx_queries_intent_type")
 }
 
 model questions {
@@ -2721,8 +2895,15 @@ enum competition_type {
 // `competitors.priority` is now a plain `Int` (SMALLINT), matching
 // SCHEMA.md's literal DDL; see that field's comment and DECISIONS.md §15.
 
+// Epic 3 (Website Intelligence) fix-forward: renamed `pending` to `queued`
+// to match docs/epics/03-website-intelligence.md's literal status list
+// (`queued|running|completed|failed`) verbatim — the ported enum's `pending`
+// was a synonym invented before this epic's spec existed. `cancelled` is
+// kept as an additive extra value (a user-initiated abort case the spec
+// doesn't mention but the state machine needs somewhere to go); see
+// docs/epics/03-website-intelligence-backend.md.
 enum crawl_status {
-  pending
+  queued
   running
   completed
   failed
@@ -2824,10 +3005,14 @@ enum intent_category {
   commercial
 }
 
+// Epic 3 (Website Intelligence) fix-forward: the ported enum used
+// critical/warning/info; docs/epics/03-website-intelligence.md's literal
+// field list specifies `severity (low|medium|high)` — matched verbatim
+// (same fix-forward discipline as DECISIONS.md §15's Epic 2 QA pass).
 enum issue_severity {
-  critical
-  warning
-  info
+  low
+  medium
+  high
 }
 
 enum issue_type {
