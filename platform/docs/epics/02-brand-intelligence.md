@@ -28,6 +28,16 @@ Every downstream engine (SEO, GEO, Opportunity, Content, Agents) operates on a `
 
 A wizard, not a settings form: Welcome → Brand basics (name/website confirm) → Competitors (add up to plan limit, with a live counter) → Industry/category select → Use cases (add 3–5) → Brand claims (optional, add what you know) → Done screen ("Your AI Visibility Baseline will start once Epic 7 exists — for now, your profile is saved"). Every step must be individually saveable (a user who leaves mid-wizard and comes back should resume, not restart) — persist progress, don't hold it in unsaved client state.
 
+## End-to-end flow (qa-flow-tester must trace every step below, not just each endpoint/screen in isolation)
+
+1. A new organization with no brand yet opens the app — confirm they land in (or are clearly prompted into) the onboarding wizard, not a broken/empty Overview screen.
+2. Wizard step "Brand basics" is saved (`PATCH /brands/me`) — confirm the user can close the tab and, on return, resume from this exact point (persisted per-step, not held in unsaved client state) rather than restarting.
+3. Wizard step "Competitors": add competitors up to the plan's limit — confirm the live counter reflects the real entitlement value from the plan (not a hardcoded number), and that the `(limit + 1)`th add attempt is rejected server-side with a specific, actionable error, surfaced in the UI as a real message (not a silent failure or generic "error occurred").
+4. Continue through "Industry/category", "Use cases" (add 3–5), and "Brand claims" — confirm each step's data round-trips: saved via API, then re-fetched and correctly re-populated in the UI on a fresh page load (not just visible because it's still in React state from the same session).
+5. Wizard "Done" screen — confirm the brand profile is now visible and editable via the "Brand profile" tab on `/settings` (Epic 0's placeholder), i.e. the same data written by the wizard is readable from a completely different screen, not siloed to the wizard's own local state.
+6. RBAC check: repeat step 3 (adding a competitor) as an `editor` or `viewer` and confirm the write is rejected server-side (per this epic's stated role restriction — brand profile is owner/admin/analyst write, not editor/viewer).
+7. Tenant isolation check: a second organization must not see the first organization's brand, competitors, entities, use cases, or claims through any endpoint above.
+
 ## Definition of done
 
 Same DoD checklist as Epic 1. Tenant isolation tests for all five tables. Entitlement enforcement test for the competitor limit (this is the first epic where an entitlement check is load-bearing — get the pattern right here since every later paid feature reuses it).

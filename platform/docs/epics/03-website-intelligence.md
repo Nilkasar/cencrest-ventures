@@ -34,6 +34,15 @@ Max crawl depth 3, max 500 pages per crawl, max 2 req/sec, respect `robots.txt`,
 
 Per `docs/09-ux/CUSTOMER_JOURNEY.md` Stage 3 Step 4 ("Website analysis kicks off (background), 10–15 minutes, customer can leave") — a progress screen with real step-by-step status (not a generic spinner), then a page-issues list grouped by severity once complete. Empty state before first crawl: explain what will happen and let the user trigger it manually (don't force a wait for a scheduled trigger).
 
+## End-to-end flow (qa-flow-tester must trace every step below, not just the SSRF guard in isolation)
+
+1. `POST /brands/:id/crawl` with the brand's real website — confirm a `crawl_jobs` row is created in `queued` status before any HTTP request is made.
+2. The job runs (against a mocked/fixture site in tests) — confirm each fetched page goes through `safeFetch()` and NOT a direct `fetch()` call anywhere in the crawl code path — grep for it, don't just trust the one call site you wrote.
+3. Feed the crawler a URL resolving to a private IP (mocked DNS) — confirm the request is rejected BEFORE any socket is opened, and the job records a clear per-page error rather than crashing the whole job.
+4. Crawl completes — confirm `pages` and `page_issues` rows exist and are queryable via `GET /brands/:id/pages`, and that the progress screen (per the UI surface section) reflected real incremental progress during the run, not a single jump from 0% to 100%.
+5. Re-crawl the same site — confirm a new `crawl_jobs` row is created (history preserved), not an overwrite of the previous crawl's pages.
+6. Tenant isolation check across `crawl_jobs`, `pages`, `page_issues`.
+
 ## Definition of done
 
 Standard DoD. Security tests are the hard gate here specifically: SSRF test suite against private IPs, loopback, metadata endpoint (`169.254.169.254`), non-HTTP schemes, and a DNS-rebinding scenario — per `docs/19-testing/TESTING_STRATEGY.md`'s explicit security-test category. Since these tests need real network behavior, qa-flow-tester should verify the *logic* (the blocklist, the resolve-then-validate order) from code and flag the live-network cases as needing an integration run.

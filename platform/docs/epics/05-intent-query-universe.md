@@ -31,6 +31,15 @@ Free: 20–50 sample. Starter: 200. Growth: 500. Pro: 1,400+. Enterprise: custom
 
 A review-and-curate screen, not just a generate button: show the generated queries grouped by the ten categories (mirrors the Intent Graph visualization in `docs/10-seo/SEO_ENGINE.md`'s example), let the user remove irrelevant ones and add missing ones before activating. This is the "Query universe" the customer effectively co-owns — treat it as an editable asset, not a black box.
 
+## End-to-end flow (qa-flow-tester must trace every step below, not just the generator in isolation)
+
+1. `POST /brands/:id/query-sets/generate` against a fixture brand profile (categories, use_cases, competitors from Epic 2) — confirm the returned `query_sets` row is `draft` status and the generated `queries` actually span multiple of the ten documented categories, not just one or two templates applied repeatedly.
+2. Confirm the generated count is capped at the plan's tier limit BEFORE generation completes wastefully over the cap (don't generate 1,400 and truncate — check the cap going in).
+3. A user edits the draft in the review UI (removes one query, adds a manual one) — confirm both changes persist and are reflected in `query_count` on the `query_sets` row.
+4. User activates the query set — confirm `status` flips to `active` and `version` is frozen (a subsequent edit, if allowed at all, must not silently mutate the same version other epics may already be referencing).
+5. Confirm Epic 6/7 can consume an `active` query_set's `queries` with no additional transformation — this is the literal handoff point to the next epic; verify the shape matches what Epic 7's spec expects.
+6. Tenant isolation check across `query_sets`, `queries`.
+
 ## Definition of done
 
 Standard DoD. Unit tests for the template generator (given a fixed brand profile fixture, assert the exact expected query set — deterministic, no AI involved, easy to test without a live DB or provider). Entitlement test for the tier-based cap.

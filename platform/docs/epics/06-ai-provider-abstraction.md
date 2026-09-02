@@ -37,6 +37,15 @@ Prompts are versioned template files under `apps/api/prompts/{geo,seo,content,ag
 
 No GEO query execution pipeline (that's Epic 7 — this epic only proves each provider's `complete`/`extract`/`healthCheck` works in isolation, with unit tests against a fake/mock transport, not live API calls). No evaluation-dataset harness (mentioned in `docs/12-ai/AI_ARCHITECTURE.md`'s "AI Evaluation Framework" — that's a later, explicitly-scoped epic once there's real extraction output to evaluate).
 
+## End-to-end flow (qa-flow-tester must trace every step below, not just each provider in isolation)
+
+1. `AIProviderRegistry.resolve('geo.query')` returns providers in the exact order/set specified by `taskDefaults` (all 4 cloud providers) — confirm this by reading the routing code, not just the config object; a misrouted call silently defaulting to Ollama for a GEO query would be invisible until Epic 7 and would invalidate the product's core evidence claim.
+2. `OllamaProvider.complete()` (mocked transport) called WITHOUT a `promptVersion` — confirm this is a compile-time or runtime rejection, not a silently-accepted call (ADR-006 is non-negotiable).
+3. `extract<T>()` called with a schema, and a mocked LLM response that doesn't match the schema on the first attempt but does on the second — confirm the retry actually happens (up to the configured default of 2) and `parseAttempts` is reported correctly.
+4. `AnthropicProvider.healthCheck()` with no API key configured — confirm it resolves to `false` and does NOT throw, and that nothing upstream (e.g. app startup) crashes because of it.
+5. A `complete()` call (mocked) — confirm every field required by `CompletionResult` (`requestId`, `timestamp`, `tokensUsed`, `latencyMs`, `promptVersion`) is actually populated, not left undefined because a provider adapter forgot one.
+6. Confirm no file under `apps/api` (or any future consumer) imports a provider SDK (`openai`, `@anthropic-ai/sdk`, etc.) directly — grep for it; this is the one architectural rule (ADR-003) this entire epic exists to enforce.
+
 ## Definition of done
 
 Standard DoD. Unit tests for the registry's routing logic and for request/response shape validation, all against mocked HTTP — no real API keys required to pass CI. A `healthCheck()` test asserting a provider without a configured key reports `false` cleanly rather than throwing.

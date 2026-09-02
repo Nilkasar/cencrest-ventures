@@ -42,6 +42,17 @@ Per `docs/09-ux/CUSTOMER_JOURNEY.md`'s "every screen answers one question" princ
 
 Empty states: no leads yet → explain the apply-form integration is coming in the marketing-site epic, and offer a manual "add lead" action so the CRM is usable standalone today. No deals yet → prompt to convert a lead or create a deal directly.
 
+## End-to-end flow (qa-flow-tester must trace every step below, not just each endpoint/screen in isolation)
+
+1. `POST /leads` creates a lead (status `new`) — confirm it's readable in the Leads inbox UI immediately, not just via API response.
+2. A user opens the lead in the UI and logs an activity (`POST /activities` against the lead) — confirm it appears in the lead's timeline in the same session, and that `activities.actor_id` is correctly set from the authenticated user, not left null.
+3. A user clicks "Convert" on the lead → `POST /leads/:id/convert` — confirm, in one transaction: an `organizations` row is created (or linked, if converting to an existing org), `leads.organization_id` and `leads.converted_at` are set, ALL prior `activities` for that lead remain attached and visible (nothing orphaned or dropped), and an `audit_events` row exists for the conversion (privileged action per SECURITY.md).
+4. The newly converted account appears in the Accounts list/detail UI — confirm the "thin view over `organizations`" design actually surfaces the lead's history and any deals, not just the bare org record.
+5. A user creates a deal against the new account (`POST /deals`) — confirm it appears on the Deals pipeline board in the correct stage column immediately.
+6. A user drags/moves the deal to a new stage — confirm the stage-transition endpoint is the one actually called (not a generic PATCH bypassing the audit-logged transition path), the board reflects it, and an audit log entry exists for the transition.
+7. RBAC check across the whole flow above: repeat steps 2–6 as an `editor`-role user and confirm they can log activities but cannot manage deals (per the role table in this spec), and as a `viewer` and confirm read-only holds throughout — not just on the first endpoint hit.
+8. Tenant isolation check: a second organization's user must not see, via any of the above endpoints or UI states, the first organization's leads/accounts/deals/activities.
+
 ## Definition of done for this epic
 
 - Full DoD checklist in `docs/19-testing/TESTING_STRATEGY.md` (tests, tenant isolation, security, docs).

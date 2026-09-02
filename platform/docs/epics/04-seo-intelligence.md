@@ -38,6 +38,14 @@ Build the interface now even though no paid provider (Semrush/Ahrefs/DataForSEO/
 
 Per `docs/09-ux/CUSTOMER_JOURNEY.md`'s "SEO Intelligence" screen ("Where do I stand in search?"): technical health score with a drill-down to specific page issues, keyword coverage list, and an opportunity list sorted by score — each opportunity shows its evidence (the demand/coverage numbers behind the formula), not just a bare number, per the GEO engine's evidence-traceability principle applied equally here.
 
+## End-to-end flow (qa-flow-tester must trace every step below, not just the formula in isolation)
+
+1. `POST /brands/:id/seo/analyze` against Epic 3's crawled pages — confirm `seo_analyses` rows are written AND that violations of the Page Analysis Checklist actually produce `page_issues` rows on the correct page (cross-epic wiring, not a self-contained SEO-only table).
+2. `keyword_groups`/`keywords` "generate from brand profile" — confirm it actually reads Epic 2's `use_cases`/`categories` (not a hardcoded fixture) and that every returned `KeywordData` row carries a `confidence` value, defaulting to `"estimate"` when no paid provider is configured — never silently presenting an estimate as a firm number.
+3. `GET /brands/:id/seo/opportunities` — confirm the returned `opportunity_score` matches hand-computation of the stated formula for a fixture input, and that each opportunity is traceable to the specific keyword/page evidence behind it in the UI.
+4. The SEO Intelligence screen renders the opportunity list sorted by score — confirm sorting is server-side and stable (matches the API's own ordering), not re-sorted ad hoc in the client in a way that could drift from the stored `opportunity_score`.
+5. Tenant isolation check across `keyword_groups`, `keywords`, `seo_analyses`, `seo_opportunities`.
+
 ## Definition of done
 
 Standard DoD. Formula unit tests with known inputs/expected outputs (hard requirement per `docs/12-ai/AI_ARCHITECTURE.md`'s scoring-architecture principle, which applies to SEO scoring too even though that doc is nominally about GEO). Tenant isolation tests for all new tables.
