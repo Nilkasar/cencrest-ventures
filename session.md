@@ -222,3 +222,27 @@ Dependency analysis: Epic 0 unblocks Epics 1 (CRM), 2 (Brand Intelligence), and 
 - Confirm Wave 1's results once the workflow completes (not done as of this entry).
 - Still need to actually run `pnpm install` / migrations against a real database — explicitly the user's own step, never done by Claude in this build.
 - Custom `.claude/agents/*.md` subagent types (`growth-strategist`, `backend-architect`, `frontend-engineer`, `qa-flow-tester`) should be re-checked in a fresh session — if they resolve there, future waves can use `agentType` directly instead of embedding personas in every prompt.
+
+---
+
+## Session: 2026-09-03 (cont.) — Wave 1 results + a mandatory end-to-end-flow standing rule
+
+### Standing rule added mid-wave
+
+User's instruction: verifying an epic route-by-route or component-by-component isn't enough to catch integration gaps. Every `platform/docs/epics/NN-*.md` spec now requires a numbered **"End-to-end flow"** section (cross-layer handoffs named explicitly: API → DB → UI → audit log) that `qa-flow-tester` must walk literally, not just verify each piece in isolation. Retrofitted into specs 01/02/06 (already mid-build at the time); every spec from 07 onward has it from the start. This rule immediately proved its worth — see below.
+
+### Wave 1 results (commit `10fd70f`) — honest, not all green
+
+- **Epic 6 (AI Provider Abstraction): VERIFIED, production-ready.** New `@bebest/ai-provider` package, 76 tests, zero live network calls. Only non-blocking notes (a documented per-call cost tradeoff on Perplexity's health check, and two issues in *other* epics' code it incidentally found while running cross-package verification commands — see below).
+- **Epic 1 (CRM): built, 1 real bug found.** The deals-pipeline kanban board's "move to Lost" silently records a canned reason instead of prompting for a real one — only the separate Deal Detail screen did this correctly. Everything else (RBAC matrix, audit logging, SSRF-guarded lead URLs, transactional lead-conversion, tenant scoping, real frontend empty/loading/error states) held up under direct code inspection, not just the build agents' own claims.
+- **Epic 2 (Brand Intelligence): built, more serious gaps found.** The onboarding wizard frontend was built entirely against `localStorage` and fixture data and was **never wired to the real backend API** that exists and works. The two sides' data contracts also disagree (industries as array vs. string, competitor priority as number vs. string enum, use-case `solution` vs `solutions[]`, missing `enterprise` plan tier on one side). qa-flow-tester also caught a build-breaking TypeScript error in `competitor-dialog.tsx` that fails `pnpm --filter @bebest/web build` outright. This is exactly the class of bug the new end-to-end-flow rule exists to catch — a route-by-route review of either side alone would have looked fine.
+
+### Fix wave dispatched (Workflow `wf_5da1f309-501`, 3 agents in parallel, not yet reported in as of this entry)
+1. Epic 1 kanban lost-reason dialog fix (frontend, small).
+2. Epic 2 frontend↔backend wiring + data-contract reconciliation (decide the correct side against the actual spec text, not convenience) + the build-breaking TS fix + named tenant-isolation test stubs for the 5 new tables (combined backend+frontend, larger).
+3. A flaky, order-dependent `@bebest/api` test (shared mutable state across test files — likely the in-memory rate limiter or an audit-log mock not resetting between files) found incidentally by Epic 6's verify agent while running cross-package checks.
+
+### Open items for next session
+- Confirm the fix wave's results and whether a re-verify pass is warranted before marking Epics 1/2 `VERIFIED`.
+- Migration-folder numbering: Epic 1 and Epic 2 independently created `prisma/migrations/0001_*` concurrently; Epic 1 self-resolved by renumbering to `0002_crm` (confirmed on disk: `0000_init`, `0001_brand_intelligence`, `0002_crm` — no collision remains).
+- Still nothing run against a live database — that remains entirely the user's own step.
