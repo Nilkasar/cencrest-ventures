@@ -139,3 +139,28 @@ First Claude Code session on this project. Bootstrapped CLAUDE.md, session.md, a
 - Marketing site apply form still uses `alert()` — all leads lost
 - No rate limiting on brand/crawl/keyword routes
 - No OpenAPI docs
+
+---
+
+## Session: 2026-09-02 — Fresh clone + project subagents
+
+### Context
+New machine / new Claude Code session. Repo cloned fresh from `https://github.com/Nilkasar/cencrest-ventures.git` into `Documents/GitHub/cencrest-ventures`. No code changes made to `api/` or `web-app/` this session — this was an onboarding + tooling session.
+
+### ⚠️ Discrepancy noticed — flag before trusting other docs
+`PROJECT_STATUS.md` still says Phase 0 complete, all other phases "PLANNED," and epics 2–36 not started. That is **stale** — this file (session.md) and the git log show all 37 epics complete with 345 passing tests as of 2026-08-29 (see Epic Progress Tracker above), and `api/` + `web-app/` both exist with substantial code. **`PROJECT_STATUS.md` needs to be rewritten to match reality** — did not do it this session since it wasn't asked for, but next session should either fix it or explicitly decide to stop maintaining it.
+
+### What was done
+1. Cloned the repo (previously only existed on another machine).
+2. Read through the full doc set (`PRODUCT_VISION.md`, `docs/05-architecture` through `docs/19-testing`, `DECISIONS.md`, `TECHNICAL_DEBT.md`, `web-app/AGENTS.md`/`CLAUDE.md`) to rebuild context from scratch.
+3. Created four project-scoped Claude Code subagents in `.claude/agents/` (new directory — did not exist before) so future sessions can delegate to role-specific personas instead of re-explaining context every time:
+   - **`growth-strategist`** — product/business owner (SEO, GEO/AEO, AI Visibility Score formula, Opportunity Engine, pricing/entitlements, epic sequencing). Enforces the rule: finish `api/` + `web-app/` before further marketing-site investment, except urgent lead-capture fixes (TD-001 / D-O10).
+   - **`backend-architect`** — 20+yr backend lead for `api/` (Node/Hono/Prisma/Postgres, multi-tenancy + RLS, deterministic scoring, prompt versioning, SSRF/security, billing entitlements, agent execution model).
+   - **`frontend-engineer`** — 15+yr UI/UX engineer for `web-app/` with Apple HIG-level craft standards (Next.js 16/React 19/Radix/GSAP stack, maps every screen to `docs/09-ux/CUSTOMER_JOURNEY.md`, accessibility, motion, empty/loading states).
+   - **`qa-flow-tester`** — verifies flows end-to-end at production-grade quality **without a live DB connection** (traces code paths, checks test coverage against the Definition-of-Done in `docs/19-testing/TESTING_STRATEGY.md`, explicitly flags anything that genuinely needs a live database to confirm rather than rubber-stamping it).
+4. Committed `.claude/agents/*.md` (commit `b7e1a5d`, local `main`). **Push was not completed** — this sandbox has read-only git access to the GitHub remote (clone/fetch works, push prompts for credentials that aren't available here). User was asked to push manually.
+
+### Open items for next session
+- Confirm `git push` of commit `b7e1a5d` happened.
+- Decide whether to correct `PROJECT_STATUS.md` (see discrepancy above) or replace it with this session.md as the single source of truth for status.
+- No functional work done on Epic 1+ this session — next session should pick up wherever the product build actually left off (verify against this file's Epic Progress Tracker, not `PROJECT_STATUS.md`).
