@@ -414,3 +414,129 @@ snapshot).
   implementation, not something introduced here; flagged for whoever picks
   up the Brand Intelligence epic so they don't accidentally collide table
   names.
+
+---
+
+## 13. Epic 2 (Brand Intelligence) schema additions
+
+This package's job was "harden, don't redesign" (§12), but Epic 2's own spec
+(`docs/epics/02-brand-intelligence.md`) needs three things the ported schema
+genuinely does not have. Adding them here (rather than working around the gap
+in `apps/api`) keeps the same discipline Epic 0 used everywhere else —
+tenant-scoped, RLS'd, soft-deleted, UUID-keyed — instead of a one-off.
+Nothing here was applied to a database; `prisma validate`/`generate` only
+(same rule as §0 above).
+
+- **`brand_entities` (new table).** The epic spec's "entities" concept
+  (products/services/concepts the brand should be associated with, typed via
+  a schema.org `schema_type`) is NOT the existing `entities` table — that one
+  is an AI-extraction artifact with a required `analysis_id` FK and
+  `onDelete: Cascade` from `analyses`, i.e. it disappears when the analysis
+  that produced it is deleted. Forcing brand-profile CRUD onto that table
+  would mean a user's manually-entered entity vanishes the next time an
+  unrelated analysis is deleted — silently wrong. This was flagged in
+  advance in §12; `brand_entities` is the correctly-scoped new table,
+  `entities` is untouched.
+- **`use_cases` (new table)** and **`brand_claims` (new table, + new
+  `claim_confidence` enum)** — neither existed under any name. Both follow
+  the standard brand-child-table shape (`brand_aliases`, `brand_services`,
+  etc.): `organization_id` + `brand_id`, both `Restrict`, soft delete,
+  `created_by`/`updated_by` (human-authored profile data — unlike the
+  AI-pipeline tables in §4's "deliberately not added" list, a person fills
+  these in during onboarding, so attribution is real and worth keeping).
+- **`competitors.priority` + `competitors.aliases` (new columns on an
+  existing table) + new `competitor_priority` enum.** The epic spec
+  (mirroring `docs/06-database/SCHEMA.md`) defines competitor priority
+  tiering (1=primary/2=secondary/3=watch) and AI-facing name variants as
+  core competitor fields; the ported table had neither — only
+  `competition_type` (direct/indirect/aspirational), which is a different
+  axis (how the competitor competes, not how important tracking it is).
+  Modeled as an enum (`primary`/`secondary`/`watch`), consistent with how
+  `competition_type` is already handled, rather than a raw `1`/`2`/`3` int a
+  caller could pass out-of-range.
+- **`chk_subscriptions_plan` fix.** 0000_init's CHECK constraint on
+  `subscriptions.plan` was `('free', 'starter', 'growth', 'agency')` —
+  missing `'pro'`, even though both `docs/16-billing/BILLING_ARCHITECTURE.md`
+  and the Epic 2 spec define a `pro` tier with its own
+  `competitors_tracked` limit (20). Fixed forward in
+  `prisma/migrations/0001_brand_intelligence/checks.sql` (drop + recreate)
+  rather than rewriting the already-committed 0000_init file. Until this
+  runs against a real database, inserting `plan = 'pro'` would be rejected
+  at the DB layer even though `apps/api`'s entitlement config already
+  expects it.
+- All three new tables' RLS policies are in
+  `prisma/migrations/0001_brand_intelligence/rls.sql`, identical
+  `tenant_isolation` template to 0000_init. Whoever runs the first real
+  migration needs to apply 0000_init's `rls.sql`/`checks.sql` **and**
+  0001_brand_intelligence's, in that order, alongside `prisma migrate
+  deploy` — same two-file-per-migration pattern as §2/§6, not automatic.
+
+---
+
+## 14. Epic 1 (CRM) schema additions
+
+Three genuinely new tables: `leads`, `deals`, `activities` (plus enums
+`lead_source`, `lead_status`, `deal_stage`, `activity_type`). `docs/06-
+database/SCHEMA.md` §5 defines `leads`/`activities` but not `deals`, and
+never gives `accounts` its own table at all — see `docs/epics/01-crm.md`'s
+model-decision note and `platform/docs/epics/01-crm-backend.md` for the full
+resolution (`accounts` ends up being a read view apps/api assembles over
+`organizations` + these tables, not a fourth new table).
+
+**The one deliberate deviation from the spec's literal field list, and why:**
+the spec describes `leads.organization_id` as "set only on conversion" (i.e.
+nullable) and `deals.organization_id` as "nullable — a deal can exist
+pre-conversion against a lead." Taken literally, that makes `organization_id`
+on these tables sometimes-null, which is exactly the shape of column this
+package's own hardening pass (§1's `background_jobs.organization_id`, §7a's
+`memberships`/`organization_rate_limits`, §7b's `invitations`) has already
+shown is where RLS design mistakes happen — a nullable, dual-purpose
+`organization_id` either becomes permanently invisible to any ordinary role
+while null, or needs a bespoke policy, both of which are exactly the kind of
+special-casing Epic 0 worked hard to avoid everywhere else.
+
+Resolution: CRM is an internal/ops tool in v1 (`docs/epics/01-crm.md`'s
+Entitlements section — BeBest staff manage their own pipeline; no customer
+ever sees this) — so there is exactly ONE tenant context these tables ever
+need to satisfy, the internal BeBest operations org. `organization_id` on
+all three tables is **NOT NULL** and always resolves to that one fixed org
+(`apps/api` reads its id from `CRM_INTERNAL_ORG_ID` — see that app's
+README). This lets the standard `tenant_isolation` policy apply with zero
+special-casing. The spec's actual intent (which real customer this
+lead/deal/activity is tied to) is preserved under unambiguous names instead:
+`leads.converted_organization_id` (set at conversion) and
+`deals.account_organization_id` / `activities.account_organization_id` (set
+at creation if already known, or backfilled at conversion time) — plain
+nullable FKs with no RLS role of their own. Full reasoning is in
+schema.prisma's "Epic 1 (CRM) additions" comment block, right above the
+`leads` model.
+
+Other additions, all following the standard §1-§6 hardening rules:
+
+- `deals.owner_id` is a required (non-nullable) FK to `users`, `Restrict` —
+  matches the "required user reference" rule (§5), same as `crm_notes.author_id`.
+- `activities.actor_id` is nullable, `SetNull` — some activity types
+  (`snapshot_requested`) can be system-originated with no human actor.
+- `leads.score`/`deals.probability` (0-100) and `deals.value_cents` (>= 0)
+  get CHECK constraints (no native range type in Postgres) —
+  `prisma/migrations/0002_crm/checks.sql`.
+- `activities` gets a CHECK requiring at least one of `lead_id`/`deal_id`/
+  `account_organization_id` to be non-null — an activity logged against
+  nothing is a data-entry bug, not a valid row.
+- `lead_source`/`lead_status`/`deal_stage`/`activity_type` are native Prisma
+  enums (Postgres ENUM types), not the VARCHAR+CHECK pattern used for softer,
+  more-likely-to-grow taxonomies elsewhere in this schema — these four are
+  closed, spec-fixed vocabularies (SCHEMA.md §5 / the standard B2B pipeline
+  stage list), so the stronger DB-level type guarantee costs nothing.
+- RLS/CHECK/index SQL is in its own epic-scoped folder,
+  `prisma/migrations/0002_crm/`, same convention as Epic 2's
+  `0001_brand_intelligence`. **Numbering note:** this folder was originally
+  created as `0001_crm` (Epic 1 in the roadmap); Epic 2 was being built
+  concurrently in the same repo and independently landed its own migration
+  at `0001_brand_intelligence` first, so this one was renumbered to
+  `0002_crm` to resolve the collision — see `0002_crm/rls.sql`'s header.
+  Neither folder is a real Prisma-generated migration (hand-written SQL
+  only, same as `0000_init`), so nothing was functionally broken by the
+  collision either way.
+- Nothing here was applied to a database — `prisma validate`/`generate`
+  only, same rule as every other section in this document.

@@ -52,9 +52,9 @@ export const navGroups: NavGroup[] = [
   {
     label: "CRM",
     items: [
-      { href: "/crm/leads", label: "Leads", icon: UserPlus, epic: 1 },
-      { href: "/crm/accounts", label: "Accounts", icon: Building2, epic: 1 },
-      { href: "/crm/deals", label: "Deals", icon: Handshake, epic: 1 },
+      { href: "/crm/leads", label: "Leads", icon: UserPlus },
+      { href: "/crm/accounts", label: "Accounts", icon: Building2 },
+      { href: "/crm/deals", label: "Deals", icon: Handshake },
     ],
   },
 ];

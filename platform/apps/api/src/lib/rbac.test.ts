@@ -91,4 +91,31 @@ describe('hasPermission — the SECURITY.md permission matrix', () => {
     expect(isAtLeast('member', 'viewer')).toBe(true);
     expect(isAtLeast('member', 'admin')).toBe(false);
   });
+
+  describe('Epic 1 (CRM) actions', () => {
+    it('everyone (including viewer) can view the CRM', () => {
+      const roles: role[] = ['owner', 'admin', 'analyst', 'editor', 'viewer'];
+      for (const r of roles) expect(hasPermission(r, 'view_crm')).toBe(true);
+    });
+
+    it('only owner/admin/analyst can manage leads or deals', () => {
+      for (const action of ['manage_leads', 'manage_deals'] as const) {
+        expect(hasPermission('owner', action)).toBe(true);
+        expect(hasPermission('admin', action)).toBe(true);
+        expect(hasPermission('analyst', action)).toBe(true);
+        expect(hasPermission('editor', action)).toBe(false);
+        expect(hasPermission('viewer', action)).toBe(false);
+      }
+    });
+
+    it('editor can log CRM activities even though they cannot manage leads/deals', () => {
+      expect(hasPermission('editor', 'log_crm_activities')).toBe(true);
+      expect(hasPermission('editor', 'manage_leads')).toBe(false);
+      expect(hasPermission('editor', 'manage_deals')).toBe(false);
+    });
+
+    it('viewer cannot log CRM activities', () => {
+      expect(hasPermission('viewer', 'log_crm_activities')).toBe(false);
+    });
+  });
 });

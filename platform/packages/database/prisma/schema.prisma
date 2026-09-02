@@ -55,90 +55,107 @@ model organizations {
 
   users users @relation(fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
-  account_health                                              account_health?
-  actions                                                      actions[]
-  agency_clients_agency_org                                    agency_clients[]        @relation("agency_clients_agency_org_idToorganizations")
-  agency_clients_client_org                                    agency_clients[]        @relation("agency_clients_client_org_idToorganizations")
-  ai_responses                                                 ai_responses[]
-  ai_usage                                                     ai_usage[]
-  analyses                                                     analyses[]
-  analysis_findings                                            analysis_findings[]
-  audiences                                                     audiences[]
-  audit_events                                                  audit_events[]
-  autonomous_run_logs                                           autonomous_run_logs[]
-  autonomous_schedules                                          autonomous_schedules[]
-  background_jobs                                               background_jobs[]
-  brand_aliases                                                 brand_aliases[]
-  brand_categories                                              brand_categories[] @ignore
-  brand_keyword_rankings                                        brand_keyword_rankings[]
-  brand_services                                                brand_services[]
-  brands                                                        brands[]
-  buyer_journeys                                                buyer_journeys[]
-  categories                                                    categories[]
-  category_associations                                         category_associations[]
-  citations                                                     citations[]
-  competitor_mentions                                           competitor_mentions[]
-  competitor_visibility                                         competitor_visibility[]
-  competitors                                                   competitors[]
-  content_analyses                                              content_analyses[]
-  content_briefs                                                content_briefs[]
-  crawl_jobs                                                    crawl_jobs[]
-  crm_contacts                                                  crm_contacts[]
-  crm_notes                                                     crm_notes[]
-  customer_health_checks                                        customer_health_checks?
-  entities                                                      entities[]
-  entrepreneur_stories                                          entrepreneur_stories[]
-  experiment_measurements                                       experiment_measurements[]
-  experiments                                                   experiments[]
-  gap_analysis                                                  gap_analysis[]
-  generated_content                                             generated_content[]
-  geo_agent_actions                                             geo_agent_actions[]
-  geo_agent_runs                                                geo_agent_runs[]
-  geo_gaps                                                      geo_gaps[]
-  growth_agent_runs                                             growth_agent_runs[]
-  growth_levers                                                 growth_levers[]
-  gsc_connections                                               gsc_connections[]
-  integrations                                                  integrations[]
-  intents                                                       intents[]
-  invitations                                                   invitations[]
-  keyword_clusters                                              keyword_clusters[]
-  keywords                                                      keywords[]
-  learning_insights                                             learning_insights[]
-  learning_signals                                              learning_signals[]
-  marketing_campaigns                                           marketing_campaigns[]
-  measurement_annotations                                       measurement_annotations[]
-  measurement_points                                            measurement_points[]
-  memberships                                                   memberships[]
-  mention_extractions                                           mention_extractions[]
-  mentions                                                      mentions[]
-  notifications                                                 notifications[]
-  opportunities                                                 opportunities[]
-  org_ai_providers                                              org_ai_providers[]
-  page_issues                                                   page_issues[]
-  pages                                                         pages[]
-  products                                                      products[]
-  prompt_jobs                                                   prompt_jobs[]
-  prompt_runs                                                   prompt_runs[]
-  publish_jobs                                                  publish_jobs[]
-  query_set_questions                                           query_set_questions[] @ignore
-  query_sets                                                    query_sets[]
-  questions                                                     questions[]
-  recommendations                                               recommendations[]
-  reports                                                       reports[]
-  responses                                                     responses[]
-  runs                                                          runs[]
-  score_history                                                 score_history[]
-  scores                                                        scores[]
-  seo_agent_actions                                             seo_agent_actions[]
-  seo_agent_runs                                                seo_agent_runs[]
-  share_of_voice                                                share_of_voice[]
-  snapshot_requests                                             snapshot_requests[]
-  subscriptions                                                 subscriptions?
-  usage_records                                                 usage_records[]
-  visibility_scores                                             visibility_scores[]
-  webhook_deliveries                                            webhook_deliveries[]
-  white_label_configs                                           white_label_configs?
-  organization_rate_limits                                      organization_rate_limits[]
+  account_health            account_health?
+  actions                   actions[]
+  // Epic 1 (CRM) additions — see DECISIONS.md "Epic 1 — CRM" section for
+  // the full reasoning. `leads`/`deals`/`activities` all carry a NOT NULL
+  // organization_id used purely for RLS tenant-scoping, which ALWAYS
+  // resolves to the internal BeBest operations org (see apps/api's
+  // CRM_INTERNAL_ORG_ID) — CRM is an internal ops tool in v1, never scoped
+  // to a customer's own org. The separate `*_converted_organization`/
+  // `*_account_organization` relations below are the actual "which
+  // customer does this belong to" business link, set once a lead converts.
+  activities                activities[]               @relation("activities_organization")
+  activities_as_account     activities[]               @relation("activities_account_organization")
+  deals                     deals[]                    @relation("deals_organization")
+  deals_as_account          deals[]                    @relation("deals_account_organization")
+  leads                     leads[]                    @relation("leads_organization")
+  leads_converted           leads[]                    @relation("leads_converted_organization")
+  agency_clients_agency_org agency_clients[]           @relation("agency_clients_agency_org_idToorganizations")
+  agency_clients_client_org agency_clients[]           @relation("agency_clients_client_org_idToorganizations")
+  ai_responses              ai_responses[]
+  ai_usage                  ai_usage[]
+  analyses                  analyses[]
+  analysis_findings         analysis_findings[]
+  audiences                 audiences[]
+  audit_events              audit_events[]
+  autonomous_run_logs       autonomous_run_logs[]
+  autonomous_schedules      autonomous_schedules[]
+  background_jobs           background_jobs[]
+  brand_aliases             brand_aliases[]
+  brand_categories          brand_categories[]         @ignore
+  brand_claims              brand_claims[]
+  brand_entities            brand_entities[]
+  brand_keyword_rankings    brand_keyword_rankings[]
+  brand_services            brand_services[]
+  brands                    brands[]
+  buyer_journeys            buyer_journeys[]
+  categories                categories[]
+  category_associations     category_associations[]
+  citations                 citations[]
+  competitor_mentions       competitor_mentions[]
+  competitor_visibility     competitor_visibility[]
+  competitors               competitors[]
+  content_analyses          content_analyses[]
+  content_briefs            content_briefs[]
+  crawl_jobs                crawl_jobs[]
+  crm_contacts              crm_contacts[]
+  crm_notes                 crm_notes[]
+  customer_health_checks    customer_health_checks?
+  entities                  entities[]
+  entrepreneur_stories      entrepreneur_stories[]
+  experiment_measurements   experiment_measurements[]
+  experiments               experiments[]
+  gap_analysis              gap_analysis[]
+  generated_content         generated_content[]
+  geo_agent_actions         geo_agent_actions[]
+  geo_agent_runs            geo_agent_runs[]
+  geo_gaps                  geo_gaps[]
+  growth_agent_runs         growth_agent_runs[]
+  growth_levers             growth_levers[]
+  gsc_connections           gsc_connections[]
+  integrations              integrations[]
+  intents                   intents[]
+  invitations               invitations[]
+  keyword_clusters          keyword_clusters[]
+  keywords                  keywords[]
+  learning_insights         learning_insights[]
+  learning_signals          learning_signals[]
+  marketing_campaigns       marketing_campaigns[]
+  measurement_annotations   measurement_annotations[]
+  measurement_points        measurement_points[]
+  memberships               memberships[]
+  mention_extractions       mention_extractions[]
+  mentions                  mentions[]
+  notifications             notifications[]
+  opportunities             opportunities[]
+  org_ai_providers          org_ai_providers[]
+  page_issues               page_issues[]
+  pages                     pages[]
+  products                  products[]
+  prompt_jobs               prompt_jobs[]
+  prompt_runs               prompt_runs[]
+  publish_jobs              publish_jobs[]
+  query_set_questions       query_set_questions[]      @ignore
+  query_sets                query_sets[]
+  questions                 questions[]
+  recommendations           recommendations[]
+  reports                   reports[]
+  responses                 responses[]
+  runs                      runs[]
+  score_history             score_history[]
+  scores                    scores[]
+  seo_agent_actions         seo_agent_actions[]
+  seo_agent_runs            seo_agent_runs[]
+  share_of_voice            share_of_voice[]
+  snapshot_requests         snapshot_requests[]
+  subscriptions             subscriptions?
+  usage_records             usage_records[]
+  use_cases                 use_cases[]
+  visibility_scores         visibility_scores[]
+  webhook_deliveries        webhook_deliveries[]
+  white_label_configs       white_label_configs?
+  organization_rate_limits  organization_rate_limits[]
 
   @@index([slug], map: "idx_organizations_slug")
 }
@@ -156,65 +173,79 @@ model users {
   updated_at     DateTime  @default(now()) @db.Timestamptz(6)
   deleted_at     DateTime? @db.Timestamptz(6)
 
-  audit_events                                  audit_events[]
-  auth_events                                   auth_events[]
-  brands_created                                brands[]                   @relation("brands_created_by")
-  brands_updated                                brands[]                   @relation("brands_updated_by")
-  competitors_created                           competitors[]              @relation("competitors_created_by")
-  competitors_updated                           competitors[]              @relation("competitors_updated_by")
-  crm_contacts_created                          crm_contacts[]
-  crm_notes                                     crm_notes[]
-  experiments_created                           experiments[]              @relation("experiments_created_by")
-  experiments_updated                           experiments[]              @relation("experiments_updated_by")
-  growth_levers_created                         growth_levers[]
-  integrations_created                          integrations[]
-  invitations                                   invitations[]
-  keywords_created                              keywords[]                 @relation("keywords_created_by")
-  keywords_updated                              keywords[]                 @relation("keywords_updated_by")
-  magic_link_tokens                             magic_link_tokens[]
-  marketing_campaigns_created                   marketing_campaigns[]      @relation("marketing_campaigns_created_by")
-  marketing_campaigns_updated                   marketing_campaigns[]      @relation("marketing_campaigns_updated_by")
-  memberships                                   memberships[]              @relation("memberships_user")
-  memberships_created                           memberships[]              @relation("memberships_created_by")
-  notification_preferences                      notification_preferences[]
-  notifications                                 notifications[]
-  organizations_created                         organizations[]
-  actions_assigned                              actions[]                  @relation("actions_assigned_to")
-  actions_created                               actions[]                  @relation("actions_created_by")
-  actions_updated                               actions[]                  @relation("actions_updated_by")
-  password_reset_tokens                         password_reset_tokens[]
-  publish_jobs_approved                         publish_jobs[]             @relation("publish_jobs_approved_by")
-  publish_jobs_created                          publish_jobs[]             @relation("publish_jobs_created_by")
-  publish_jobs_updated                          publish_jobs[]             @relation("publish_jobs_updated_by")
-  query_sets_created                            query_sets[]               @relation("query_sets_created_by")
-  query_sets_updated                            query_sets[]               @relation("query_sets_updated_by")
-  questions_created                             questions[]                @relation("questions_created_by")
-  questions_updated                             questions[]                @relation("questions_updated_by")
-  recommendations_updated                       recommendations[]
-  refresh_tokens                                refresh_tokens[]
-  reports                                       reports[]
-  sessions                                      sessions[]
-  content_briefs_created                        content_briefs[]           @relation("content_briefs_created_by")
-  content_briefs_updated                        content_briefs[]           @relation("content_briefs_updated_by")
-  gap_analysis_updated                          gap_analysis[]
-  opportunities_updated                         opportunities[]
-  white_label_configs_created                   white_label_configs[]
+  audit_events                audit_events[]
+  auth_events                 auth_events[]
+  brand_claims_created        brand_claims[]             @relation("brand_claims_created_by")
+  brand_claims_updated        brand_claims[]             @relation("brand_claims_updated_by")
+  brand_entities_created      brand_entities[]           @relation("brand_entities_created_by")
+  brand_entities_updated      brand_entities[]           @relation("brand_entities_updated_by")
+  brands_created              brands[]                   @relation("brands_created_by")
+  brands_updated              brands[]                   @relation("brands_updated_by")
+  competitors_created         competitors[]              @relation("competitors_created_by")
+  competitors_updated         competitors[]              @relation("competitors_updated_by")
+  crm_contacts_created        crm_contacts[]
+  crm_notes                   crm_notes[]
+  experiments_created         experiments[]              @relation("experiments_created_by")
+  experiments_updated         experiments[]              @relation("experiments_updated_by")
+  growth_levers_created       growth_levers[]
+  integrations_created        integrations[]
+  invitations                 invitations[]
+  keywords_created            keywords[]                 @relation("keywords_created_by")
+  keywords_updated            keywords[]                 @relation("keywords_updated_by")
+  magic_link_tokens           magic_link_tokens[]
+  marketing_campaigns_created marketing_campaigns[]      @relation("marketing_campaigns_created_by")
+  marketing_campaigns_updated marketing_campaigns[]      @relation("marketing_campaigns_updated_by")
+  memberships                 memberships[]              @relation("memberships_user")
+  memberships_created         memberships[]              @relation("memberships_created_by")
+  notification_preferences    notification_preferences[]
+  notifications               notifications[]
+  organizations_created       organizations[]
+  actions_assigned            actions[]                  @relation("actions_assigned_to")
+  actions_created             actions[]                  @relation("actions_created_by")
+  actions_updated             actions[]                  @relation("actions_updated_by")
+  // Epic 1 (CRM) additions
+  activities                  activities[]               @relation("activities_actor")
+  deals_owned                 deals[]                    @relation("deals_owner")
+  deals_created               deals[]                    @relation("deals_created_by")
+  deals_updated               deals[]                    @relation("deals_updated_by")
+  leads_assigned              leads[]                    @relation("leads_assigned_to")
+  leads_created               leads[]                    @relation("leads_created_by")
+  leads_updated               leads[]                    @relation("leads_updated_by")
+  password_reset_tokens       password_reset_tokens[]
+  publish_jobs_approved       publish_jobs[]             @relation("publish_jobs_approved_by")
+  publish_jobs_created        publish_jobs[]             @relation("publish_jobs_created_by")
+  publish_jobs_updated        publish_jobs[]             @relation("publish_jobs_updated_by")
+  query_sets_created          query_sets[]               @relation("query_sets_created_by")
+  query_sets_updated          query_sets[]               @relation("query_sets_updated_by")
+  questions_created           questions[]                @relation("questions_created_by")
+  questions_updated           questions[]                @relation("questions_updated_by")
+  recommendations_updated     recommendations[]
+  refresh_tokens              refresh_tokens[]
+  reports                     reports[]
+  sessions                    sessions[]
+  content_briefs_created      content_briefs[]           @relation("content_briefs_created_by")
+  content_briefs_updated      content_briefs[]           @relation("content_briefs_updated_by")
+  gap_analysis_updated        gap_analysis[]
+  opportunities_updated       opportunities[]
+  white_label_configs_created white_label_configs[]
+  use_cases_created           use_cases[]                @relation("use_cases_created_by")
+  use_cases_updated           use_cases[]                @relation("use_cases_updated_by")
 
   @@index([email], map: "idx_users_email")
 }
 
 model memberships {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id         String    @db.Uuid
-  organization_id String    @db.Uuid
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id         String   @db.Uuid
+  organization_id String   @db.Uuid
   role            role
-  created_by      String?   @db.Uuid // null when created via invitation acceptance rather than a direct admin add
-  created_at      DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime  @default(now()) @db.Timestamptz(6)
+  created_by      String?  @db.Uuid // null when created via invitation acceptance rather than a direct admin add
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @db.Timestamptz(6)
 
-  organizations organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users         users         @relation("memberships_user", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  created_by_user users?      @relation("memberships_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           users         @relation("memberships_user", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  created_by_user users?        @relation("memberships_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([organization_id, user_id])
   @@index([organization_id], map: "idx_memberships_organization")
@@ -425,6 +456,7 @@ model snapshot_requests {
   updated_at          DateTime        @default(now()) @db.Timestamptz(6)
 
   organizations organizations? @relation(fields: [converted_to_org_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  leads         leads[] // Epic 1 (CRM): a CRM lead optionally originates from a free-snapshot request
 
   @@index([domain, created_at(sort: Desc)], map: "idx_snapshot_domain")
   @@index([email], map: "idx_snapshot_email")
@@ -716,6 +748,166 @@ model entrepreneur_stories {
   @@index([status], map: "idx_entrepreneur_stories_status")
 }
 
+// ── Epic 1 (CRM) additions ───────────────────────────────────────────────────
+// `docs/06-database/SCHEMA.md` §5 defines `leads` and `activities` but never
+// gives `accounts` or `deals` a CREATE TABLE (see docs/epics/01-crm.md for
+// the full gap analysis). Resolution, per that spec:
+//   - `accounts` is NOT a table — it's a read view assembled by
+//     apps/api/src/routes/accounts.ts over `organizations` + `leads` +
+//     `deals` + `activities`. No schema change needed for it.
+//   - `deals` is a genuinely new table, defined below.
+//   - `leads`/`activities` are new tables too — the existing `crm_contacts`/
+//     `crm_notes` tables (above) are a DIFFERENT, already-shipped concept
+//     (post-signup contacts/notes on an existing paying org) and are left
+//     untouched.
+//
+// Tenant scoping (the one deliberate, documented deviation from the spec's
+// literal field list — see DECISIONS.md "Epic 1 — CRM" for the full
+// argument, and packages/database/prisma/migrations/0002_crm/ for the
+// accompanying RLS/CHECK/index SQL, kept in its own epic-scoped migration
+// folder alongside 0000_init, same convention as Epic 2's
+// 0001_brand_intelligence folder above — numbered 0002 because Epic 2 was
+// being built concurrently and landed the 0001 slot first, see
+// 0002_crm/rls.sql's header for the full renumbering note):
+//
+//   CRM is an internal/ops tool in v1 (docs/epics/01-crm.md's Entitlements
+//   section) — BeBest staff manage their own pipeline, customers never see
+//   any of this. So `leads.organization_id`, `deals.organization_id`, and
+//   `activities.organization_id` are NOT NULL and ALWAYS resolve to one
+//   fixed, well-known "internal BeBest operations" organization row
+//   (apps/api resolves its id from `CRM_INTERNAL_ORG_ID`, see that app's
+//   README) — never null, never the customer's org. This lets the standard
+//   `tenant_isolation` RLS policy (organization_id = app.current_org) apply
+//   to these three tables with ZERO special-casing, which matters a lot
+//   given this schema's own history of subtle, hard-to-get-right special
+//   cases for nullable/dual-purpose organization_id columns (memberships,
+//   organization_rate_limits, invitations — see DECISIONS.md §7a/§7b). A
+//   nullable, sometimes-tenant-sometimes-not organization_id (the spec's
+//   literal reading) would either be permanently invisible to any ordinary
+//   role while null (the `background_jobs` pattern — unacceptable here,
+//   staff need to actually work these rows daily) or require a bespoke RLS
+//   policy that's one more place to get tenant isolation subtly wrong.
+//
+//   The spec's actual intent — "which real customer org did this become /
+//   belong to" — is preserved, just under an unambiguous name so it never
+//   collides with the RLS-scoping column: `leads.converted_organization_id`
+//   (set only at conversion) and `deals.account_organization_id` /
+//   `activities.account_organization_id` (set at creation if the row is
+//   already tied to an existing account, or backfilled at lead-conversion
+//   time for anything hanging off that lead). All three are plain nullable
+//   FKs with no RLS role of their own.
+
+model leads {
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String      @db.Uuid // RLS tenant-scope column — see note above; always the internal ops org
+  email           String      @db.VarChar(255)
+  name            String      @db.VarChar(255)
+  company         String?     @db.VarChar(255)
+  website         String?     @db.VarChar(500)
+  category        String?     @db.VarChar(100)
+  notes           String?
+  source          lead_source @default(direct)
+  source_url      String?     @db.VarChar(2048)
+  status          lead_status @default(new)
+  score           Int?        @db.SmallInt // 0-100, see checks.sql
+  assigned_to     String?     @db.Uuid
+  snapshot_id     String?     @db.Uuid
+
+  // Set only when this lead converts into a paying customer (see
+  // POST /leads/:id/convert). NOT the tenant-scope column — see
+  // `organization_id` above.
+  converted_organization_id String?   @db.Uuid
+  converted_at              DateTime? @db.Timestamptz(6)
+
+  created_by String?   @db.Uuid
+  updated_by String?   @db.Uuid
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at DateTime? @db.Timestamptz(6)
+
+  organizations          organizations      @relation("leads_organization", fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  converted_organization organizations?     @relation("leads_converted_organization", fields: [converted_organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  assigned_to_user       users?             @relation("leads_assigned_to", fields: [assigned_to], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  created_by_user        users?             @relation("leads_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  updated_by_user        users?             @relation("leads_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  snapshot_requests      snapshot_requests? @relation(fields: [snapshot_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  deals                  deals[]
+  activities             activities[]
+
+  @@index([organization_id], map: "idx_leads_org")
+  @@index([status], map: "idx_leads_status")
+  @@index([source], map: "idx_leads_source")
+  @@index([assigned_to], map: "idx_leads_assigned_to")
+  @@index([converted_organization_id], map: "idx_leads_converted_org")
+  @@index([email], map: "idx_leads_email")
+  @@index([snapshot_id], map: "idx_leads_snapshot")
+}
+
+/// `probability` (0-100) and `value_cents` (>= 0) get CHECK constraints —
+/// see prisma/migrations/0002_crm/checks.sql.
+model deals {
+  id                      String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id         String     @db.Uuid // RLS tenant-scope column — see note above; always the internal ops org
+  lead_id                 String?    @db.Uuid
+  account_organization_id String?    @db.Uuid // the real customer org this deal belongs to, once known
+  title                   String     @db.VarChar(255)
+  value_cents             Int        @default(0)
+  currency                String     @default("USD") @db.VarChar(3)
+  stage                   deal_stage @default(new)
+  probability             Int?       @db.SmallInt
+  expected_close_date     DateTime?  @db.Timestamptz(6)
+  owner_id                String     @db.Uuid
+  lost_reason             String?
+  created_by              String?    @db.Uuid
+  updated_by              String?    @db.Uuid
+  created_at              DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime   @default(now()) @db.Timestamptz(6)
+  deleted_at              DateTime?  @db.Timestamptz(6)
+
+  organizations        organizations  @relation("deals_organization", fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  account_organization organizations? @relation("deals_account_organization", fields: [account_organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  leads                leads?         @relation(fields: [lead_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  owner                users          @relation("deals_owner", fields: [owner_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  created_by_user      users?         @relation("deals_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  updated_by_user      users?         @relation("deals_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  activities           activities[]
+
+  @@index([organization_id], map: "idx_deals_org")
+  @@index([lead_id], map: "idx_deals_lead")
+  @@index([account_organization_id], map: "idx_deals_account_org")
+  @@index([stage], map: "idx_deals_stage")
+  @@index([owner_id], map: "idx_deals_owner")
+}
+
+/// Logged against a lead, a deal, and/or an account org — at least one of
+/// `lead_id` / `account_organization_id` must be present (CHECK constraint,
+/// see prisma/migrations/0002_crm/checks.sql; Zod also enforces this at the
+/// API layer before it ever reaches the DB).
+model activities {
+  id                      String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id         String        @db.Uuid // RLS tenant-scope column — see note above; always the internal ops org
+  lead_id                 String?       @db.Uuid
+  deal_id                 String?       @db.Uuid
+  account_organization_id String?       @db.Uuid
+  type                    activity_type
+  subject                 String?       @db.VarChar(500)
+  body                    String?
+  metadata                Json          @default("{}")
+  actor_id                String?       @db.Uuid // nullable: system-originated activities (e.g. snapshot_requested) have no human actor
+  created_at              DateTime      @default(now()) @db.Timestamptz(6)
+
+  organizations        organizations  @relation("activities_organization", fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  account_organization organizations? @relation("activities_account_organization", fields: [account_organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  leads                leads?         @relation(fields: [lead_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  deals                deals?         @relation(fields: [deal_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  actor                users?         @relation("activities_actor", fields: [actor_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([organization_id], map: "idx_activities_org")
+  @@index([lead_id, created_at(sort: Desc)], map: "idx_activities_lead_created")
+  @@index([account_organization_id, created_at(sort: Desc)], map: "idx_activities_account_created")
+  @@index([deal_id], map: "idx_activities_deal")
+}
+
 // ============================================================================
 // INTEGRATIONS
 // ============================================================================
@@ -740,17 +932,17 @@ model integrations {
 }
 
 model webhook_deliveries {
-  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organization_id String       @db.Uuid
-  integration_id  String       @db.Uuid
-  event_type      String       @db.VarChar(100)
-  payload         Json         @default("{}")
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String        @db.Uuid
+  integration_id  String        @db.Uuid
+  event_type      String        @db.VarChar(100)
+  payload         Json          @default("{}")
   status_code     Int?
   response_body   String?
-  attempt         Int          @default(1) @db.SmallInt
-  delivered_at    DateTime     @default(now()) @db.Timestamptz(6)
+  attempt         Int           @default(1) @db.SmallInt
+  delivered_at    DateTime      @default(now()) @db.Timestamptz(6)
   organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  integrations    integrations @relation(fields: [integration_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  integrations    integrations  @relation(fields: [integration_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([integration_id, delivered_at(sort: Desc)], map: "idx_webhook_deliveries_integ")
   @@index([organization_id], map: "idx_webhook_deliveries_org")
@@ -778,19 +970,19 @@ model org_ai_providers {
 // ============================================================================
 
 model agency_clients {
-  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  agency_org_id   String        @db.Uuid
-  client_org_id   String        @db.Uuid
-  relationship_type String      @default("managed") @db.VarChar(50) // managed, consulting, referral — see checks.sql
-  access_level    String        @default("full") @db.VarChar(50) // full, limited, read_only — see checks.sql
-  monthly_fee     Decimal?      @db.Decimal(10, 2)
-  contract_start  DateTime?     @db.Timestamptz(6)
-  contract_end    DateTime?     @db.Timestamptz(6)
-  status          String        @default("active") @db.VarChar(50) // active, paused, terminated — see checks.sql
-  notes           String?
-  created_at      DateTime      @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime      @default(now()) @db.Timestamptz(6)
-  deleted_at      DateTime?     @db.Timestamptz(6)
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agency_org_id     String    @db.Uuid
+  client_org_id     String    @db.Uuid
+  relationship_type String    @default("managed") @db.VarChar(50) // managed, consulting, referral — see checks.sql
+  access_level      String    @default("full") @db.VarChar(50) // full, limited, read_only — see checks.sql
+  monthly_fee       Decimal?  @db.Decimal(10, 2)
+  contract_start    DateTime? @db.Timestamptz(6)
+  contract_end      DateTime? @db.Timestamptz(6)
+  status            String    @default("active") @db.VarChar(50) // active, paused, terminated — see checks.sql
+  notes             String?
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at        DateTime? @db.Timestamptz(6)
 
   organizations_agency organizations @relation("agency_clients_agency_org_idToorganizations", fields: [agency_org_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   organizations_client organizations @relation("agency_clients_client_org_idToorganizations", fields: [client_org_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
@@ -826,26 +1018,26 @@ model white_label_configs {
 // ============================================================================
 
 model brands {
-  id                     String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organization_id        String                    @db.Uuid
-  name                   String                    @db.VarChar(255)
-  description            String?
-  website_url            String?                   @db.VarChar(500)
-  industry               String?                   @db.VarChar(100)
-  logo_url               String?                   @db.VarChar(500)
-  aliases                String[]
-  positioning            String?
-  value_proposition      String?
-  key_differentiators    String[]
-  created_by             String                    @db.Uuid
-  updated_by             String?                   @db.Uuid
-  created_at             DateTime                  @default(now()) @db.Timestamptz(6)
-  updated_at             DateTime                  @default(now()) @db.Timestamptz(6)
-  deleted_at             DateTime?                 @db.Timestamptz(6)
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id     String    @db.Uuid
+  name                String    @db.VarChar(255)
+  description         String?
+  website_url         String?   @db.VarChar(500)
+  industry            String?   @db.VarChar(100)
+  logo_url            String?   @db.VarChar(500)
+  aliases             String[]
+  positioning         String?
+  value_proposition   String?
+  key_differentiators String[]
+  created_by          String    @db.Uuid
+  updated_by          String?   @db.Uuid
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at          DateTime? @db.Timestamptz(6)
 
-  created_by_user users @relation("brands_created_by", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  updated_by_user users? @relation("brands_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  organizations organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  created_by_user users         @relation("brands_created_by", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  updated_by_user users?        @relation("brands_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
   actions                 actions[]
   ai_responses            ai_responses[]
@@ -856,6 +1048,8 @@ model brands {
   autonomous_schedules    autonomous_schedules[]
   brand_aliases           brand_aliases[]
   brand_categories        brand_categories[]        @ignore
+  brand_claims            brand_claims[]
+  brand_entities          brand_entities[]
   brand_keyword_rankings  brand_keyword_rankings[]
   brand_services          brand_services[]
   buyer_journeys          buyer_journeys[]
@@ -903,6 +1097,7 @@ model brands {
   seo_agent_actions       seo_agent_actions[]
   seo_agent_runs          seo_agent_runs[]
   share_of_voice          share_of_voice[]
+  use_cases               use_cases[]
   visibility_scores       visibility_scores[]
 
   @@index([created_by], map: "idx_brands_creator")
@@ -948,14 +1143,14 @@ model categories {
 /// it at the database level via raw SQL (see rls.sql) since it stores
 /// tenant-scoped join data.
 model brand_categories {
-  organization_id String     @db.Uuid
-  brand_id        String     @db.Uuid
-  category_id     String     @db.Uuid
+  organization_id String        @db.Uuid
+  brand_id        String        @db.Uuid
+  category_id     String        @db.Uuid
   is_primary      Boolean?
-  created_at      DateTime   @default(now()) @db.Timestamptz(6)
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
   organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  brands          brands     @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  categories      categories @relation(fields: [category_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  brands          brands        @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  categories      categories    @relation(fields: [category_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([brand_id], map: "idx_brand_categories_brand")
   @@index([category_id], map: "idx_brand_categories_category")
@@ -970,6 +1165,15 @@ model competitors {
   website_url           String?                 @db.VarChar(500)
   description           String?
   competition_type      competition_type?
+  // Epic 2 (Brand Intelligence) addition — the original ported schema had
+  // no priority/aliases columns even though docs/06-database/SCHEMA.md and
+  // docs/epics/02-brand-intelligence.md both specify them (1=primary/
+  // 2=secondary/3=watch tiering, plus AI-facing name variants). Added here
+  // rather than worked around in the API because they're core, queryable
+  // attributes of a competitor row, not derived data — see
+  // packages/database/DECISIONS.md §13.
+  priority              competitor_priority     @default(secondary)
+  aliases               String[]                @default([])
   created_by            String?                 @db.Uuid
   updated_by            String?                 @db.Uuid
   created_at            DateTime                @default(now()) @db.Timestamptz(6)
@@ -985,6 +1189,100 @@ model competitors {
 
   @@index([brand_id], map: "idx_competitors_brand")
   @@index([organization_id], map: "idx_competitors_org")
+}
+
+// ── Epic 2 (Brand Intelligence) additions ───────────────────────────────────
+// The ported schema had `brands` and `competitors` (hardened in Epic 0) but
+// no tables at all for `use_cases` or `brand_claims`, and its existing
+// `entities` table (further down, near `analyses`) is an AI-extraction
+// artifact keyed to a required `analysis_id` — a different concept from the
+// "entities this brand should be associated with" profile data the epic
+// spec describes (this collision was flagged in advance — see
+// packages/database/DECISIONS.md §12). `brand_entities` below is the
+// brand-profile table; the original `entities` table is untouched.
+//
+// All three follow the exact same hardening rules Epic 0 applied everywhere
+// else: organization_id denormalized + indexed (for RLS), soft delete,
+// UUID pk, created_by/updated_by (human-authored profile data, so — unlike
+// the AI-pipeline tables — these ARE tracked), Restrict on the org/brand FK,
+// SetNull on the optional user FK. See prisma/migrations/0001_brand_intelligence/
+// for the accompanying RLS policies (schema-only — not applied to any DB,
+// same as 0000_init).
+
+model brand_entities {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String    @db.Uuid
+  brand_id        String    @db.Uuid
+  name            String    @db.VarChar(255)
+  // schema.org type (e.g. "Product", "Service", "SoftwareApplication") —
+  // deliberately unconstrained VARCHAR, not an enum: schema.org's type
+  // vocabulary is large and extensible, and GEO's entity-association-gap
+  // check (Epic 8) will want to compare against whatever a crawl or an LLM
+  // returns without this table gatekeeping the value. Same reasoning as
+  // DECISIONS.md §6's "deliberately not constrained" list.
+  schema_type     String?   @db.VarChar(100)
+  description     String?
+  created_by      String?   @db.Uuid
+  updated_by      String?   @db.Uuid
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at      DateTime? @db.Timestamptz(6)
+
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands          brands        @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  created_by_user users?        @relation("brand_entities_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  updated_by_user users?        @relation("brand_entities_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([brand_id], map: "idx_brand_entities_brand")
+  @@index([organization_id], map: "idx_brand_entities_org")
+}
+
+model use_cases {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String    @db.Uuid
+  brand_id        String    @db.Uuid
+  title           String    @db.VarChar(255)
+  description     String?
+  industries      String[]  @default([])
+  company_sizes   String[]  @default([])
+  pain_points     String[]  @default([])
+  solutions       String[]  @default([])
+  created_by      String?   @db.Uuid
+  updated_by      String?   @db.Uuid
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at      DateTime? @db.Timestamptz(6)
+
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands          brands        @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  created_by_user users?        @relation("use_cases_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  updated_by_user users?        @relation("use_cases_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([brand_id], map: "idx_use_cases_brand")
+  @@index([organization_id], map: "idx_use_cases_org")
+}
+
+model brand_claims {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String           @db.Uuid
+  brand_id        String           @db.Uuid
+  claim           String
+  evidence        String?
+  confidence      claim_confidence @default(medium)
+  verified        Boolean          @default(false)
+  created_by      String?          @db.Uuid
+  updated_by      String?          @db.Uuid
+  created_at      DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime         @default(now()) @db.Timestamptz(6)
+  deleted_at      DateTime?        @db.Timestamptz(6)
+
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands          brands        @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  created_by_user users?        @relation("brand_claims_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  updated_by_user users?        @relation("brand_claims_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([brand_id], map: "idx_brand_claims_brand")
+  @@index([organization_id], map: "idx_brand_claims_org")
 }
 
 model audiences {
@@ -1314,12 +1612,12 @@ model questions {
 /// Ignored by Prisma Client (composite key, no single unique id); RLS is
 /// still enforced via raw SQL — see rls.sql.
 model query_set_questions {
-  organization_id String     @db.Uuid
-  query_set_id    String     @db.Uuid
-  question_id     String     @db.Uuid
+  organization_id String        @db.Uuid
+  query_set_id    String        @db.Uuid
+  question_id     String        @db.Uuid
   organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  query_sets      query_sets @relation(fields: [query_set_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  questions       questions  @relation(fields: [question_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  query_sets      query_sets    @relation(fields: [query_set_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  questions       questions     @relation(fields: [question_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([question_id], map: "idx_query_set_questions_question")
   @@ignore
@@ -1330,26 +1628,26 @@ model query_set_questions {
 // ============================================================================
 
 model runs {
-  id                 String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organization_id    String      @db.Uuid
-  brand_id           String      @db.Uuid
-  question_id        String      @db.Uuid
-  model_id           String      @db.Uuid
+  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id    String        @db.Uuid
+  brand_id           String        @db.Uuid
+  question_id        String        @db.Uuid
+  model_id           String        @db.Uuid
   status             run_status
-  started_at         DateTime?   @db.Timestamptz(6)
-  completed_at       DateTime?   @db.Timestamptz(6)
+  started_at         DateTime?     @db.Timestamptz(6)
+  completed_at       DateTime?     @db.Timestamptz(6)
   error_message      String?
   metadata           Json?
-  created_at         DateTime    @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime    @default(now()) @db.Timestamptz(6)
-  batch_id           String?     @db.Uuid
-  prompt_template_id String?     @db.Uuid
-  temperature        Decimal?    @db.Decimal(3, 2)
+  created_at         DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime      @default(now()) @db.Timestamptz(6)
+  batch_id           String?       @db.Uuid
+  prompt_template_id String?       @db.Uuid
+  temperature        Decimal?      @db.Decimal(3, 2)
   responses          responses[]
   organizations      organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   brands             brands        @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  ai_models          ai_models   @relation(fields: [model_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  questions          questions   @relation(fields: [question_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  ai_models          ai_models     @relation(fields: [model_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  questions          questions     @relation(fields: [question_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
   @@index([batch_id], map: "idx_runs_batch")
   @@index([model_id], map: "idx_runs_model")
@@ -1407,24 +1705,24 @@ model analyses {
 }
 
 model analysis_findings {
-  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organization_id String       @db.Uuid
-  brand_id        String       @db.Uuid
-  analysis_id     String       @db.Uuid
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String        @db.Uuid
+  brand_id        String        @db.Uuid
+  analysis_id     String        @db.Uuid
   finding_type    finding_type
-  entity_name     String?      @db.VarChar(255)
-  entity_type     String?      @db.VarChar(50)
+  entity_name     String?       @db.VarChar(255)
+  entity_type     String?       @db.VarChar(50)
   sentiment       sentiment?
-  strength        String?      @db.VarChar(50)
+  strength        String?       @db.VarChar(50)
   position        Int?
   total_positions Int?
   context         String?
-  confidence      Decimal?     @db.Decimal(3, 2)
+  confidence      Decimal?      @db.Decimal(3, 2)
   metadata        Json?
-  created_at      DateTime     @default(now()) @db.Timestamptz(6)
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
   organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  brands          brands       @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  analyses        analyses     @relation(fields: [analysis_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  brands          brands        @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  analyses        analyses      @relation(fields: [analysis_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([analysis_id], map: "idx_analysis_findings_analysis")
   @@index([finding_type], map: "idx_analysis_findings_type")
@@ -1977,30 +2275,30 @@ model publish_jobs {
 // ============================================================================
 
 model actions {
-  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organization_id String         @db.Uuid
-  brand_id        String         @db.Uuid
-  action_type     String         @db.VarChar(100)
-  title           String         @db.VarChar(500)
-  description     String?
-  priority        String         @default("medium") @db.VarChar(20) // low, medium, high, critical — see checks.sql
-  status          String         @default("pending") @db.VarChar(50) // pending, in_progress, completed, dismissed — see checks.sql
-  source          String?        @db.VarChar(100)
-  source_id       String?        @db.Uuid
-  assigned_to     String?        @db.Uuid
-  created_by      String?        @db.Uuid
-  updated_by      String?        @db.Uuid
-  due_date        DateTime?      @db.Timestamptz(6)
-  completed_at    DateTime?      @db.Timestamptz(6)
-  metadata        Json           @default("{}")
-  created_at      DateTime       @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime       @default(now()) @db.Timestamptz(6)
-  deleted_at      DateTime?      @db.Timestamptz(6)
-  assigned_to_user users?        @relation("actions_assigned_to", fields: [assigned_to], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  created_by_user  users?        @relation("actions_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  updated_by_user  users?        @relation("actions_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  brands           brands        @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  organizations    organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id  String         @db.Uuid
+  brand_id         String         @db.Uuid
+  action_type      String         @db.VarChar(100)
+  title            String         @db.VarChar(500)
+  description      String?
+  priority         String         @default("medium") @db.VarChar(20) // low, medium, high, critical — see checks.sql
+  status           String         @default("pending") @db.VarChar(50) // pending, in_progress, completed, dismissed — see checks.sql
+  source           String?        @db.VarChar(100)
+  source_id        String?        @db.Uuid
+  assigned_to      String?        @db.Uuid
+  created_by       String?        @db.Uuid
+  updated_by       String?        @db.Uuid
+  due_date         DateTime?      @db.Timestamptz(6)
+  completed_at     DateTime?      @db.Timestamptz(6)
+  metadata         Json           @default("{}")
+  created_at       DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime       @default(now()) @db.Timestamptz(6)
+  deleted_at       DateTime?      @db.Timestamptz(6)
+  assigned_to_user users?         @relation("actions_assigned_to", fields: [assigned_to], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  created_by_user  users?         @relation("actions_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  updated_by_user  users?         @relation("actions_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  brands           brands         @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  organizations    organizations  @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   publish_jobs     publish_jobs[]
 
   @@index([brand_id], map: "idx_actions_brand")
@@ -2078,26 +2376,26 @@ model seo_agent_runs {
 }
 
 model seo_agent_actions {
-  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organization_id String        @db.Uuid
-  brand_id       String          @db.Uuid
-  agent_run_id   String          @db.Uuid
-  action_type    String          @db.VarChar(100)
-  keyword_id     String?         @db.Uuid
-  opportunity_id String?         @db.Uuid
-  brief_id       String?         @db.Uuid
-  input_data     Json            @default("{}")
-  output_data    Json            @default("{}")
-  status         String          @default("pending") @db.VarChar(50) // pending, completed, failed — see checks.sql
-  error_message  String?
-  executed_at    DateTime?       @db.Timestamptz(6)
-  created_at     DateTime        @default(now()) @db.Timestamptz(6)
-  organizations  organizations   @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  seo_agent_runs seo_agent_runs  @relation(fields: [agent_run_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  brands         brands          @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  content_briefs content_briefs? @relation(fields: [brief_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  keywords       keywords?       @relation(fields: [keyword_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  opportunities  opportunities?  @relation(fields: [opportunity_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String          @db.Uuid
+  brand_id        String          @db.Uuid
+  agent_run_id    String          @db.Uuid
+  action_type     String          @db.VarChar(100)
+  keyword_id      String?         @db.Uuid
+  opportunity_id  String?         @db.Uuid
+  brief_id        String?         @db.Uuid
+  input_data      Json            @default("{}")
+  output_data     Json            @default("{}")
+  status          String          @default("pending") @db.VarChar(50) // pending, completed, failed — see checks.sql
+  error_message   String?
+  executed_at     DateTime?       @db.Timestamptz(6)
+  created_at      DateTime        @default(now()) @db.Timestamptz(6)
+  organizations   organizations   @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  seo_agent_runs  seo_agent_runs  @relation(fields: [agent_run_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  brands          brands          @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  content_briefs  content_briefs? @relation(fields: [brief_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  keywords        keywords?       @relation(fields: [keyword_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  opportunities   opportunities?  @relation(fields: [opportunity_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 }
 
 model growth_agent_runs {
@@ -2297,16 +2595,16 @@ model measurement_points {
 }
 
 model measurement_annotations {
-  id                    String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organization_id       String             @db.Uuid
-  brand_id              String             @db.Uuid
-  measurement_point_id  String             @db.Uuid
-  text                  String
-  annotation_type       String?            @default("note") @db.VarChar(50)
-  created_at            DateTime           @default(now()) @db.Timestamptz(6)
-  organizations         organizations      @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  brands                brands             @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  measurement_points    measurement_points @relation(fields: [measurement_point_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                   String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id      String             @db.Uuid
+  brand_id             String             @db.Uuid
+  measurement_point_id String             @db.Uuid
+  text                 String
+  annotation_type      String?            @default("note") @db.VarChar(50)
+  created_at           DateTime           @default(now()) @db.Timestamptz(6)
+  organizations        organizations      @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands               brands             @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  measurement_points   measurement_points @relation(fields: [measurement_point_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([measurement_point_id], map: "idx_measurement_annotations_point")
 }
@@ -2357,6 +2655,15 @@ enum action_type {
   technical
 }
 
+// Epic 1 (CRM) addition — see activities model.
+enum activity_type {
+  note
+  email
+  call
+  snapshot_requested
+  signup
+}
+
 enum association_type {
   direct
   implied
@@ -2369,10 +2676,24 @@ enum citation_type {
   implicit
 }
 
+// Epic 2 (Brand Intelligence) addition — see brand_claims model.
+enum claim_confidence {
+  high
+  medium
+  low
+}
+
 enum competition_type {
   direct
   indirect
   aspirational
+}
+
+// Epic 2 (Brand Intelligence) addition — see competitors.priority.
+enum competitor_priority {
+  primary
+  secondary
+  watch
 }
 
 enum crawl_status {
@@ -2381,6 +2702,18 @@ enum crawl_status {
   completed
   failed
   cancelled
+}
+
+// Epic 1 (CRM) addition — see deals model. Matches the standard B2B pipeline
+// stage list for BeBest's $24k/$65k/$12k-per-month engagement tiers
+// (docs/epics/01-crm.md).
+enum deal_stage {
+  new
+  qualifying
+  proposal
+  negotiation
+  won
+  lost
 }
 
 enum effort_estimate {
@@ -2523,6 +2856,22 @@ enum keyword_source {
   dataforseo
   semrush
   csv_import
+}
+
+// Epic 1 (CRM) additions — see leads model.
+enum lead_source {
+  free_snapshot
+  apply_form
+  direct
+  referral
+}
+
+enum lead_status {
+  new
+  contacted
+  qualified
+  converted
+  lost
 }
 
 enum mention_type {

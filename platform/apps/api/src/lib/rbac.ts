@@ -54,7 +54,20 @@ export type Action =
   | 'manage_billing'
   | 'manage_team'
   | 'delete_organization'
-  | 'autonomous_actions';
+  | 'autonomous_actions'
+  // Epic 1 (CRM) — docs/epics/01-crm.md's Entitlements section: "owner/
+  // admin/analyst can create/edit; editor can log activities but not
+  // manage deals; viewer read-only." `manage_leads` and `manage_deals` are
+  // deliberately separate actions (not folded into one `manage_crm`) even
+  // though today they share the exact same role list, because the spec
+  // draws the line at the ENTITY, not a coarse "CRM" bucket — `editor`
+  // already needs to fall on the "no" side of both while landing on "yes"
+  // for `log_crm_activities`, which `isAtLeast`'s coarse rank check cannot
+  // express (`analyst` and `editor` are the same hierarchy rank).
+  | 'view_crm'
+  | 'manage_leads'
+  | 'manage_deals'
+  | 'log_crm_activities';
 
 /**
  * The permission matrix table, transcribed verbatim from
@@ -83,6 +96,12 @@ const PERMISSION_MATRIX: Record<Action, ReadonlyArray<role>> = {
   // separately from role — this table only encodes the role half of the
   // condition. See TECHNICAL_DEBT-style note in apps/api/README.md.
   autonomous_actions: ['owner', 'admin'],
+  // Epic 1 (CRM) — see the `Action` union above for why these are split
+  // per-entity rather than one coarse `manage_crm`.
+  view_crm: ['owner', 'admin', 'analyst', 'editor', 'viewer'],
+  manage_leads: ['owner', 'admin', 'analyst'],
+  manage_deals: ['owner', 'admin', 'analyst'],
+  log_crm_activities: ['owner', 'admin', 'analyst', 'editor'],
 };
 
 export interface PermissionCheckOptions {

@@ -84,4 +84,12 @@ export const ALWAYS_AUDITED_ACTIONS = [
   'organization.deleted',
   'settings.changed',
   'data.exported',
+  // Epic 1 (CRM) additions — not in SECURITY.md's literal list (written
+  // before this epic existed), but docs/epics/01-crm.md explicitly calls
+  // out deal stage transitions as privileged ("treat 'moved a $65k deal to
+  // Won' as privileged") and lead conversion creates/links a real
+  // organization, which is exactly the shape of action this list exists to
+  // cover.
+  'lead.converted',
+  'deal.stage_changed',
 ] as const;

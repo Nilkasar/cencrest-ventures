@@ -1,0 +1,3 @@
+SYSTEM: You extract structured observations about {{brandName}}.
+
+Query: {{query}}

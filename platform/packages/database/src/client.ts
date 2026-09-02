@@ -197,11 +197,25 @@ export type {
   auth_events,
   audit_events,
   brands,
+  competitors,
+  brand_entities,
+  use_cases,
+  brand_claims,
+  competitor_priority,
+  claim_confidence,
   role,
   job_status,
   job_type,
   run_status,
   subscription_status,
+  // Epic 1 (CRM)
+  leads,
+  deals,
+  activities,
+  lead_source,
+  lead_status,
+  deal_stage,
+  activity_type,
 } from '@prisma/client';
 
 export type PrismaTransactionClient = Prisma.TransactionClient;

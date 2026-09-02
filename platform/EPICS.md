@@ -9,12 +9,12 @@ Status values: `PLANNED` → `SPEC READY` → `IN PROGRESS` → `BUILT (migratio
 | # | Epic | Domain | Spec | Status |
 |---|---|---|---|---|
 | 0 | Monorepo & Platform Foundation | Scaffold, schema audit, auth, orgs, RBAC, multi-tenancy, audit logging | [00-backend](docs/epics/00-platform-foundation-backend.md) / [00-frontend](docs/epics/00-platform-foundation-frontend.md) | BUILT (migration pending) |
-| 1 | CRM | Leads, Contacts, Accounts, Deals, Activities, pipeline UI | [spec](docs/epics/01-crm.md) / [backend](docs/epics/01-crm-backend.md) | BUILT (migration pending) — backend only, frontend not started |
-| 2 | Brand Intelligence | Brands, competitors, entities, use cases, brand claims | [spec](docs/epics/02-brand-intelligence.md) / [backend](docs/epics/02-brand-intelligence-backend.md) | BUILT (migration pending) — backend only, frontend not started |
+| 1 | CRM | Leads, Contacts, Accounts, Deals, Activities, pipeline UI | [spec](docs/epics/01-crm.md) / [backend](docs/epics/01-crm-backend.md) / [frontend](docs/epics/01-crm-frontend.md) | BUILT, backend+frontend both done — qa-flow-tester found 1 real bug (kanban "move to Lost" doesn't capture a real reason); fix dispatched |
+| 2 | Brand Intelligence | Brands, competitors, entities, use cases, brand claims | [spec](docs/epics/02-brand-intelligence.md) / [backend](docs/epics/02-brand-intelligence-backend.md) / [frontend](docs/epics/02-brand-intelligence-frontend.md) | BUILT, backend+frontend both done — qa-flow-tester found frontend is NOT wired to the real API (localStorage-only) plus data-contract mismatches and a build-breaking TS error; fix dispatched |
 | 3 | Website Intelligence (Crawler) | Crawl jobs, pages, page issues, sitemaps, SSRF-safe fetch | [03-website-intelligence.md](docs/epics/03-website-intelligence.md) | SPEC READY |
 | 4 | SEO Intelligence | Keywords, keyword groups, SEO analyses, opportunities | [04-seo-intelligence.md](docs/epics/04-seo-intelligence.md) | SPEC READY |
 | 5 | Intent & Query Universe | Query sets, queries, intent graph | [05-intent-query-universe.md](docs/epics/05-intent-query-universe.md) | SPEC READY |
-| 6 | AI Provider Abstraction | `AIProvider` interface, Ollama/OpenAI/Anthropic/Google/Perplexity adapters, prompt versioning | [06-ai-provider-abstraction.md](docs/epics/06-ai-provider-abstraction.md) | SPEC READY |
+| 6 | AI Provider Abstraction | `AIProvider` interface, Ollama/OpenAI/Anthropic/Google/Perplexity adapters, prompt versioning | [06-ai-provider-abstraction.md](docs/epics/06-ai-provider-abstraction.md) | VERIFIED (qa-flow-tester: production-ready) |
 | 7 | AI Visibility Engine (GEO core) | AI runs, ai_responses, brand_observations, AVS formula v1.0 | [07-ai-visibility-engine.md](docs/epics/07-ai-visibility-engine.md) | SPEC READY |
 | 8 | Competitive Intelligence | Competitor runs/observations, share-of-voice, gap analysis | [08-competitive-intelligence.md](docs/epics/08-competitive-intelligence.md) | SPEC READY |
 | 9 | Opportunity Engine | Unified SEO+GEO scoring, opportunity_evidence | [09-opportunity-engine.md](docs/epics/09-opportunity-engine.md) | SPEC READY |

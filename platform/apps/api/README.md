@@ -52,6 +52,7 @@ step, not something this codebase can do for itself.
 | `ALLOW_DEV_AUTH_BYPASS` | No | Must be `true` (in addition to `NODE_ENV !== 'production'`) to enable the `X-User-Id` header bypass for local dev/tests. Two separate opt-ins by design — see `src/middleware/auth.ts`. |
 | `APP_URL` | No | Used to build the magic-link URL sent to `EmailSender`. Defaults to `http://localhost:3000`. |
 | `RESEND_API_KEY` | Not used yet | Reserved for ADR-010 — no `ResendEmailSender` exists yet, see "Not done" below. |
+| `CRM_INTERNAL_ORG_ID` | Yes (to use `/api/leads`, `/api/deals`, `/api/activities`, `/api/accounts`) | UUID of the `organizations` row that is BeBest's own internal operations tenant — every CRM row is RLS-scoped to it (see `src/lib/internal-org.ts` and `@bebest/database` DECISIONS.md §14). Nothing seeds this row automatically; create one org (e.g. via `POST /api/orgs`) and put its id here. |
 
 Generate a dev RSA keypair:
 
@@ -106,6 +107,17 @@ openssl pkey -in private.pem -pubout -out public.pem
   globally in `app.ts`), `authRateLimit` (5/15min), `freeSnapshotRateLimit`
   (1/hour), `authenticatedRateLimit` (120/min), `aiQueryRateLimit`
   (10/min/org), `adminRateLimit` (30/min).
+- **Epic 1 — CRM** (`src/routes/{leads,deals,activities,accounts}.ts`,
+  `src/middleware/crm-access.ts`, `src/lib/internal-org.ts`,
+  `src/lib/ssrf-guard.ts`) — leads inbox, deal pipeline (with a dedicated,
+  always-audited stage-transition endpoint), lead→org conversion, and an
+  activity timeline, gated by `requireCrmAccess` (caller must be a member of
+  the fixed internal BeBest ops org, not any customer org) plus the
+  `manage_leads`/`manage_deals`/`log_crm_activities`/`view_crm` entries in
+  `lib/rbac.ts`'s permission matrix. `accounts` is a read view assembled
+  over `organizations` + a converted `leads` row + its `deals`/`activities`,
+  not a table of its own. Full writeup:
+  `platform/docs/epics/01-crm-backend.md`.
 - **Email abstraction** (`src/lib/email.ts`) — `EmailSender` interface,
   `ConsoleEmailSender` (logs instead of sending) is the only implementation
   right now. `createAuthRoutes(emailSender)` takes the sender as a
@@ -174,8 +186,18 @@ skipped silently.
   exercising real RLS/CHECK-constraint enforcement, not just tenant
   isolation specifically.
 - **No OpenAPI/route documentation** — routes are documented here in prose
-  only. A generated spec (e.g. `@hono/zod-openapi`) is a reasonable Epic 1
-  addition once there are enough routes to justify it.
+  only. A generated spec (e.g. `@hono/zod-openapi`) is a reasonable addition
+  once there are enough routes to justify it.
+- **CRM (`leads`/`deals`/`activities`) full SSRF protection** — `lib/ssrf-guard.ts`
+  rejects non-http(s) schemes and literal-IP private/loopback ranges at the
+  point a URL is stored, but nothing in this epic fetches a stored URL, so
+  it does not (and cannot) close the DNS-rebinding gap a real fetch-time
+  check needs. Whichever future epic actually crawls/fetches one of these
+  URLs must add its own request-time SSRF guard — see `ssrf-guard.ts`'s
+  top comment.
+- **CRM has no seed/bootstrap step for the internal org** — `CRM_INTERNAL_ORG_ID`
+  above must point at a real, already-created `organizations` row; nothing
+  in this codebase creates that row automatically.
 
 ## Commands the user will need to run themselves later
 
@@ -188,8 +210,14 @@ pnpm --filter @bebest/database exec prisma migrate dev   # or `migrate deploy` i
 psql "$DATABASE_URL" -f packages/database/prisma/migrations/0000_init/rls.sql
 psql "$DATABASE_URL" -f packages/database/prisma/migrations/0000_init/checks.sql
 psql "$DATABASE_URL" -f packages/database/prisma/migrations/0000_init/indexes.sql
+# Epic 1 (CRM) — leads/deals/activities RLS + CHECK + partial indexes:
+psql "$DATABASE_URL" -f packages/database/prisma/migrations/0002_crm/rls.sql
+psql "$DATABASE_URL" -f packages/database/prisma/migrations/0002_crm/checks.sql
+psql "$DATABASE_URL" -f packages/database/prisma/migrations/0002_crm/indexes.sql
 # Create the bebest_app / bebest_admin roles per packages/database/src/client.ts's
 # top comment, and point DATABASE_URL at bebest_app for the running API.
+# Then create one organizations row for BeBest's own internal CRM use (e.g.
+# via POST /api/orgs) and set CRM_INTERNAL_ORG_ID to its id.
 
 pnpm --filter @bebest/api dev                   # run the API
 pnpm --filter @bebest/api test                  # run this app's test suite

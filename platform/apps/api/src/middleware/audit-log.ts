@@ -65,3 +65,44 @@ function safeGet<K extends 'user' | 'org'>(
     return undefined;
   }
 }
+
+export interface ManualAuditEventOptions {
+  action: string;
+  entityType: string;
+  entityId: string;
+  result?: 'success' | 'failure';
+  actorType?: 'user' | 'system' | 'agent';
+}
+
+/**
+ * For the routes `auditLog` (above) can't cover: a POST that creates a new
+ * row has no `:id` in its URL for the middleware's default `getEntityId` to
+ * read, so the entity id is only known AFTER the handler runs and only to
+ * the handler itself. Call this directly from inside such a handler, right
+ * after the row is created, instead of stretching `auditLog`'s
+ * `getEntityId` callback to reach into response state it was never given.
+ * Same underlying `writeAuditEvent` call, same user/org/ip/user-agent
+ * extraction as the middleware above — just invoked with an id the caller
+ * already has in hand.
+ */
+export async function writeManualAuditEvent(
+  c: Parameters<MiddlewareHandler<AppEnv>>[0],
+  opts: ManualAuditEventOptions,
+): Promise<void> {
+  const user = safeGet(c, 'user');
+  const org = safeGet(c, 'org');
+
+  await writeAuditEvent({
+    userId: user?.id ?? null,
+    organizationId: org?.organizationId ?? null,
+    actorType: opts.actorType ?? 'user',
+    actorRole: org?.role ?? null,
+    action: opts.action,
+    entityType: opts.entityType,
+    entityId: opts.entityId,
+    ipAddress: c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip') ?? null,
+    userAgent: c.req.header('user-agent') ?? null,
+    result: opts.result ?? 'success',
+    details: { path: c.req.path, method: c.req.method },
+  });
+}

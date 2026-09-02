@@ -66,3 +66,52 @@ describe.skip('tenant isolation (NEEDS LIVE DB)', () => {
       'roles — i.e. bebest_app must NOT be the table owner in whatever environment this runs against',
   );
 });
+
+/**
+ * Epic 1 (CRM) — `leads`, `deals`, `activities`. Same NEEDS LIVE DB
+ * constraint as above, plus the one thing genuinely specific to this
+ * epic's schema design (see @bebest/database schema.prisma's "Epic 1 (CRM)
+ * additions" comment and DECISIONS.md's "Epic 1 — CRM" section): all three
+ * tables' `organization_id` (the RLS-scoping column) is NOT NULL and always
+ * resolves to the fixed internal BeBest operations org — there is no
+ * "cross-tenant" scenario between two CUSTOMER orgs to test for these
+ * tables the way there is for `brands`/`competitors`/etc., because these
+ * rows never belong to a customer org in the first place. What actually
+ * needs proving instead is that the ONE tenant boundary that exists here
+ * (internal-org staff vs. everyone else) holds, and that the business-link
+ * columns (`converted_organization_id` / `account_organization_id`), which
+ * carry no RLS policy of their own, cannot be used to smuggle read access
+ * across it.
+ */
+describe.skip('CRM tenant isolation — leads/deals/activities (NEEDS LIVE DB)', () => {
+  it.todo(
+    'a user who is NOT a member of the internal BeBest operations org gets zero rows from ' +
+      'leads/deals/activities, even via withOrgContext(theirOwnOrgId, ...) — i.e. a customer\'s ' +
+      'own org membership grants no visibility into CRM tables no matter what role they hold',
+  );
+
+  it.todo(
+    'inserting a leads/deals/activities row with organization_id set to anything other than ' +
+      'the internal org id is rejected by WITH CHECK, even by an internal-org member (proves ' +
+      'the internal-org-only scoping is enforced at the database level, not just by ' +
+      'apps/api/src/lib/internal-org.ts always supplying the right id)',
+  );
+
+  it.todo(
+    'converting a lead (creating/linking an organization + setting ' +
+      'converted_organization_id) does NOT change the row\'s organization_id — the row stays ' +
+      'visible under withOrgContext(internalOrgId, ...) and invisible under ' +
+      'withOrgContext(theConvertedCustomerOrgId, ...), confirming converted_organization_id/' +
+      'account_organization_id are pure data columns with no RLS role of their own',
+  );
+
+  it.todo(
+    'the chk_activities_target_present CHECK constraint rejects an activities row with ' +
+      'lead_id, deal_id, AND account_organization_id all NULL',
+  );
+
+  it.todo(
+    'the chk_deals_value_cents_non_negative and chk_deals_probability_range CHECK constraints ' +
+      'reject out-of-range values',
+  );
+});

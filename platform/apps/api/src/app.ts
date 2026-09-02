@@ -7,6 +7,15 @@ import { publicRateLimit } from './middleware/rate-limit.js';
 import health from './routes/health.js';
 import { createAuthRoutes } from './routes/auth.js';
 import orgs from './routes/orgs.js';
+import leads from './routes/leads.js';
+import deals from './routes/deals.js';
+import activities from './routes/activities.js';
+import accounts from './routes/accounts.js';
+import brands from './routes/brands.js';
+import competitors from './routes/competitors.js';
+import brandEntities from './routes/brand-entities.js';
+import useCases from './routes/use-cases.js';
+import brandClaims from './routes/brand-claims.js';
 import { ConsoleEmailSender } from './lib/email.js';
 import type { AppEnv } from './types/context.js';
 
@@ -54,6 +63,25 @@ app.use('*', publicRateLimit);
 app.route('/api/health', health);
 app.route('/api/auth', createAuthRoutes(new ConsoleEmailSender()));
 app.route('/api/orgs', orgs);
+
+// Epic 1 — CRM. Internal-ops tool (docs/epics/01-crm.md's Entitlements
+// section) — every route here is gated by requireCrmAccess (the caller's
+// current org must BE the internal BeBest operations org, see
+// middleware/crm-access.ts), not by which customer org the caller belongs
+// to.
+app.route('/api/leads', leads);
+app.route('/api/deals', deals);
+app.route('/api/activities', activities);
+app.route('/api/accounts', accounts);
+
+// Epic 2 — Brand Intelligence. Single brand per org (MULTI-BRAND: see
+// Epic 18); every child resource hangs off "the" org's brand, resolved via
+// lib/brand-context.ts, not a brandId in the URL.
+app.route('/api/brands', brands);
+app.route('/api/brands/me/competitors', competitors);
+app.route('/api/brands/me/entities', brandEntities);
+app.route('/api/brands/me/use-cases', useCases);
+app.route('/api/brands/me/claims', brandClaims);
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 
