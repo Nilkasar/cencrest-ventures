@@ -75,6 +75,10 @@ model organizations {
   agency_clients_client_org agency_clients[]           @relation("agency_clients_client_org_idToorganizations")
   ai_responses              ai_responses[]
   ai_usage                  ai_usage[]
+  // Epic 7 (AI Visibility Engine) additions
+  ai_runs                   ai_runs[]
+  ai_run_responses          ai_run_responses[]
+  brand_observations        brand_observations[]
   analyses                  analyses[]
   analysis_findings         analysis_findings[]
   audiences                 audiences[]
@@ -119,6 +123,11 @@ model organizations {
   invitations               invitations[]
   keyword_clusters          keyword_clusters[]
   keywords                  keywords[]
+  // Epic 4 (SEO Intelligence) additions
+  keyword_groups            keyword_groups[]
+  seo_keywords              seo_keywords[]
+  seo_analyses              seo_analyses[]
+  seo_opportunities         seo_opportunities[]
   learning_insights         learning_insights[]
   learning_signals          learning_signals[]
   marketing_campaigns       marketing_campaigns[]
@@ -227,6 +236,8 @@ model users {
   // Epic 5 (Intent & Query Universe) additions
   queries_created             queries[]                  @relation("queries_created_by")
   queries_updated             queries[]                  @relation("queries_updated_by")
+  // Epic 7 (AI Visibility Engine) addition — who triggered the run.
+  ai_runs_created             ai_runs[]                  @relation("ai_runs_created_by")
   questions_created           questions[]                @relation("questions_created_by")
   questions_updated           questions[]                @relation("questions_updated_by")
   recommendations_updated     recommendations[]
@@ -240,6 +251,12 @@ model users {
   white_label_configs_created white_label_configs[]
   use_cases_created           use_cases[]                @relation("use_cases_created_by")
   use_cases_updated           use_cases[]                @relation("use_cases_updated_by")
+  // Epic 4 (SEO Intelligence) additions
+  keyword_groups_created      keyword_groups[]           @relation("keyword_groups_created_by")
+  keyword_groups_updated      keyword_groups[]           @relation("keyword_groups_updated_by")
+  seo_keywords_created        seo_keywords[]             @relation("seo_keywords_created_by")
+  seo_keywords_updated        seo_keywords[]             @relation("seo_keywords_updated_by")
+  seo_opportunities_updated   seo_opportunities[]        @relation("seo_opportunities_updated_by")
 
   @@index([email], map: "idx_users_email")
 }
@@ -1065,6 +1082,10 @@ model brands {
 
   actions                 actions[]
   ai_responses            ai_responses[]
+  // Epic 7 (AI Visibility Engine) additions
+  ai_runs                 ai_runs[]
+  ai_run_responses        ai_run_responses[]
+  brand_observations      brand_observations[]
   analyses                analyses[]
   analysis_findings       analysis_findings[]
   audiences               audiences[]
@@ -1097,6 +1118,12 @@ model brands {
   gsc_connections         gsc_connections?
   keyword_clusters        keyword_clusters[]
   keywords                keywords[]
+  // Epic 4 (SEO Intelligence) additions. `seo_keywords` has no direct
+  // `brand_id` (it hangs off `keyword_groups` only, see that model's
+  // comment), so there is no back-relation array for it here.
+  keyword_groups          keyword_groups[]
+  seo_analyses            seo_analyses[]
+  seo_opportunities       seo_opportunities[]
   learning_insights       learning_insights[]
   learning_signals        learning_signals[]
   measurement_annotations measurement_annotations[]
@@ -1510,6 +1537,9 @@ model pages {
   content_analyses content_analyses?
   content_briefs   content_briefs[]
   page_issues      page_issues[]
+  // Epic 4 (SEO Intelligence) addition — nullable on seo_analyses (SetNull),
+  // so no `?` needed here even though a page can have zero or many.
+  seo_analyses     seo_analyses[]
   organizations    organizations     @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   brands           brands            @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   crawl_jobs       crawl_jobs        @relation(fields: [crawl_job_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
@@ -1672,6 +1702,211 @@ model gsc_connections {
   brands            brands        @relation(fields: [brand_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
+// ── Epic 4 (SEO Intelligence) additions ─────────────────────────────────────
+// docs/epics/04-seo-intelligence.md's domain model section is explicit that
+// docs/06-database/SCHEMA.md never gave `keyword_groups`/`keywords`/
+// `seo_analyses`/`seo_opportunities` their own `CREATE TABLE` statements the
+// way it did for Identity/Brand/GEO/Opportunity/CRM/Billing — "define them
+// now." Same discipline as every other epic's schema-gap section in this
+// file (§13/§14/§16/§17 in DECISIONS.md): additive only, `prisma validate`/
+// `generate` only, nothing applied to a database.
+//
+// **`keywords` naming collision, resolved the same way Epic 5 resolved
+// `queries` vs. the ported `questions`/`query_set_questions` pair (see the
+// "QUERY UNIVERSE" section below and DECISIONS.md §16):** the ported schema
+// already has a `keywords` model (directly above, under "SEO INTELLIGENCE")
+// — `brand_id`-scoped, `keyword` (not `text`), no `confidence` field, no
+// `keyword_group_id` — built for the not-yet-implemented autonomous SEO
+// agent pipeline (`seo_agent_actions.keyword_id -> keywords`,
+// `brand_keyword_rankings`, `keyword_clusters`). Nothing in `apps/api`
+// consumes that table today (grep confirms zero route references), so it is
+// left untouched for whichever future epic builds that agent, per §12's
+// "harden, don't redesign" rule — repurposing it would mean either breaking
+// its already-modeled `seo_agent_actions`/`brand_keyword_rankings` shape or
+// smuggling a second, incompatible meaning onto the same table name. The
+// epic's literal `KeywordData` shape (`docs/10-seo/SEO_ENGINE.md`) is
+// implemented here as `seo_keywords` instead — a genuinely new table, not a
+// reuse — with `keyword_groups` (also new) as its one-to-many parent.
+//
+// Two existing enums are reused as-is (exact value match, no need to
+// duplicate): `keyword_intent` (`informational|navigational|commercial|
+// transactional` — matches the epic's literal intent list) for
+// `seo_keywords.intent`, and `opportunity_status` (`new|in_progress|
+// completed|dismissed`) for `seo_opportunities.status` — the API surface's
+// "list, get, dismiss" maps directly onto that enum's existing values, and
+// Epic 9's future unified Opportunity Engine table (which this one is
+// deliberately kept close to, per the epic spec) will want the same status
+// vocabulary anyway.
+//
+// `seo_keyword_confidence` (`high|medium|low|estimate`) is a NEW enum, not
+// a reuse of `claim_confidence` (`high|medium|low`, no `estimate` value) —
+// different concept (a brand-claim's evidential confidence vs. a keyword
+// metric's data-quality confidence) that only coincidentally shares three
+// of four values; forcing the reuse would mean either adding `estimate` to
+// `claim_confidence` for a domain it has nothing to do with, or leaving this
+// table unable to express the one value the epic spec's step 2 explicitly
+// requires ("never silently presenting an estimate as a firm number").
+//
+// `seo_provider_source` is a NEW enum naming the concrete `SEODataProvider`
+// implementations this epic's abstraction can be backed by (see
+// `apps/api/src/lib/seo/seo-data-provider.ts`) — `null_provider` is the only
+// one actually wired (`NullSEODataProvider`); `search_console` names the
+// pre-existing, unused `gsc_connections` OAuth-token table above as the
+// natural first real provider a future epic would implement; `dataforseo`/
+// `semrush`/`ahrefs`/`serper` are the four paid vendors the epic spec names
+// as "not wired yet." Closed enum (not the open-VARCHAR treatment
+// `queries.category` got) because this is a fixed, code-defined set of
+// integrations, not an open user-facing taxonomy — same reasoning as the
+// legacy `keyword_source` enum immediately above this block, which this
+// deliberately does NOT reuse (that enum's values — `manual`/`csv_import`/
+// `gsc` — describe how a legacy row was IMPORTED, a different axis from
+// "which live SEODataProvider implementation answered this call").
+//
+// `seo_opportunities.opportunity_type` stays an open, unconstrained
+// `VARCHAR` — the spec's own literal list ends in "..." (`service_page |
+// comparison_page | use_case_page | faq_page | ...`), an explicit signal
+// this is an extensible taxonomy, not a closed one — same "deliberately not
+// constrained" treatment DECISIONS.md §6 and the `queries.category` epic-5
+// precedent give every other open-ended classification column in this
+// schema. The formula's raw inputs (`demand_score`, `current_coverage`,
+// `content_complexity`, `technical_difficulty`) are likewise not their own
+// columns — they live inside `evidence` (JSONB), mirroring the legacy
+// `opportunities.evidence` column exactly (the epic spec: "keep the shape
+// close to the opportunities table Epic 9 will define") and satisfying the
+// UI surface's evidence-traceability requirement ("each opportunity shows
+// its evidence... not just a bare number") without inventing four columns
+// nothing outside this JSON blob needs to query on independently.
+model keyword_groups {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String    @db.Uuid
+  brand_id        String    @db.Uuid
+  name            String    @db.VarChar(255)
+  created_by      String?   @db.Uuid
+  updated_by      String?   @db.Uuid
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at      DateTime? @db.Timestamptz(6)
+
+  organizations   organizations  @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands          brands         @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  created_by_user users?         @relation("keyword_groups_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  updated_by_user users?         @relation("keyword_groups_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  seo_keywords    seo_keywords[]
+
+  @@index([brand_id], map: "idx_keyword_groups_brand")
+  @@index([organization_id], map: "idx_keyword_groups_org")
+}
+
+/// The epic's literal `keywords` table (see the comment block above this
+/// section for why it is named `seo_keywords` at the Prisma/table level).
+/// Mirrors `docs/10-seo/SEO_ENGINE.md`'s `KeywordData` shape exactly: `text`
+/// (not `keyword` — the legacy table's name, deliberately not matched),
+/// `intent`, `monthly_volume`, `difficulty`, `confidence`, `source`. Scoped
+/// by `keyword_group_id` only (plus the denormalized `organization_id` for
+/// RLS) — no direct `brand_id` column — same "child hangs off its direct
+/// one-to-many parent, not re-denormalized past it" shape `queries` uses
+/// relative to `query_sets`. This table has a CHECK constraint (see
+/// `prisma/migrations/0007_seo_intelligence/checks.sql`) requiring
+/// `monthly_volume >= 0` and `difficulty BETWEEN 0 AND 100` when present —
+/// same pair of checks the legacy `keywords` table already has.
+model seo_keywords {
+  id              String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String                  @db.Uuid
+  keyword_group_id String                 @db.Uuid
+  text            String                  @db.VarChar(500)
+  intent          keyword_intent?
+  monthly_volume  Int?
+  difficulty      Int?                    @db.SmallInt
+  confidence      seo_keyword_confidence  @default(estimate)
+  source          seo_provider_source     @default(null_provider)
+  created_by      String?                 @db.Uuid
+  updated_by      String?                 @db.Uuid
+  created_at      DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime                @default(now()) @db.Timestamptz(6)
+  deleted_at      DateTime?               @db.Timestamptz(6)
+
+  organizations     organizations       @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  keyword_groups    keyword_groups      @relation(fields: [keyword_group_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  created_by_user   users?              @relation("seo_keywords_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  updated_by_user   users?              @relation("seo_keywords_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  seo_opportunities seo_opportunities[]
+
+  @@unique([keyword_group_id, text])
+  @@index([keyword_group_id], map: "idx_seo_keywords_group")
+  @@index([organization_id], map: "idx_seo_keywords_org")
+}
+
+/// Technical/content SEO checklist results for a crawled page (Epic 3's
+/// `pages`) or, for `analysis_type = content`, a brand-level pass with no
+/// single page (`page_id` nullable). Append-only pipeline output — no
+/// `deleted_at`/`created_by` (DECISIONS.md §3/§4's "immutable pipeline
+/// output" rule, same treatment as `content_analyses`/`analyses` above),
+/// `analyzed_at` is the row's one meaningful timestamp. `findings` (JSONB)
+/// holds the full per-check checklist result
+/// (`{ checks: [{ id, passed, severity, detail }], ... }`) — see
+/// `apps/api/src/lib/seo/technical-checklist.ts` for the exact shape;
+/// `page_issues` rows are the normalized, queryable projection of the
+/// `passed: false` entries onto Epic 3's own table (the epic spec's literal
+/// requirement: "writes seo_analyses + derives page_issues where
+/// applicable").
+model seo_analyses {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String            @db.Uuid
+  brand_id        String            @db.Uuid
+  page_id         String?           @db.Uuid
+  analysis_type   seo_analysis_type
+  score           Int
+  findings        Json
+  analyzed_at     DateTime          @default(now()) @db.Timestamptz(6)
+
+  organizations organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands        brands        @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  pages         pages?        @relation(fields: [page_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([brand_id], map: "idx_seo_analyses_brand")
+  @@index([organization_id], map: "idx_seo_analyses_org")
+  @@index([page_id], map: "idx_seo_analyses_page")
+}
+
+/// Formula v1.0 (`docs/10-seo/SEO_ENGINE.md`, verbatim): `Value = demand ×
+/// (1 - coverage)`, `Effort = content_complexity × technical_difficulty`,
+/// `Score = Value×0.7 + (Value/Effort)×0.3`, all normalized 0-100. See
+/// `apps/api/src/lib/seo/opportunity-scoring.ts` for the implementation and
+/// its unit tests. `scoring_formula_version` is stored per-row (not read
+/// from a global constant) so a future v1.1 can be introduced without
+/// silently reinterpreting already-computed historical rows.
+model seo_opportunities {
+  id                      String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id         String             @db.Uuid
+  brand_id                String             @db.Uuid
+  keyword_id              String?            @db.Uuid
+  title                   String             @db.VarChar(255)
+  // service_page | comparison_page | use_case_page | faq_page | ... —
+  // deliberately open, see the comment block above this section.
+  opportunity_type        String             @db.VarChar(50)
+  value_score             Decimal            @db.Decimal(5, 2)
+  effort_score            Decimal            @db.Decimal(5, 2)
+  opportunity_score       Decimal            @db.Decimal(5, 2)
+  scoring_formula_version String             @default("1.0") @db.VarChar(20)
+  status                  opportunity_status @default(new)
+  // { demandScore, currentCoverage, contentComplexity, technicalDifficulty }
+  // — the formula's raw inputs, so the UI can show its work instead of a
+  // bare number (evidence-traceability principle, see comment block above).
+  evidence                Json?
+  updated_by              String?            @db.Uuid
+  created_at              DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime           @default(now()) @db.Timestamptz(6)
+
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands          brands        @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  seo_keywords    seo_keywords? @relation(fields: [keyword_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  updated_by_user users?        @relation("seo_opportunities_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([brand_id], map: "idx_seo_opportunities_brand")
+  @@index([keyword_id], map: "idx_seo_opportunities_keyword")
+  @@index([organization_id, opportunity_score(sort: Desc)], map: "idx_seo_opportunities_org_score")
+}
+
 // ============================================================================
 // QUERY UNIVERSE / QUESTIONS
 // ============================================================================
@@ -1752,6 +1987,10 @@ model query_sets {
   deleted_at          DateTime?             @db.Timestamptz(6)
   query_set_questions query_set_questions[] @ignore
   queries             queries[]
+  // Epic 7 (AI Visibility Engine) addition — a query_set's `active` version
+  // is what `POST /brands/:id/ai-runs` consumes; see the "AI VISIBILITY
+  // ENGINE" section below.
+  ai_runs             ai_runs[]
   organizations       organizations         @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   brands              brands                @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   created_by_user     users                 @relation("query_sets_created_by", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
@@ -1828,11 +2067,209 @@ model queries {
   query_sets      query_sets @relation(fields: [query_set_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   created_by_user users?     @relation("queries_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
   updated_by_user users?     @relation("queries_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  // Epic 7 (AI Visibility Engine) additions — a query is executed against
+  // every configured provider once per `ai_runs` run.
+  ai_run_responses   ai_run_responses[]
+  brand_observations brand_observations[]
 
   @@index([query_set_id], map: "idx_queries_query_set")
   @@index([organization_id], map: "idx_queries_organization")
   @@index([category], map: "idx_queries_category")
   @@index([intent_type], map: "idx_queries_intent_type")
+}
+
+// ============================================================================
+// AI VISIBILITY ENGINE (Epic 7 — GEO core)
+// ============================================================================
+
+// docs/epics/07-ai-visibility-engine.md's domain model calls for brand-new
+// `ai_runs`/`ai_responses`/`brand_observations` tables, explicitly NOT the
+// legacy `runs`/`responses`/`prompt_jobs`/`ai_responses` pipeline above
+// (`questions -> prompt_jobs -> ai_responses`, tied to `buyer_journeys`) —
+// see the comment block above the `queries` model (Epic 5) for the same
+// "new tables, old ones left untouched" reasoning, which this epic's own
+// spec text independently confirms.
+//
+// **Naming deviation from the spec's literal table name.** The spec calls
+// the per-(query x provider) response table `ai_responses` — but that name
+// is ALREADY TAKEN by the legacy model directly above (`model ai_responses`,
+// FK'd from `prompt_jobs`/`citations`/`mention_extractions`), a genuine
+// Prisma model-name collision, not a naming quibble. Same situation as
+// Epic 2's `entities`/`brand_entities` split (DECISIONS.md §12/§13): the
+// OLD table is left completely alone (it's still load-bearing for the
+// legacy pipeline's own FKs), and THIS epic's table gets a disambiguating
+// name — `ai_run_responses` — instead of colliding with it. See
+// DECISIONS.md's Epic 7 section for the full reasoning.
+model ai_runs {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String   @db.Uuid
+  brand_id        String   @db.Uuid
+  query_set_id    String   @db.Uuid
+  // The resolved provider name list this run actually fanned out to
+  // (docs/12-ai/AI_ARCHITECTURE.md's `taskDefaults['geo.query']` —
+  // openai/anthropic/google/perplexity), snapshotted at PREPARE time so a
+  // later change to the routing table never retroactively rewrites what a
+  // historical run claims it queried.
+  providers String[] @default([])
+  // queued | running | completed | failed — same VARCHAR+CHECK pattern as
+  // `crawl_jobs.status` (DECISIONS.md §6/§17), not a native enum.
+  status         String @default("queued") @db.VarChar(20)
+  total_jobs     Int    @default(0)
+  completed_jobs Int    @default(0)
+  failed_jobs    Int    @default(0)
+  // The four formula v1.0 components, stored individually (not just the
+  // composite) so `GET /ai-runs/:id/score` can return a breakdown that
+  // provably sums to `ai_visibility_score` under the stated weights — the
+  // epic's evidence-traceability requirement — without recomputing
+  // anything from raw observations on every read.
+  mention_score        Decimal? @db.Decimal(6, 4)
+  recommendation_score Decimal? @db.Decimal(6, 4)
+  position_score       Decimal? @db.Decimal(6, 4)
+  coverage_score       Decimal? @db.Decimal(6, 4)
+  ai_visibility_score  Decimal? @db.Decimal(6, 4)
+  // Stamped once AGGREGATE computes a score (docs/11-geo/GEO_ENGINE.md:
+  // "changes to formula require version increment ..."). Every score this
+  // epic ever produces carries the exact version that computed it.
+  scoring_formula_version String? @db.VarChar(10)
+  error        String?
+  started_at   DateTime? @db.Timestamptz(6)
+  completed_at DateTime? @db.Timestamptz(6)
+  created_by   String    @db.Uuid
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @default(now()) @db.Timestamptz(6)
+
+  organizations      organizations        @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands             brands               @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  // Restrict: a query_set is never hard-deleted (archive is a status flag,
+  // not a delete — see DECISIONS.md §16), so this is a defense-in-depth
+  // default, same reasoning as every other non-composition FK in this
+  // schema (DECISIONS.md §5).
+  query_sets         query_sets           @relation(fields: [query_set_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  created_by_user    users                @relation("ai_runs_created_by", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  ai_run_responses   ai_run_responses[]
+  brand_observations brand_observations[]
+
+  @@index([organization_id], map: "idx_ai_runs_organization")
+  @@index([brand_id], map: "idx_ai_runs_brand")
+  @@index([query_set_id], map: "idx_ai_runs_query_set")
+  @@index([status], map: "idx_ai_runs_status")
+}
+
+/// One (query x provider) execution within an `ai_runs` run — the
+/// evidence-traceability boundary (ADR-004 / GEO_ENGINE.md "every score
+/// must be explainable, click through to raw responses"). `raw_response`
+/// is written the moment the GEO-query provider call itself succeeds,
+/// BEFORE the separate extraction call is even attempted, and is never
+/// touched again afterward — only `extraction_status`/`extraction_error`/
+/// `extracted_at` change once extraction runs. This ordering is what makes
+/// "evidence is never lost when extraction fails" true by construction:
+/// the row committing this text to the database has already happened by
+/// the time extraction (a second, independent provider call) can fail. See
+/// `apps/api/src/lib/ai-visibility/pipeline.ts`.
+model ai_run_responses {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String @db.Uuid
+  brand_id        String @db.Uuid
+  ai_run_id       String @db.Uuid
+  query_id        String @db.Uuid
+  provider        String @db.VarChar(50)
+  model           String @db.VarChar(100)
+  // ADR-006: required on every stored response, never null — the prompt
+  // version that produced the GEO-query completion itself (not the
+  // extraction prompt version, which lives on `brand_observations`).
+  prompt_version String   @db.VarChar(50)
+  temperature    Decimal? @db.Decimal(3, 2)
+  raw_response   String
+  // From `CompletionResult.requestId` (`@bebest/ai-provider`) — nullable
+  // only because a provider mock in a test may omit it; a real provider
+  // call always returns one.
+  request_id        String? @db.VarChar(100)
+  tokens_prompt     Int?
+  tokens_completion Int?
+  tokens_total      Int?
+  latency_ms        Int?
+  // pending | completed | failed — set by the separate extraction step
+  // that reads this row's OWN `raw_response`. 'failed' means extraction
+  // could not produce a schema-valid `BrandObservation` (see
+  // `extraction_error`) — the raw evidence above is still fully intact and
+  // readable via `GET /ai-runs/:id/responses`.
+  extraction_status String    @default("pending") @db.VarChar(20)
+  extraction_error  String?
+  extracted_at      DateTime? @db.Timestamptz(6)
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @default(now()) @db.Timestamptz(6)
+
+  organizations      organizations       @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands             brands              @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  // Cascade: a response has zero independent meaning once its run is gone
+  // — true composition child (DECISIONS.md §5), same rule as
+  // `citations`/`mention_extractions -> ai_responses` for the legacy table.
+  ai_runs            ai_runs             @relation(fields: [ai_run_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  queries            queries             @relation(fields: [query_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brand_observations brand_observations?
+
+  @@index([ai_run_id], map: "idx_ai_run_responses_run")
+  @@index([query_id], map: "idx_ai_run_responses_query")
+  @@index([organization_id], map: "idx_ai_run_responses_organization")
+}
+
+/// The ADR-004 boundary: LLMs write this table, nothing else, and
+/// deterministic formulas (never an LLM) read it to compute scores.
+/// Extracted from exactly one `ai_run_responses.raw_response` —
+/// `ai_run_response_id` is `@unique` (1:1) so a UI can always walk
+/// score -> observation -> the single raw response it came from, per
+/// GEO_ENGINE.md's evidence-trace example. No `created_by`/`updated_by`
+/// and no `deleted_at`: AI-authored pipeline output, immutable once
+/// written — same "deliberately not added" precedent as
+/// `mention_extractions`/`citations` (DECISIONS.md §3/§4).
+model brand_observations {
+  id                 String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id    String @db.Uuid
+  brand_id           String @db.Uuid
+  ai_run_id          String @db.Uuid
+  ai_run_response_id String @unique @db.Uuid
+  query_id           String @db.Uuid
+
+  brand_mentioned Boolean @default(false)
+  // Normalized character-offset position of the first brand mention: 0 =
+  // start of response (best), 1 = end. Null when not mentioned at all.
+  // docs/12-ai/AI_ARCHITECTURE.md's `BrandObservation.brandFirstPosition`.
+  brand_first_position Decimal? @db.Decimal(4, 3)
+  brand_mention_count  Int      @default(0)
+  // positive | neutral | negative | mixed
+  brand_sentiment String? @db.VarChar(20)
+  brand_context   String?
+  brand_recommended Boolean @default(false)
+  // strong | weak | implied
+  brand_recommendation_strength String? @db.VarChar(20)
+
+  competitors_mentioned String[] @default([])
+  cited_urls             String[] @default([])
+  cited_domains          String[] @default([])
+
+  response_language   String? @db.VarChar(10)
+  response_word_count Int?
+
+  extraction_model_used     String @db.VarChar(100)
+  extraction_prompt_version String @db.VarChar(50)
+  // high | medium | low — reuses the Epic 2 `claim_confidence` enum
+  // (identical 3-value vocabulary, see `brand_claims`) rather than adding
+  // a second enum with the same values (DECISIONS.md §6 precedent: don't
+  // duplicate a closed vocabulary that already exists under a generic
+  // enough name).
+  extraction_confidence claim_confidence @default(medium)
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  organizations    organizations    @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands           brands           @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  ai_runs          ai_runs          @relation(fields: [ai_run_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ai_run_responses ai_run_responses @relation(fields: [ai_run_response_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  queries          queries          @relation(fields: [query_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([ai_run_id], map: "idx_brand_observations_run")
+  @@index([query_id], map: "idx_brand_observations_query")
+  @@index([organization_id], map: "idx_brand_observations_organization")
 }
 
 model questions {
@@ -3079,6 +3516,16 @@ enum issue_type {
   meta_too_long
   thin_content
   noindex
+  // Epic 4 (SEO Intelligence) additions — Epic 3's crawler
+  // (`lib/crawler/engine.ts`) already derives every OTHER value above at
+  // crawl time; these two cover the Page Analysis Checklist's "Technical:
+  // HTTPS" and "Schema" sections, which the crawler does not check. Purely
+  // additive (existing values/ordinal positions unchanged), so this is safe
+  // even though Epic 3 is otherwise DONE/committed — see
+  // `apps/api/src/lib/seo/technical-checklist.ts` for where these are
+  // produced and DECISIONS.md's Epic 4 section for the full reasoning.
+  not_https
+  missing_schema
 }
 
 enum job_status {
@@ -3117,6 +3564,37 @@ enum keyword_source {
   dataforseo
   semrush
   csv_import
+}
+
+// Epic 4 (SEO Intelligence) additions — see the comment block above the
+// `keyword_groups` model for why these are new enums rather than a reuse of
+// `claim_confidence`/`keyword_source` above.
+enum seo_keyword_confidence {
+  high
+  medium
+  low
+  estimate
+}
+
+enum seo_provider_source {
+  null_provider
+  search_console
+  dataforseo
+  semrush
+  ahrefs
+  serper
+  // Not a "provider" in the `SEODataProvider` interface sense — added so a
+  // human manually adding a single keyword (the epic's literal "keywords:
+  // CRUD" requirement, distinct from the "generate from brand profile"
+  // action) has a value to write here at all. Same precedent as the legacy
+  // `keyword_source` enum immediately above, which already mixes real
+  // providers with `manual`/`csv_import` for the identical reason.
+  manual
+}
+
+enum seo_analysis_type {
+  technical
+  content
 }
 
 // Epic 1 (CRM) additions — see leads model.

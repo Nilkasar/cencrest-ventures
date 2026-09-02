@@ -97,6 +97,33 @@ describe('resolvePlanLimits', () => {
       expect(result.limits.queries_per_query_set).toBeNull();
     },
   );
+
+  // Epic 7 (AI Visibility Engine) — docs/16-billing/BILLING_ARCHITECTURE.md's
+  // "Plan Limits" JSON example, transcribed verbatim.
+  it.each([
+    ['free', 50],
+    ['starter', 500],
+    ['growth', 2000],
+    ['pro', 10000],
+    ['agency', 50000],
+  ])('resolves %s to an ai_queries_per_month limit of %d', async (plan, limit) => {
+    db.subscriptions.findUnique.mockResolvedValue({ plan });
+    const { resolvePlanLimits } = await import('./entitlements.js');
+
+    const result = await resolvePlanLimits('org-1');
+    expect(result.limits.ai_queries_per_month).toBe(limit);
+  });
+
+  it.each(['managed', 'enterprise'])(
+    '%s tier is unlimited (null) for ai_queries_per_month — no documented number',
+    async (plan) => {
+      db.subscriptions.findUnique.mockResolvedValue({ plan });
+      const { resolvePlanLimits } = await import('./entitlements.js');
+
+      const result = await resolvePlanLimits('org-1');
+      expect(result.limits.ai_queries_per_month).toBeNull();
+    },
+  );
 });
 
 describe('checkUsageLimit', () => {

@@ -41,6 +41,13 @@ export interface PlanLimits {
   // a free-tier generate produces the richest sample the tier allows, same
   // as every other tier reading as "up to N," not "as low as N."
   queries_per_query_set: number | null;
+  // Epic 7 (AI Visibility Engine) addition. docs/16-billing/BILLING_ARCHITECTURE.md's
+  // "Plan Limits" JSON example gives this per-tier, CUMULATIVE PER CALENDAR
+  // MONTH (unlike `queries_per_query_set`, which is per-generated-set) —
+  // "how many (query x provider) AI Visibility jobs this org may run this
+  // month," checked at `POST /brands/:id/ai-runs` PREPARE time, BEFORE any
+  // provider is called (see routes/ai-runs.ts).
+  ai_queries_per_month: number | null;
 }
 
 // Mirrors docs/16-billing/BILLING_ARCHITECTURE.md's "Plan Limits" JSON
@@ -48,10 +55,13 @@ export interface PlanLimits {
 // (and to `PlanLimits` above) the next time a plan-limited resource ships —
 // do NOT duplicate this map or write a parallel one elsewhere.
 const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
-  free: { competitors_tracked: 2, queries_per_query_set: 50 },
-  starter: { competitors_tracked: 5, queries_per_query_set: 200 },
-  growth: { competitors_tracked: 10, queries_per_query_set: 500 },
-  pro: { competitors_tracked: 20, queries_per_query_set: 1400 },
+  // ai_queries_per_month values transcribed verbatim from
+  // BILLING_ARCHITECTURE.md's "Plan Limits" JSON example (free/starter/
+  // growth/pro/agency all have an explicit number there).
+  free: { competitors_tracked: 2, queries_per_query_set: 50, ai_queries_per_month: 50 },
+  starter: { competitors_tracked: 5, queries_per_query_set: 200, ai_queries_per_month: 500 },
+  growth: { competitors_tracked: 10, queries_per_query_set: 500, ai_queries_per_month: 2000 },
+  pro: { competitors_tracked: 20, queries_per_query_set: 1400, ai_queries_per_month: 10000 },
   // "Agency: per-client" per the epic spec — that's a multi-client
   // entitlement model (Epic 18: agency_clients), not a flat cap on the
   // agency org itself, so there is no single number to enforce here yet.
@@ -59,8 +69,11 @@ const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   // the per-client shape; it is NOT a claim that agency tracking is
   // actually unbounded in the product. GEO_ENGINE.md's query-universe-size
   // table has no `agency` row either, so `queries_per_query_set` gets the
-  // same documented placeholder.
-  agency: { competitors_tracked: null, queries_per_query_set: null },
+  // same documented placeholder. `ai_queries_per_month` is the one
+  // exception on this row: BILLING_ARCHITECTURE.md's JSON DOES give agency
+  // an explicit number (50000, "per-client" pooled at the agency-org
+  // level), so that real number is used instead of `null`.
+  agency: { competitors_tracked: null, queries_per_query_set: null, ai_queries_per_month: 50000 },
   // `managed` ("Enterprise lite — human + AI service hybrid") and
   // `enterprise` ("Custom SLAs + dedicated support") are both in
   // BILLING_ARCHITECTURE.md's plan list but have no limits example in that
@@ -71,8 +84,10 @@ const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   // explicitly gives it a documented floor ("Custom (5,000+)"), so 5000 is
   // used instead of `null` — a real number, not unlimited, but flagged here
   // as a floor a real Epic 16 `plans` row would override, not a hard cap.
-  managed: { competitors_tracked: null, queries_per_query_set: null },
-  enterprise: { competitors_tracked: null, queries_per_query_set: 5000 },
+  // `ai_queries_per_month` has no such documented floor for either tier, so
+  // both stay `null`.
+  managed: { competitors_tracked: null, queries_per_query_set: null, ai_queries_per_month: null },
+  enterprise: { competitors_tracked: null, queries_per_query_set: 5000, ai_queries_per_month: null },
 };
 
 const DEFAULT_PLAN: PlanTier = 'free';

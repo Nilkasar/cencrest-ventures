@@ -841,3 +841,271 @@ fixes" section for both.
 
 As with every other section: `prisma validate`/`generate` only — nothing
 applied to a database.
+
+---
+
+## 19. Epic 7 (AI Visibility Engine / GEO core) schema additions
+
+`docs/epics/07-ai-visibility-engine.md`'s domain model points at
+`docs/06-database/SCHEMA.md` §3 and calls for three brand-new tables:
+`ai_runs`, `ai_responses`, `brand_observations`. The first and third are
+genuinely new (added below). The second is where this epic hit a real
+naming collision, not a naming quibble:
+
+**`ai_responses` was already taken.** The ported schema (Epic 0) already
+has a `model ai_responses` — the legacy `questions -> prompt_jobs ->
+ai_responses` pipeline, FK'd from `citations` and `mention_extractions`
+(`onDelete: Cascade` from `ai_responses` on both) and itself FK'd to
+`prompt_jobs`/`buyer_journeys`. That table is explicitly NOT this epic's
+table: this epic's own spec text says so directly ("it defines brand-new
+`ai_runs`/`ai_responses` tables (not the legacy `runs`/`responses`)"), but
+the literal name it then uses for its own table is the one name already in
+use. Same situation, same resolution, as Epic 2's `entities`/
+`brand_entities` split (§12/§13) and Epic 5's `queries` vs
+`questions`/`query_set_questions` split (§16): the OLD table is left
+completely untouched — it is still load-bearing for `citations`/
+`mention_extractions`' own FKs, and nothing in this epic reads or writes it
+— and THIS epic's per-(query x provider) response table gets a
+disambiguating name instead: **`ai_run_responses`**. Every route, service,
+and doc this epic's backend writes uses that name; see
+`platform/docs/epics/07-ai-visibility-engine-backend.md` for the full API
+surface built on top of it.
+
+**Table shapes**, all following the standard hardening rules (`organization_id`
++ `brand_id` denormalized, RLS FORCEd, indexed):
+
+- **`ai_runs`** — one execution of a query_set across a set of providers.
+  `providers String[]` snapshots the resolved provider name list at PREPARE
+  time (never re-read from the routing table later, so a historical run's
+  claim about what it queried can't silently drift if the routing table
+  changes). `status` is `queued | running | completed | failed` — the same
+  VARCHAR+CHECK pattern as `crawl_jobs.status` (§17), not a native enum,
+  consistent with §6's rule for closed-but-evolving vocabularies. The four
+  formula v1.0 components (`mention_score`/`recommendation_score`/
+  `position_score`/`coverage_score`) are stored as their own columns
+  alongside the composite `ai_visibility_score`, not just the composite —
+  this is what lets `GET /ai-runs/:id/score` return a breakdown that
+  *provably* sums to the stored total under the stated weights (the epic's
+  evidence-traceability requirement) by reading back the exact numbers that
+  produced it, rather than recomputing from raw observations on every
+  request and hoping the recomputation agrees. `query_sets` FK is
+  `Restrict` (not `Cascade`): a query_set is never hard-deleted in this
+  codebase (archive is a status flag — §16), so this is the same
+  defense-in-depth default every other non-composition FK in this schema
+  uses (§5), not a claim that the cascade case is actually reachable.
+  `created_by` is required + `Restrict` (triggering a run is a human
+  action, same as `crawl_jobs.created_by` — §17).
+
+- **`ai_run_responses`** — one (query x provider) execution's result.
+  `raw_response` is written the moment the GEO-query provider call itself
+  succeeds; `extraction_status`/`extraction_error`/`extracted_at` are the
+  ONLY columns a later extraction step ever touches, and only via UPDATE,
+  never by rewriting `raw_response`. This split is what makes "evidence is
+  never lost when extraction fails" a property of the schema and pipeline
+  ordering, not just a promise kept by careful application code — see
+  `platform/docs/epics/07-ai-visibility-engine-backend.md`'s pipeline
+  section for exactly how `apps/api` sequences the two provider calls.
+  `ai_run_id` FK is `Cascade` (true composition child of its run, same rule
+  §5 gives `citations`/`mention_extractions -> ai_responses` on the legacy
+  table); `query_id` FK is `Restrict` (a query outlives any one run's
+  reference to it). `request_id`/token/latency columns are nullable —
+  deliberately, because a response row created from a thrown
+  `ExtractionValidationError` (the `@bebest/ai-provider` error type) only
+  gives back the last raw text, not a full `CompletionResult`, and that
+  case still needs a real row (the raw text IS the evidence being
+  preserved), not a rejected insert.
+
+- **`brand_observations`** — the ADR-004 boundary table: LLMs write this,
+  nothing else, and only deterministic formulas ever read it for scoring.
+  `ai_run_response_id` is `@unique` (1:1 with `ai_run_responses`) so a UI
+  can always walk score -> observation -> the exact single raw response it
+  came from, per `docs/11-geo/GEO_ENGINE.md`'s evidence-trace example.
+  Column set is `docs/12-ai/AI_ARCHITECTURE.md`'s `BrandObservation`
+  interface transcribed field-for-field (snake_case). `extraction_confidence`
+  reuses the Epic 2 `claim_confidence` enum (`high`/`medium`/`low`) instead
+  of adding a second enum with the identical vocabulary — same "don't
+  duplicate a closed vocabulary that already exists under a generic enough
+  name" instinct as every other reuse decision in this document.
+  `brand_sentiment` is deliberately NOT the legacy `sentiment_val` enum:
+  that enum lacks `mixed`, which this epic's spec requires, and widening a
+  shared enum to satisfy one new table risks changing behavior for the
+  unrelated tables (`mention_extractions`) already built against its
+  current three values — a plain VARCHAR+CHECK avoids both problems. No
+  `created_by`/`updated_by`/`deleted_at` on this table: AI-authored,
+  immutable pipeline output, the same "deliberately not added" precedent
+  §3/§4 already established for `mention_extractions`/`citations`.
+
+**CHECK constraints** — `prisma/migrations/0008_ai_visibility_engine/checks.sql`:
+`ai_runs.status`, `ai_run_responses.extraction_status`,
+`brand_observations.brand_sentiment`/`brand_recommendation_strength` (closed
+vocabularies), plus a numeric-range CHECK on
+`brand_observations.brand_first_position` (`0 <= x <= 1`) — this one is a
+real correctness guard, not just documentation, because an out-of-range
+value would silently corrupt the deterministic PositionScore formula
+(`average(1 - first_position) x 100`).
+
+**RLS** — `prisma/migrations/0008_ai_visibility_engine/rls.sql` adds the
+standard `tenant_isolation` policy to all three new tables; nothing about
+the legacy `ai_responses`/`prompt_jobs` tables' own RLS changes.
+
+**Indexing** — `prisma/migrations/0008_ai_visibility_engine/indexes.sql`
+adds one partial index, `idx_ai_runs_queue_pending` (`WHERE status IN
+('queued', 'running')`), mirroring `idx_crawl_jobs_queue_pending`'s pattern
+— not expressible in Prisma's `@@index` DSL (§11's recurring reason for a
+hand-written indexes.sql file). Nothing currently polls by it (the pipeline
+runs inline via `setImmediate`, same documented placeholder §17 used for
+the crawler — see the backend doc's "not done" list), but it's here for the
+day a real worker does.
+
+As with every other section: `prisma validate`/`generate` only — nothing
+applied to a database. `apps/api`'s consumption of these three tables (the
+PREPARE/QUEUE/EXECUTE/AGGREGATE pipeline, the AVS formula implementation
+and its unit tests, the four routes) is documented in
+`platform/docs/epics/07-ai-visibility-engine-backend.md`.
+
+## 20. Epic 4 (SEO Intelligence) schema additions
+
+`docs/epics/04-seo-intelligence.md`'s domain model section is explicit that
+`docs/06-database/SCHEMA.md` never gave `keyword_groups`/`keywords`/
+`seo_analyses`/`seo_opportunities` their own `CREATE TABLE` statements the
+way it did for Identity/Brand/GEO/Opportunity/CRM/Billing — "define them
+now." Same "audit against the epic spec, fix forward" discipline §13/§16/
+§17/§19 all used.
+
+**The `keywords` naming collision — resolved the same way §16 resolved
+`queries` vs. the ported `questions`/`query_set_questions` pair.** The
+ported schema already has a `keywords` model — `brand_id`-scoped, column
+named `keyword` (not `text`), no `confidence` field, no `keyword_group_id`
+— built for the not-yet-implemented autonomous SEO agent pipeline
+(`seo_agent_actions.keyword_id -> keywords`, `brand_keyword_rankings`,
+`keyword_clusters`). A grep of `apps/api/src` before writing this section
+confirmed zero route references to any of those four legacy tables, so —
+per §12's "harden, don't redesign" rule — they are left untouched for
+whichever future epic builds that agent; repurposing `keywords` would mean
+either breaking its already-modeled `seo_agent_actions`/
+`brand_keyword_rankings` shape or smuggling a second, incompatible meaning
+onto the same table name. The epic's literal `KeywordData` shape
+(`docs/10-seo/SEO_ENGINE.md`) is implemented as a genuinely new table
+instead, named `seo_keywords` at the Prisma/table level (its API-facing
+resource name is still "keywords" — `routes/seo.ts`'s
+`/keyword-groups/:id/keywords` endpoints — only the underlying table name
+differs from the legacy one to avoid the collision). `keyword_groups` (also
+new) is its one-to-many parent, matching the spec's literal
+`id, organization_id, brand_id, name, created_at, updated_at` field list
+(plus the standard `created_by`/`updated_by`/`deleted_at` hardening
+trio, since a human can both generate AND manually rename/delete a group —
+this is mutable, human-touched brand-child data, not pipeline output).
+
+**Two existing enums are reused as-is** (exact value match — no need to
+duplicate): `keyword_intent` (`informational|navigational|commercial|
+transactional`, already on the legacy `keywords` table) for
+`seo_keywords.intent`, and `opportunity_status` (`new|in_progress|
+completed|dismissed`, already on the legacy `opportunities` table) for
+`seo_opportunities.status` — the API surface's "list, get, dismiss" maps
+directly onto that enum's existing values, and `docs/09-ux/
+CUSTOMER_JOURNEY.md`'s Opportunities screen ("Status: open / in progress /
+complete / dismissed") independently confirms the same four-state
+vocabulary is what the UI needs across BOTH engines, which is exactly the
+point of keeping SEO's opportunity shape close to what Epic 9's unified
+Opportunity Engine will define (the epic spec's own instruction).
+
+**Two genuinely new enums, and why they are not reuses of a same-named-
+looking existing one:**
+- `seo_keyword_confidence` (`high|medium|low|estimate`) — NOT a reuse of
+  `claim_confidence` (`high|medium|low`, no `estimate`). Different concept
+  (a brand claim's evidential confidence vs. a keyword metric's
+  data-quality confidence) that only coincidentally shares three of four
+  values; reusing it would mean either adding `estimate` to a table this
+  epic has nothing to do with, or leaving `seo_keywords` unable to express
+  the one value the epic's end-to-end flow step 2 explicitly requires
+  ("never silently presenting an estimate as a firm number").
+- `seo_provider_source` (`null_provider|search_console|dataforseo|semrush|
+  ahrefs|serper|manual`) — names the concrete `SEODataProvider`
+  implementations (`apps/api/src/lib/seo/seo-data-provider.ts`).
+  `null_provider` is the only one actually wired; `search_console` names
+  the pre-existing, unused `gsc_connections` OAuth-token table as the
+  natural first real provider a future epic would implement;
+  `dataforseo`/`semrush`/`ahrefs`/`serper` are the epic doc's own
+  "Abstracted (Optional Paid Providers)" table, transcribed. `manual` was
+  added (not in the epic doc's provider list, since a human isn't a
+  "provider") so the spec's own "keywords: CRUD" requirement — a human
+  manually adding one keyword, distinct from the generate action — has a
+  value to write here at all; same precedent as the legacy `keyword_source`
+  enum, which already mixes real providers with `manual`/`csv_import` for
+  the identical reason. Closed enum, not the open-VARCHAR treatment
+  `queries.category` got, because this is a fixed, code-defined set of
+  integrations, not an open user-facing taxonomy.
+
+**`seo_analyses`** — `id, organization_id, brand_id, page_id (nullable, ->
+pages), analysis_type (technical|content), score, findings (JSONB),
+analyzed_at`, matching the spec's literal field list exactly. New enum
+`seo_analysis_type` (`technical|content`) — a genuinely closed, two-value
+vocabulary. No `deleted_at`/`created_by`/`updated_by` — append-only pipeline
+output (§3/§4's "immutable pipeline output" rule), same treatment as the
+already-ported `analyses`/`content_analyses` tables. `page_id` is `SetNull`
+on delete (not `Cascade`) — unlike `page_issues -> pages` (a true
+composition child, §5), an analysis ROW documenting a point-in-time score
+has independent historical meaning even if the specific page row it was
+computed against is later hard-deleted; losing the specific-page
+attribution is acceptable, losing the score history is not.
+
+**`seo_opportunities`** — matches the spec's literal field list
+(`id, organization_id, brand_id, keyword_id (nullable), title,
+opportunity_type, value_score, effort_score, opportunity_score,
+scoring_formula_version, status`), plus `evidence` (JSONB) and
+`updated_by` — both taken from the EXISTING `opportunities` table's own
+shape (the epic spec's explicit instruction: "keep the shape close to the
+opportunities table Epic 9 will define... so the merge is mechanical, not a
+redesign"). `updated_by` follows §4's "status changes — dismiss/snooze/
+acknowledge — are human actions" rule already applied to the legacy
+`opportunities`/`gap_analysis` tables. `evidence` holds the formula's four
+raw inputs (`demandScore`, `currentCoverage`, `contentComplexity`,
+`technicalDifficulty`) — NOT their own columns, because nothing outside
+this JSON blob needs to query on them independently, and the UI surface's
+"each opportunity shows its evidence... not just a bare number" requirement
+is exactly what a legacy `opportunities.evidence`-shaped JSONB blob is for.
+`opportunity_type` stays an open, unconstrained `VARCHAR` rather than an
+enum — the spec's own literal list ends in "..." (`service_page |
+comparison_page | use_case_page | faq_page | ...`), an explicit signal this
+is meant to be extensible, same "deliberately not constrained" treatment
+§6 and the `queries.category` precedent (§16) give every other open-ended
+classification column in this schema.
+
+**`issue_type` gains two new values** (`not_https`, `missing_schema`) —
+purely additive, existing values/ordinal positions unchanged. The Page
+Analysis Checklist's "Technical: HTTPS" and "Schema" sections have no
+existing representation: Epic 3's crawler (verified by reading
+`lib/crawler/engine.ts` before adding these, per the task's "do not guess"
+instruction) already derives every OTHER checklist violation as a
+`page_issues` row at crawl time (`missing_title`, `title_too_long`,
+`duplicate_title`, `missing_meta`, `meta_too_long`, `missing_h1`,
+`missing_canonical`, `thin_content`, `noindex`, `missing_alt`,
+`broken_link`) but never checks HTTPS or schema.org markup. Safe to widen
+even though Epic 3 is otherwise DONE/committed, because this schema has
+never been applied to any database — see
+`apps/api/src/lib/seo/technical-checklist.ts` for where these two values
+are produced and its header comment for the full checklist-coverage
+accounting (including which checklist items are NOT implementable from
+data `pages` actually stores, and why).
+
+**RLS** — `prisma/migrations/0007_seo_intelligence/rls.sql` adds the
+standard `tenant_isolation` policy to all four new tables (unlike Epic 3's
+migration, none of the four inherit a policy from an earlier migration —
+every one of them is genuinely new, so there is no "already had it from
+0000_init" case here). **CHECK constraints** —
+`prisma/migrations/0007_seo_intelligence/checks.sql`: the same
+non-negative/0-100-range pair the legacy `keywords` table already has, now
+on `seo_keywords.monthly_volume`/`difficulty`; a 0-100 range check on
+`seo_analyses.score` and all three `seo_opportunities` formula-output
+columns (the formula's own "normalized to 0-100" instruction, enforced at
+the DB layer too, not just in application code); a non-empty check on
+`scoring_formula_version` (so a future v1.1/v2.0 stays introducible without
+a schema migration to widen a closed `IN (...)` list).
+`seo_opportunities.opportunity_type` deliberately gets no CHECK — see
+its own paragraph above.
+
+As with every other section: `prisma validate`/`generate` only — nothing
+applied to a database. `apps/api`'s consumption of these four tables (the
+`SEODataProvider` abstraction, the technical/content checklist, the
+opportunity-scoring formula and its unit tests, the routes) is documented
+in `platform/docs/epics/04-seo-intelligence-backend.md`.

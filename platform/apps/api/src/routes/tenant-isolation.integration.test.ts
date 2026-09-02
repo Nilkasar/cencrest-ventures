@@ -293,3 +293,105 @@ describe.skip('Epic 3 tenant isolation — crawl_jobs / pages / page_issues / si
       'brand must never block or be visible to Org A\'s trigger attempt',
   );
 });
+
+/**
+ * Epic 4 (SEO Intelligence) — `keyword_groups`, `seo_keywords`,
+ * `seo_analyses`, `seo_opportunities`. Same NEEDS LIVE DB constraint as
+ * every block above. All four tables are genuinely new (see
+ * @bebest/database prisma/migrations/0007_seo_intelligence/rls.sql and
+ * DECISIONS.md's Epic 4 section) — each gets its own fresh
+ * `tenant_isolation` policy rather than inheriting one from an earlier
+ * migration, so there is no "which of these already had RLS" nuance the way
+ * Epic 3's block above has for `crawl_jobs`/`pages`/`page_issues`.
+ */
+describe.skip('Epic 4 tenant isolation — keyword_groups / seo_keywords / seo_analyses / seo_opportunities (NEEDS LIVE DB)', () => {
+  it.todo(
+    'a user in Org A gets zero rows from GET /brands/me/seo/keyword-groups for Org B\'s keyword ' +
+      'groups, even when both orgs generated a group from an identical brand profile',
+  );
+
+  it.todo(
+    'a user in Org A gets zero rows from GET /brands/me/seo/keyword-groups/:id/keywords for a ' +
+      'group id that belongs to Org B, even when given the id directly (getKeywordGroup\'s ' +
+      'findFirst is scoped by organization_id AND brand_id, not id alone)',
+  );
+
+  it.todo(
+    'inserting a keyword_groups, seo_keywords, seo_analyses, or seo_opportunities row with ' +
+      'organization_id set to a foreign org is rejected by WITH CHECK — covers POST ' +
+      '/seo/keyword-groups/generate\'s nested keyword_groups.create + seo_keywords.createMany + ' +
+      'seo_opportunities.create writes, and POST /seo/analyze\'s seo_analyses.create writes',
+  );
+
+  it.todo(
+    'withOrgContext(orgA, ...) never returns Org B\'s seo_analyses rows even for a brand-level ' +
+      'row with page_id NULL (analysis_type = \'content\') — the denormalized organization_id ' +
+      'column is what RLS filters on, not a join through a specific page',
+  );
+
+  it.todo(
+    'GET /brands/me/seo/opportunities for Org A never returns an opportunity scored from Org ' +
+      'B\'s keyword data, even when both orgs\' generated keyword lists happen to contain the ' +
+      'exact same keyword text (seo_keywords has no cross-org uniqueness — text collisions across ' +
+      'tenants must never cause a cross-tenant read via keyword_id)',
+  );
+
+  it.todo(
+    'a user in Org A cannot PATCH (rename), DELETE, or dismiss a keyword_groups, seo_keywords, ' +
+      'or seo_opportunities row that belongs to Org B via its id, even when given the id directly',
+  );
+});
+
+/**
+ * Epic 7 (AI Visibility Engine / GEO core) — `ai_runs`, `ai_run_responses`,
+ * `brand_observations`. Same NEEDS LIVE DB constraint as every block above.
+ * All three tables are genuinely new (see @bebest/database
+ * prisma/migrations/0008_ai_visibility_engine/rls.sql and DECISIONS.md's
+ * Epic 7 section) — each gets its own fresh `tenant_isolation` policy, same
+ * as Epic 4's block above, so there is no "which of these already had RLS"
+ * nuance to prove. What IS specific to this epic, per
+ * docs/epics/07-ai-visibility-engine.md's end-to-end flow step 7, is that
+ * the background pipeline (`lib/ai-visibility/pipeline.ts`) — not a route
+ * handler — is what makes most of the writes here (every `ai_run_responses`
+ * and `brand_observations` row), so the WITH CHECK proof below needs to
+ * exercise that path, not just the route's own `ai_runs.create`.
+ */
+describe.skip('Epic 7 tenant isolation — ai_runs / ai_run_responses / brand_observations (NEEDS LIVE DB)', () => {
+  it.todo(
+    'a user in Org A gets zero rows from GET /brands/me/ai-runs for Org B\'s runs, even when both ' +
+      'orgs ran an identical query_set against an identical brand profile',
+  );
+
+  it.todo(
+    'a user in Org A gets a 404 (never a 403 that confirms existence) from GET /ai-runs/:id, ' +
+      '/ai-runs/:id/score, and /ai-runs/:id/responses for a run id that belongs to Org B, even ' +
+      'when given the id directly',
+  );
+
+  it.todo(
+    'inserting an ai_runs row with organization_id set to a foreign org is rejected by WITH ' +
+      'CHECK — covers POST /brands/me/ai-runs\'s ai_runs.create',
+  );
+
+  it.todo(
+    'the background pipeline (lib/ai-visibility/pipeline.ts, run via setImmediate against a real ' +
+      'ai_runs row) writing ai_run_responses and brand_observations rows for Org A\'s run can ' +
+      'never be redirected into writing rows tagged with Org B\'s organization_id, even if the two ' +
+      'runs are executing concurrently against the same process (withOrgContext\'s transaction-' +
+      'local set_config must not leak between the two concurrent transactions)',
+  );
+
+  it.todo(
+    'withOrgContext(orgA, ...) never returns Org B\'s ai_run_responses/brand_observations rows ' +
+      'even though both are reachable only via a JOIN through ai_runs -> brands -> organizations, ' +
+      'not a direct organizations FK — the denormalized organization_id column on both tables is ' +
+      'what RLS actually filters on, same proof Epic 3\'s pages/page_issues block above establishes',
+  );
+
+  it.todo(
+    'checkUsageLimit-style capping in POST /brands/me/ai-runs (ai_queries_per_month) — ' +
+      'countAiQueriesThisMonth(orgA) sums ONLY Org A\'s ai_runs.total_jobs for the current month; ' +
+      'Org B running a large AI Visibility run in the same month must never count against Org A\'s ' +
+      'monthly limit or vice versa',
+  );
+});

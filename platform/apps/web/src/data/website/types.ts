@@ -83,7 +83,17 @@ export type IssueType =
   | "title_too_long"
   | "meta_too_long"
   | "thin_content"
-  | "noindex";
+  | "noindex"
+  // Epic 4 (SEO Intelligence) additive values — `issue_type` gained these
+  // two when `POST /brands/me/seo/analyze` shipped (see
+  // `packages/database/DECISIONS.md` §20 and
+  // `apps/api/src/lib/seo/technical-checklist.ts`). A page analyzed by that
+  // route can carry either as a real `page_issues` row returned right here
+  // from `GET /brands/me/pages` — this screen (and Epic 4's own technical
+  // health drill-down) both need a real label for them, not the raw enum
+  // string.
+  | "not_https"
+  | "missing_schema";
 
 export interface PageIssue {
   id: string;

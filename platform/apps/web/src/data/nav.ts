@@ -38,9 +38,9 @@ export const navGroups: NavGroup[] = [
     label: "Intelligence",
     items: [
       { href: "/query-universe", label: "Query Universe", icon: ListTree },
-      { href: "/ai-visibility", label: "AI Visibility", icon: Radar, epic: 7 },
+      { href: "/ai-visibility", label: "AI Visibility", icon: Radar },
       { href: "/website-intelligence", label: "Website Intelligence", icon: Globe },
-      { href: "/seo-intelligence", label: "SEO Intelligence", icon: Search, epic: 4 },
+      { href: "/seo-intelligence", label: "SEO Intelligence", icon: Search },
       { href: "/competitors", label: "Competitors", icon: Users, epic: 8 },
       { href: "/opportunities", label: "Opportunities", icon: Target, epic: 9 },
     ],

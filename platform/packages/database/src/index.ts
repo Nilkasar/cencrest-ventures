@@ -48,4 +48,18 @@ export {
   type crawl_status,
   type issue_type,
   type issue_severity,
+  // Epic 4 (SEO Intelligence)
+  type keyword_groups,
+  type seo_keywords,
+  type seo_analyses,
+  type seo_opportunities,
+  type keyword_intent,
+  type seo_keyword_confidence,
+  type seo_provider_source,
+  type seo_analysis_type,
+  type opportunity_status,
+  // Epic 7 (AI Visibility Engine)
+  type ai_runs,
+  type ai_run_responses,
+  type brand_observations,
 } from './client.js';

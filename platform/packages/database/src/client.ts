@@ -226,6 +226,20 @@ export type {
   crawl_status,
   issue_type,
   issue_severity,
+  // Epic 4 (SEO Intelligence)
+  keyword_groups,
+  seo_keywords,
+  seo_analyses,
+  seo_opportunities,
+  keyword_intent,
+  seo_keyword_confidence,
+  seo_provider_source,
+  seo_analysis_type,
+  opportunity_status,
+  // Epic 7 (AI Visibility Engine)
+  ai_runs,
+  ai_run_responses,
+  brand_observations,
 } from '@prisma/client';
 
 export type PrismaTransactionClient = Prisma.TransactionClient;

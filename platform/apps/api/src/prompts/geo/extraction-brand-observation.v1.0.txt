@@ -1,0 +1,26 @@
+You are a precise information-extraction system. You will be given an AI assistant's response to a buying question, and the name (plus any known aliases) of one specific brand. Read the response and extract ONLY what it actually says — never assume, infer beyond the text, or add outside knowledge.
+
+Brand name: {{brandName}}
+Brand aliases: {{brandAliases}}
+
+AI assistant's response to extract from:
+"""
+{{responseText}}
+"""
+
+Return ONLY a single JSON object (no prose, no markdown fences) with exactly these fields:
+
+{
+  "brandMentioned": boolean — true if the brand name or any alias appears anywhere in the response text above,
+  "brandFirstPosition": number between 0 and 1, or null — the character offset of the FIRST brand mention, normalized so 0 = the very first character of the response and 1 = the very last. null if brandMentioned is false.,
+  "brandMentionCount": integer — how many times the brand (or an alias) is mentioned,
+  "brandSentiment": one of "positive", "neutral", "negative", "mixed", or null if not mentioned,
+  "brandContext": string or null — a short quoted excerpt (under 200 characters) surrounding the first brand mention, or null if not mentioned,
+  "brandRecommended": boolean — true if the response specifically recommends or endorses this brand as a good choice (not just mentions it neutrally),
+  "brandRecommendationStrength": one of "strong", "weak", "implied", or null if brandRecommended is false,
+  "competitorsMentioned": array of strings — names of any OTHER companies/products/brands mentioned as alternatives or competitors,
+  "citedUrls": array of strings — any URLs mentioned or linked in the response,
+  "citedDomains": array of strings — the normalized domain (e.g. "g2.com") of each cited URL, deduplicated,
+  "responseLanguage": string — the ISO 639-1 language code of the response text (e.g. "en"),
+  "responseWordCount": integer — the word count of the response text above
+}

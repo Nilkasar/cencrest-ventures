@@ -40,4 +40,8 @@ export const ISSUE_TYPE_LABEL: Record<IssueType, string> = {
   meta_too_long: "Meta description too long",
   thin_content: "Thin content",
   noindex: "Page marked noindex",
+  // Epic 4's two additive `issue_type` values — see `types.ts`'s `IssueType`
+  // comment for why they can legitimately appear here.
+  not_https: "Not served over HTTPS",
+  missing_schema: "Missing schema markup",
 };

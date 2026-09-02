@@ -20,6 +20,9 @@ import querySets from './routes/query-sets.js';
 import crawl from './routes/crawl.js';
 import crawlJobs from './routes/crawl-jobs.js';
 import pages from './routes/pages.js';
+import seo from './routes/seo.js';
+import aiRuns from './routes/ai-runs.js';
+import aiRunDetails from './routes/ai-run-details.js';
 import { ConsoleEmailSender } from './lib/email.js';
 import type { AppEnv } from './types/context.js';
 
@@ -101,6 +104,24 @@ app.route('/api/brands/me/query-sets', querySets);
 app.route('/api/brands/me/crawl', crawl);
 app.route('/api/crawl-jobs', crawlJobs);
 app.route('/api/brands/me/pages', pages);
+
+// Epic 4 — SEO Intelligence. Same single-brand-per-org convention as every
+// Epic 2+ route above: docs/epics/04-seo-intelligence.md's literal
+// `/brands/:id/seo/...` is adapted to `/brands/me/seo/...`. Reads Epic 3's
+// `pages`/`page_issues` (POST /analyze) and Epic 2's `use_cases`/
+// `brands.categories` (POST /keyword-groups/generate) — no new tables of
+// its own beyond `keyword_groups`/`seo_keywords`/`seo_analyses`/
+// `seo_opportunities`, see @bebest/database DECISIONS.md's Epic 4 section.
+app.route('/api/brands/me/seo', seo);
+
+// Epic 7 — AI Visibility Engine (GEO core). Same single-brand-per-org
+// convention as every Epic 2+ route above: docs/epics/07-ai-visibility-
+// engine.md's literal `/brands/:id/ai-runs` is adapted to
+// `/brands/me/ai-runs`, same as Epic 3's crawl/pages. `/api/ai-runs/:id`
+// (+ `/score`, `/responses`) matches the spec exactly — an ai_runs row is
+// addressed by its own id, not a brand's, same as `/api/crawl-jobs/:id`.
+app.route('/api/brands/me/ai-runs', aiRuns);
+app.route('/api/ai-runs', aiRunDetails);
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 
