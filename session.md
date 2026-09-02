@@ -278,6 +278,18 @@ From Wave 3 onward, **backend builds first, then frontend wires directly against
 1. Epic 3: wire `data/website/client.ts` to the real crawl/pages routes, fix the 4 enum/field mismatches, replace the fake 26-second progress timer with real polling of the backend's actual incremental counters.
 2. Epic 5: wire `data/query-universe/client.ts` to the real query-sets routes, reconcile the contract (deliberately, per-field — add to backend if load-bearing for the UI, drop from frontend if not), fix the single-active-set bug, fix the entitlement-bypass bug.
 
+### Wave 2 fixes landed (commit `74b3b93`) — Epics 3 and 5 now VERIFIED
+
+Both fixes spot-checked directly in code (not just the fix agents' claims): Epic 5's single-active-query-set fix confirmed as one `withOrgContext` transaction (`updateMany` archiving every other active set for the brand, then activating the target — no window where two could be active). Epic 3's frontend now polls the real crawl-job counters instead of a fake timer. One small, honestly-flagged residual gap: Epic 3 has no `GET /brands/me/crawl-jobs` list route yet, so cross-session crawl history relies on a local job-id pointer list rather than a real list endpoint — left as a known minor gap, not silently hidden.
+
+Notably, the Epic 5 fix agent caught that this repo's root `CLAUDE.md` (written for the old marketing-site project) has an "auto-commit/push/deploy" instruction, recognized it conflicted with this specific task's explicit "no git commands" constraint, and correctly followed the task instruction instead of the CLAUDE.md default — good instruction-precedence judgment worth noting.
+
+Epics 0, 1, 2, 3, 5, 6 are now all `VERIFIED` in `platform/EPICS.md`.
+
+### Wave 3 — next up
+
+Epic 4 (SEO Intelligence, needs Epic 2+3 — both done) and Epic 7 (AI Visibility Engine, needs Epic 5+6 — both done) build next, in parallel with each other, each now using the new backend-first-then-frontend process (see `platform/EPICS.md`'s second standing rule) instead of the parallel-fixture approach that caused three straight rounds of rework.
+
 ### Open items for next session
-- Confirm the Wave 2 fix results.
-- Epic 4 (SEO Intelligence, needs Epic 2+3) and Epic 7 (AI Visibility Engine, needs Epic 5+6) are next once Wave 2's fixes land — build these with the new backend-first-then-frontend process.
+- Confirm Wave 3's results once it completes.
+- Consider whether Epic 3's missing crawl-jobs list endpoint should be patched in as a small follow-up before Epic 4 (SEO Intelligence) builds on top of crawled-page data, or left for later — not blocking, since Epic 4 reads pages/page_issues directly, not the crawl-job list.
