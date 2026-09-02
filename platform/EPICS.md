@@ -24,7 +24,7 @@ Status values: `PLANNED` → `SPEC READY` → `IN PROGRESS` → `BUILT (migratio
 | 13 | Action Center & Controlled Publishing | actions table, approval workflow, rollback | — | PLANNED |
 | 14 | Measurement & Learning Loop | Re-measurement, before/after attribution | — | PLANNED |
 | 15 | Reporting & Notifications | Weekly/monthly digests, in-app + email notifications | — | PLANNED |
-| 16 | Billing | Plans, subscriptions, entitlements, Stripe adapter | — | PLANNED |
+| 16 | Billing | Plans, subscriptions, entitlements, Stripe adapter | [16-billing.md](docs/epics/16-billing.md) | SPEC READY |
 | 17 | Free AI + SEO Snapshot | Public snapshot flow (feeds CRM leads) | — | PLANNED |
 | 18 | Agency / White Label / Integrations | Multi-client, white-label, Search Console etc. | — | PLANNED |
 | 19 | Production Hardening | Observability, rate-limit durability, load testing | — | PLANNED |

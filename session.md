@@ -290,6 +290,14 @@ Epics 0, 1, 2, 3, 5, 6 are now all `VERIFIED` in `platform/EPICS.md`.
 
 Epic 4 (SEO Intelligence, needs Epic 2+3 — both done) and Epic 7 (AI Visibility Engine, needs Epic 5+6 — both done) build next, in parallel with each other, each now using the new backend-first-then-frontend process (see `platform/EPICS.md`'s second standing rule) instead of the parallel-fixture approach that caused three straight rounds of rework.
 
-### Open items for next session
-- Confirm Wave 3's results once it completes.
-- Consider whether Epic 3's missing crawl-jobs list endpoint should be patched in as a small follow-up before Epic 4 (SEO Intelligence) builds on top of crawled-page data, or left for later — not blocking, since Epic 4 reads pages/page_issues directly, not the crawl-job list.
+### Wave 3 results (commit `f149fd9`) — process fix confirmed working
+
+Both Epic 4 (SEO Intelligence) and Epic 7 (AI Visibility Engine) came back `production-ready` from qa-flow-tester on the FIRST pass — zero wiring gaps, versus 3 consecutive rounds of rework under the old parallel-fixture approach. Confirms the backend-first-then-frontend-wires-to-real-API standing rule (added after Wave 2) actually fixes the root cause rather than just the symptom.
+
+Highlights: Epic 7's pipeline was verified to always persist the raw AI response before attempting extraction (evidence never lost even if extraction fails) and to always fan out GEO queries to all 4 real cloud providers, never silently defaulting to Ollama (spot-checked directly in `@bebest/ai-provider`'s `DEFAULT_TASK_DEFAULTS` myself). Epic 7's frontend delivers the full evidence drill-down the spec demands: score → formula components → observation → raw AI response text, not a bare number. Epic 4's opportunity list is server-sorted with zero client-side re-sort, matching the DB's own ordering. Both epics correctly disclosed their honest scope boundaries (no real paid SEO provider yet, no durable queue, no entitlement gating on SEO since none is documented) rather than hiding them.
+
+Epics 0, 1, 2, 3, 4, 5, 6, 7 are now all `VERIFIED` in `platform/EPICS.md`.
+
+### Wave 4 — next up
+
+Epic 8 (Competitive Intelligence, needs Epic 7 — done) is the next dependency-unblocked item on the specced roadmap. Also starting Epic 16 (Billing) in parallel since it only depends on Epic 0 (done) and is fully independent of the SEO/GEO pipeline — writing its spec now to keep both build tracks fed.
