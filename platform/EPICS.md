@@ -9,7 +9,7 @@ Status values: `PLANNED` → `SPEC READY` → `IN PROGRESS` → `BUILT (migratio
 | # | Epic | Domain | Spec | Status |
 |---|---|---|---|---|
 | 0 | Monorepo & Platform Foundation | Scaffold, schema audit, auth, orgs, RBAC, multi-tenancy, audit logging | [00-backend](docs/epics/00-platform-foundation-backend.md) / [00-frontend](docs/epics/00-platform-foundation-frontend.md) | BUILT (migration pending) |
-| 1 | CRM | Leads, Contacts, Accounts, Deals, Activities, pipeline UI | [01-crm.md](docs/epics/01-crm.md) | SPEC READY |
+| 1 | CRM | Leads, Contacts, Accounts, Deals, Activities, pipeline UI | [spec](docs/epics/01-crm.md) / [backend](docs/epics/01-crm-backend.md) | BUILT (migration pending) — backend only, frontend not started |
 | 2 | Brand Intelligence | Brands, competitors, entities, use cases, brand claims | [spec](docs/epics/02-brand-intelligence.md) / [backend](docs/epics/02-brand-intelligence-backend.md) | BUILT (migration pending) — backend only, frontend not started |
 | 3 | Website Intelligence (Crawler) | Crawl jobs, pages, page issues, sitemaps, SSRF-safe fetch | [03-website-intelligence.md](docs/epics/03-website-intelligence.md) | SPEC READY |
 | 4 | SEO Intelligence | Keywords, keyword groups, SEO analyses, opportunities | [04-seo-intelligence.md](docs/epics/04-seo-intelligence.md) | SPEC READY |
@@ -18,8 +18,8 @@ Status values: `PLANNED` → `SPEC READY` → `IN PROGRESS` → `BUILT (migratio
 | 7 | AI Visibility Engine (GEO core) | AI runs, ai_responses, brand_observations, AVS formula v1.0 | [07-ai-visibility-engine.md](docs/epics/07-ai-visibility-engine.md) | SPEC READY |
 | 8 | Competitive Intelligence | Competitor runs/observations, share-of-voice, gap analysis | [08-competitive-intelligence.md](docs/epics/08-competitive-intelligence.md) | SPEC READY |
 | 9 | Opportunity Engine | Unified SEO+GEO scoring, opportunity_evidence | [09-opportunity-engine.md](docs/epics/09-opportunity-engine.md) | SPEC READY |
-| 10 | Recommendation Engine | Recommendations, action_type, effort/impact | — | PLANNED |
-| 11 | Content Intelligence & Generation | Content briefs, drafts, approvals, published_content | — | PLANNED |
+| 10 | Recommendation Engine | Recommendations, action_type, effort/impact | [10-recommendation-engine.md](docs/epics/10-recommendation-engine.md) | SPEC READY |
+| 11 | Content Intelligence & Generation | Content briefs, drafts, approvals, published_content | [11-content-intelligence-generation.md](docs/epics/11-content-intelligence-generation.md) | SPEC READY |
 | 12 | GEO Agent + SEO Agent + Growth Agent | Agent runner, event stream, autonomy levels 1-4 gate | — | PLANNED |
 | 13 | Action Center & Controlled Publishing | actions table, approval workflow, rollback | — | PLANNED |
 | 14 | Measurement & Learning Loop | Re-measurement, before/after attribution | — | PLANNED |
