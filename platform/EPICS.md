@@ -4,18 +4,18 @@ Branch: `rebuild/platform`. Monorepo: `platform/` (pnpm workspaces + Turborepo).
 
 Each epic is built **backend + frontend together** (not backend-first-then-frontend), tracked here and mirrored into `session.md` on completion. No database migration is ever executed against a real database as part of this build — migrations are generated and committed as SQL/Prisma migration files only; applying them is the user's own step.
 
-Status values: `PLANNED` → `IN PROGRESS` → `BUILT (migration pending)` → `VERIFIED (qa-flow-tester)`.
+Status values: `PLANNED` → `SPEC READY` → `IN PROGRESS` → `BUILT (migration pending)` → `VERIFIED (qa-flow-tester)`.
 
-| # | Epic | Domain | Status |
-|---|---|---|---|
-| 0 | Monorepo & Platform Foundation | Scaffold, schema audit, auth, orgs, RBAC, multi-tenancy, audit logging | IN PROGRESS |
-| 1 | CRM | Leads, Contacts, Accounts, Deals, Activities, pipeline UI | PLANNED |
-| 2 | Brand Intelligence | Brands, competitors, entities, use cases, brand claims | PLANNED |
-| 3 | Website Intelligence (Crawler) | Crawl jobs, pages, page issues, sitemaps, SSRF-safe fetch | PLANNED |
-| 4 | SEO Intelligence | Keywords, keyword groups, SEO analyses, opportunities | PLANNED |
-| 5 | Intent & Query Universe | Query sets, queries, intent graph | PLANNED |
-| 6 | AI Provider Abstraction | `AIProvider` interface, Ollama/OpenAI/Anthropic/Google/Perplexity adapters, prompt versioning | PLANNED |
-| 7 | AI Visibility Engine (GEO core) | AI runs, ai_responses, brand_observations, AVS formula v1.0 | PLANNED |
+| # | Epic | Domain | Spec | Status |
+|---|---|---|---|---|
+| 0 | Monorepo & Platform Foundation | Scaffold, schema audit, auth, orgs, RBAC, multi-tenancy, audit logging | — | IN PROGRESS |
+| 1 | CRM | Leads, Contacts, Accounts, Deals, Activities, pipeline UI | [01-crm.md](docs/epics/01-crm.md) | SPEC READY |
+| 2 | Brand Intelligence | Brands, competitors, entities, use cases, brand claims | [02-brand-intelligence.md](docs/epics/02-brand-intelligence.md) | SPEC READY |
+| 3 | Website Intelligence (Crawler) | Crawl jobs, pages, page issues, sitemaps, SSRF-safe fetch | [03-website-intelligence.md](docs/epics/03-website-intelligence.md) | SPEC READY |
+| 4 | SEO Intelligence | Keywords, keyword groups, SEO analyses, opportunities | [04-seo-intelligence.md](docs/epics/04-seo-intelligence.md) | SPEC READY |
+| 5 | Intent & Query Universe | Query sets, queries, intent graph | [05-intent-query-universe.md](docs/epics/05-intent-query-universe.md) | SPEC READY |
+| 6 | AI Provider Abstraction | `AIProvider` interface, Ollama/OpenAI/Anthropic/Google/Perplexity adapters, prompt versioning | [06-ai-provider-abstraction.md](docs/epics/06-ai-provider-abstraction.md) | SPEC READY |
+| 7 | AI Visibility Engine (GEO core) | AI runs, ai_responses, brand_observations, AVS formula v1.0 | — | PLANNED |
 | 8 | Competitive Intelligence | Competitor runs/observations, share-of-voice, gap analysis | PLANNED |
 | 9 | Opportunity Engine | Unified SEO+GEO scoring, opportunity_evidence | PLANNED |
 | 10 | Recommendation Engine | Recommendations, action_type, effort/impact | PLANNED |

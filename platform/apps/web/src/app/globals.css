@@ -1,0 +1,36 @@
+/* Relative path rather than the `@bebest/ui/styles.css` package specifier —
+   guarantees resolution regardless of how the Tailwind CSS import resolver
+   handles package.json `exports` across the pnpm workspace symlink. */
+@import "../../../../packages/ui/src/styles/tokens.css";
+
+/* Monorepo: also scan the design-system package's own source for Tailwind
+   classes — it lives outside this app's directory tree so automatic
+   content detection won't find it without this. */
+@source "../../../../packages/ui/src";
+
+/* Bind the token layer's font-family tokens to the actual next/font
+   variables set on <html> in layout.tsx. `@theme inline` is required here
+   because the value references another CSS variable rather than a literal
+   — see https://tailwindcss.com/docs/theme#with-css-variables-in-values */
+@theme inline {
+  --font-display: var(--font-fraunces), "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* App shell layout: content column offsets for the fixed sidebar. */
+.app-content {
+  margin-left: 0;
+}
+@media (min-width: 1024px) {
+  .app-content {
+    margin-left: 264px;
+  }
+}

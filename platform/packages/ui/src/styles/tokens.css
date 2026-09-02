@@ -1,0 +1,408 @@
+/**
+ * @bebest/ui — design tokens
+ * ---------------------------------------------------------------------------
+ * Two layers, on purpose:
+ *
+ *   1. PRIMITIVES (inside @theme)  — the raw palette/type/radius/shadow/motion
+ *      scale. These values never change with the theme; "ink-100" is the same
+ *      swatch in light and dark mode.
+ *
+ *   2. SEMANTIC ALIASES (plain custom properties on :root) — the tokens
+ *      components and app code actually consume (`background`, `foreground`,
+ *      `border`, `accent`...). These are the ones that get reassigned when the
+ *      theme flips. Each alias is fed back into @theme so Tailwind utilities
+ *      (`bg-background`, `text-foreground`, `border-border`, `bg-accent`...)
+ *      stay theme-aware without any component ever branching on `dark:`.
+ *
+ * Theme resolution order (see DESIGN.md "Theming"):
+ *   - Default: follows the OS via `prefers-color-scheme`.
+ *   - Explicit override: `<html data-theme="light">` or `data-theme="dark"`
+ *     (set by the in-app theme toggle, persisted to localStorage).
+ * --------------------------------------------------------------------------- */
+
+@import "tailwindcss";
+
+@theme {
+  /* ── Type families ────────────────────────────────────────────────────
+     Display: Fraunces — a high-contrast serif with a wide optical-size axis.
+     UI/body: Inter — proven at small sizes, real tabular figures for a
+     numbers-dense dashboard.
+     Mono: JetBrains Mono — for scores, IDs, timestamps: anything that reads
+     as "measured", not prose. See DESIGN.md for the full rationale. ---- */
+  --font-display: "Fraunces", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* ── Ink — neutral scale (warm, not clinical-gray) ───────────────────── */
+  --color-ink-0: #ffffff;
+  --color-ink-50: #faf9f6;
+  --color-ink-100: #f4f2ec;
+  --color-ink-150: #ece8de;
+  --color-ink-200: #e2ddd0;
+  --color-ink-300: #cec5b0;
+  --color-ink-400: #a89c81;
+  --color-ink-500: #8a7d63;
+  --color-ink-600: #6c6250;
+  --color-ink-700: #514939;
+  --color-ink-800: #362f26;
+  --color-ink-900: #211c16;
+  --color-ink-950: #16120d;
+  --color-ink-1000: #0d0a07;
+
+  /* ── Verdant — the one considered accent ─────────────────────────────
+     A deep, desaturated botanical green. Reads "growth ledger", not
+     "AI chatbot" — deliberately outside the blue/violet SaaS default. ---- */
+  --color-verdant-50: #eef5f0;
+  --color-verdant-100: #d9e9de;
+  --color-verdant-200: #b2d3bd;
+  --color-verdant-300: #86b899;
+  --color-verdant-400: #5c9c78;
+  --color-verdant-500: #3e7f5c;
+  --color-verdant-600: #2f664a;
+  --color-verdant-700: #26503b;
+  --color-verdant-800: #1d3d2d;
+  --color-verdant-900: #142a1f;
+  --color-verdant-950: #0d1c15;
+
+  /* ── Status — muted, editorial versions of the usual signal colors ──── */
+  --color-success-500: #3d7a4f;
+  --color-success-100: #dcece0;
+  --color-success-900: #16321f;
+  --color-warning-500: #a56a20;
+  --color-warning-100: #f3e6cf;
+  --color-warning-900: #3a2711;
+  --color-danger-500: #a1402f;
+  --color-danger-100: #f2ded9;
+  --color-danger-900: #3a1811;
+  --color-info-500: #47647f;
+  --color-info-100: #dde6ec;
+  --color-info-900: #1c2833;
+
+  /* ── Radius scale ─────────────────────────────────────────────────────
+     Deliberately tight (max 16px on cards) — soft enough to feel humane,
+     restrained enough to keep the "instrument", not "app", read. -------- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-full: 999px;
+
+  /* ── Motion easings (see also src/tokens/motion.ts for JS/Framer use) ─ */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --ease-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ── Semantic aliases fed back into Tailwind's theme ──────────────────
+     This is what makes `bg-background`, `text-foreground`, `bg-accent`,
+     `border-border`, `bg-success-muted text-success` etc. theme-aware. --- */
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-overlay: var(--overlay);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-active: var(--accent-active);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-muted: var(--accent-muted);
+  --color-ring: var(--ring);
+
+  --color-success: var(--success);
+  --color-success-muted: var(--success-muted);
+  --color-warning: var(--warning);
+  --color-warning-muted: var(--warning-muted);
+  --color-danger: var(--danger);
+  --color-danger-muted: var(--danger-muted);
+  --color-info: var(--info);
+  --color-info-muted: var(--info-muted);
+
+  --shadow-xs: var(--elevation-xs);
+  --shadow-sm: var(--elevation-sm);
+  --shadow-md: var(--elevation-md);
+  --shadow-lg: var(--elevation-lg);
+  --shadow-xl: var(--elevation-xl);
+}
+
+/* ── Light theme (default) ───────────────────────────────────────────── */
+:root {
+  --background: var(--color-ink-50);
+  --surface: var(--color-ink-100);
+  --surface-raised: var(--color-ink-0);
+  --overlay: rgb(22 18 13 / 45%);
+  --foreground: var(--color-ink-900);
+  --muted-foreground: var(--color-ink-600);
+  --subtle-foreground: var(--color-ink-500);
+  --border: var(--color-ink-200);
+  --border-strong: var(--color-ink-300);
+
+  --accent: var(--color-verdant-600);
+  --accent-hover: var(--color-verdant-700);
+  --accent-active: var(--color-verdant-800);
+  --accent-foreground: var(--color-ink-0);
+  --accent-muted: var(--color-verdant-50);
+  --ring: var(--color-verdant-500);
+
+  --success: var(--color-success-500);
+  --success-muted: var(--color-success-100);
+  --warning: var(--color-warning-500);
+  --warning-muted: var(--color-warning-100);
+  --danger: var(--color-danger-500);
+  --danger-muted: var(--color-danger-100);
+  --info: var(--color-info-500);
+  --info-muted: var(--color-info-100);
+
+  --shadow-tint: 22 18 13;
+  --elevation-xs: 0 1px 2px rgb(var(--shadow-tint) / 0.05);
+  --elevation-sm: 0 1px 3px rgb(var(--shadow-tint) / 0.08), 0 1px 2px rgb(var(--shadow-tint) / 0.04);
+  --elevation-md: 0 6px 20px rgb(var(--shadow-tint) / 0.08), 0 2px 6px rgb(var(--shadow-tint) / 0.05);
+  --elevation-lg: 0 16px 40px rgb(var(--shadow-tint) / 0.12), 0 4px 12px rgb(var(--shadow-tint) / 0.06);
+  --elevation-xl: 0 28px 64px rgb(var(--shadow-tint) / 0.16), 0 8px 20px rgb(var(--shadow-tint) / 0.08);
+
+  color-scheme: light;
+}
+
+/* ── Dark theme — system preference ──────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --background: var(--color-ink-1000);
+    --surface: var(--color-ink-950);
+    --surface-raised: var(--color-ink-900);
+    --overlay: rgb(0 0 0 / 60%);
+    --foreground: var(--color-ink-50);
+    --muted-foreground: var(--color-ink-400);
+    --subtle-foreground: var(--color-ink-500);
+    --border: var(--color-ink-800);
+    --border-strong: var(--color-ink-700);
+
+    --accent: var(--color-verdant-400);
+    --accent-hover: var(--color-verdant-300);
+    --accent-active: var(--color-verdant-200);
+    --accent-foreground: var(--color-ink-950);
+    --accent-muted: var(--color-verdant-900);
+    --ring: var(--color-verdant-400);
+
+    --success: #6fbf87;
+    --success-muted: var(--color-success-900);
+    --warning: #d6a24f;
+    --warning-muted: var(--color-warning-900);
+    --danger: #d17c69;
+    --danger-muted: var(--color-danger-900);
+    --info: #83a4bd;
+    --info-muted: var(--color-info-900);
+
+    --shadow-tint: 0 0 0;
+    --elevation-xs: 0 1px 2px rgb(var(--shadow-tint) / 0.3);
+    --elevation-sm: 0 1px 3px rgb(var(--shadow-tint) / 0.4), 0 1px 2px rgb(var(--shadow-tint) / 0.3);
+    --elevation-md: 0 6px 20px rgb(var(--shadow-tint) / 0.45), 0 2px 6px rgb(var(--shadow-tint) / 0.3);
+    --elevation-lg: 0 16px 40px rgb(var(--shadow-tint) / 0.5), 0 4px 12px rgb(var(--shadow-tint) / 0.35);
+    --elevation-xl: 0 28px 64px rgb(var(--shadow-tint) / 0.55), 0 8px 20px rgb(var(--shadow-tint) / 0.4);
+
+    color-scheme: dark;
+  }
+}
+
+/* ── Dark theme — explicit override via the in-app toggle ───────────── */
+:root[data-theme="dark"] {
+  --background: var(--color-ink-1000);
+  --surface: var(--color-ink-950);
+  --surface-raised: var(--color-ink-900);
+  --overlay: rgb(0 0 0 / 60%);
+  --foreground: var(--color-ink-50);
+  --muted-foreground: var(--color-ink-400);
+  --subtle-foreground: var(--color-ink-500);
+  --border: var(--color-ink-800);
+  --border-strong: var(--color-ink-700);
+
+  --accent: var(--color-verdant-400);
+  --accent-hover: var(--color-verdant-300);
+  --accent-active: var(--color-verdant-200);
+  --accent-foreground: var(--color-ink-950);
+  --accent-muted: var(--color-verdant-900);
+  --ring: var(--color-verdant-400);
+
+  --success: #6fbf87;
+  --success-muted: var(--color-success-900);
+  --warning: #d6a24f;
+  --warning-muted: var(--color-warning-900);
+  --danger: #d17c69;
+  --danger-muted: var(--color-danger-900);
+  --info: #83a4bd;
+  --info-muted: var(--color-info-900);
+
+  --shadow-tint: 0 0 0;
+  --elevation-xs: 0 1px 2px rgb(var(--shadow-tint) / 0.3);
+  --elevation-sm: 0 1px 3px rgb(var(--shadow-tint) / 0.4), 0 1px 2px rgb(var(--shadow-tint) / 0.3);
+  --elevation-md: 0 6px 20px rgb(var(--shadow-tint) / 0.45), 0 2px 6px rgb(var(--shadow-tint) / 0.3);
+  --elevation-lg: 0 16px 40px rgb(var(--shadow-tint) / 0.5), 0 4px 12px rgb(var(--shadow-tint) / 0.35);
+  --elevation-xl: 0 28px 64px rgb(var(--shadow-tint) / 0.55), 0 8px 20px rgb(var(--shadow-tint) / 0.4);
+
+  color-scheme: dark;
+}
+
+/* ── Base element defaults ───────────────────────────────────────────── */
+* {
+  border-color: var(--border);
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  transition: background-color 200ms var(--ease-standard), color 200ms var(--ease-standard);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+::selection {
+  background-color: var(--accent-muted);
+  color: var(--foreground);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-full);
+}
+
+/* ── Overlay/popover motion primitives ───────────────────────────────────
+   Driven purely by CSS + Radix's data-state, so Radix's own <Presence>
+   keeps exiting elements mounted until the animation finishes — no
+   AnimatePresence/forceMount bookkeeping needed for these. ------------- */
+@keyframes bb-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes bb-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes bb-pop-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+@keyframes bb-pop-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.97);
+  }
+}
+@keyframes bb-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes bb-menu-out {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97) translateY(-2px);
+  }
+}
+@keyframes bb-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes bb-toast-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+/* ── Skeleton shimmer ─────────────────────────────────────────────────── */
+@keyframes bb-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.bb-skeleton {
+  background-image: linear-gradient(
+    90deg,
+    var(--surface) 25%,
+    var(--surface-raised) 50%,
+    var(--surface) 75%
+  );
+  background-size: 200% 100%;
+  animation: bb-shimmer 1.8s ease-in-out infinite;
+  border-radius: var(--radius-md);
+}
+
+/* ── Global reduced-motion guarantee ─────────────────────────────────────
+   Belt-and-braces for any CSS transition/animation added outside the
+   Framer Motion tree (which is governed instead by <MotionConfig
+   reducedMotion="user"> — see src/tokens/motion.ts + apps/web providers). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

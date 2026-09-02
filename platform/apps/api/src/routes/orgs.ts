@@ -1,0 +1,310 @@
+import { Hono } from 'hono';
+import { z } from 'zod';
+import { db, withUserContext, withOrgContext } from '@bebest/database';
+import { toSlug } from '../lib/slug.js';
+import { generateOpaqueToken } from '../lib/tokens.js';
+import { hashToken } from '../lib/jwt.js';
+import { requireAuth } from '../middleware/auth.js';
+import { requireOrgBySlug } from '../middleware/tenant-context.js';
+import { requirePermission } from '../middleware/rbac.js';
+import { auditLog } from '../middleware/audit-log.js';
+import type { AppEnv } from '../types/context.js';
+
+const orgs = new Hono<AppEnv>();
+
+const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// ── List orgs for the current user ─────────────────────────────────────────
+orgs.get('/', requireAuth, async (c) => {
+  const user = c.get('user');
+  const memberships = await withUserContext(user.id, (tx) =>
+    tx.memberships.findMany({
+      where: { user_id: user.id },
+      include: { organizations: { select: { id: true, name: true, slug: true } } },
+    }),
+  );
+
+  return c.json(
+    memberships.map((m) => ({
+      id: m.organizations.id,
+      name: m.organizations.name,
+      slug: m.organizations.slug,
+      role: m.role,
+    })),
+  );
+});
+
+// ── Create org (the creator becomes owner) ──────────────────────────────────
+const createOrgSchema = z.object({ name: z.string().min(2).max(100) });
+
+orgs.post('/', requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = createOrgSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Validation failed', issues: parsed.error.issues }, 422);
+  }
+
+  const user = c.get('user');
+  const slug = toSlug(parsed.data.name);
+
+  const existing = await db.organizations.findUnique({ where: { slug } });
+  if (existing) return c.json({ error: 'Slug already taken' }, 409);
+
+  // Org creation + the creator's owner membership must succeed or fail
+  // together. `withUserContext` already runs inside a transaction (see
+  // @bebest/database/src/client.ts); `organizations` itself is not RLS'd
+  // (see rls.sql), so it's safe to create inside the same transaction that
+  // sets `app.current_user` for the membership insert's WITH CHECK.
+  const org = await withUserContext(user.id, async (tx) => {
+    const created = await tx.organizations.create({
+      data: { name: parsed.data.name, slug, created_by: user.id },
+    });
+    await tx.memberships.create({
+      data: { organization_id: created.id, user_id: user.id, role: 'owner' },
+    });
+    return created;
+  });
+
+  return c.json({ id: org.id, name: org.name, slug: org.slug }, 201);
+});
+
+// ── Get org ──────────────────────────────────────────────────────────────────
+orgs.get('/:slug', requireAuth, requireOrgBySlug('viewer'), (c) => {
+  const org = c.get('org');
+  return c.json({ id: org.organizationId, name: org.name, slug: org.slug, role: org.role });
+});
+
+// ── Update org ────────────────────────────────────────────────────────────────
+const updateOrgSchema = z.object({ name: z.string().min(2).max(100).optional() });
+
+orgs.patch(
+  '/:slug',
+  requireAuth,
+  requireOrgBySlug('admin'),
+  auditLog({ action: 'settings.changed', entityType: 'organization' }),
+  async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const parsed = updateOrgSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'Validation failed', issues: parsed.error.issues }, 422);
+    }
+
+    const org = c.get('org');
+    const updated = await db.organizations.update({
+      where: { id: org.organizationId },
+      data: { name: parsed.data.name, updated_at: new Date() },
+    });
+
+    return c.json({ id: updated.id, name: updated.name, slug: updated.slug });
+  },
+);
+
+// ── Delete org (owner only, always audited) — soft delete ──────────────────
+orgs.delete(
+  '/:slug',
+  requireAuth,
+  requireOrgBySlug('viewer'),
+  requirePermission('delete_organization'),
+  auditLog({ action: 'organization.deleted', entityType: 'organization' }),
+  async (c) => {
+    const org = c.get('org');
+    await db.organizations.update({
+      where: { id: org.organizationId },
+      data: { deleted_at: new Date() },
+    });
+    return c.json({ success: true });
+  },
+);
+
+// ── List members ──────────────────────────────────────────────────────────
+orgs.get('/:slug/members', requireAuth, requireOrgBySlug('viewer'), async (c) => {
+  const org = c.get('org');
+  // memberships' RLS policy is an OR of user-scoped and org-scoped
+  // clauses (see @bebest/database rls.sql) — reading every member of this
+  // org (not just the caller's own row) requires `withOrgContext`, not
+  // `withUserContext`. See @bebest/database DECISIONS.md §7a.
+  const members = await withOrgContext(org.organizationId, (tx) =>
+    tx.memberships.findMany({
+      where: { organization_id: org.organizationId },
+      include: { users: { select: { id: true, email: true, name: true } } },
+      orderBy: { created_at: 'asc' },
+    }),
+  );
+
+  return c.json(
+    members.map((m) => ({
+      userId: m.user_id,
+      email: m.users.email,
+      name: m.users.name,
+      role: m.role,
+      joinedAt: m.created_at,
+    })),
+  );
+});
+
+// ── Change member role (always audited — SECURITY.md) ───────────────────────
+const changeRoleSchema = z.object({
+  role: z.enum(['admin', 'analyst', 'editor', 'viewer']),
+});
+
+orgs.patch(
+  '/:slug/members/:userId',
+  requireAuth,
+  requireOrgBySlug('viewer'),
+  requirePermission('manage_team'),
+  auditLog({ action: 'membership.role_changed', entityType: 'membership' }),
+  async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const parsed = changeRoleSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'Validation failed', issues: parsed.error.issues }, 422);
+    }
+
+    const org = c.get('org');
+    const targetUserId = c.req.param('userId');
+
+    const target = await withOrgContext(org.organizationId, (tx) =>
+      tx.memberships.findFirst({
+        where: { organization_id: org.organizationId, user_id: targetUserId },
+      }),
+    );
+    if (!target) return c.json({ error: 'Member not found' }, 404);
+    if (target.role === 'owner') return c.json({ error: 'Cannot change owner role' }, 403);
+
+    await withOrgContext(org.organizationId, (tx) =>
+      tx.memberships.update({
+        where: { id: target.id },
+        data: { role: parsed.data.role, updated_at: new Date() },
+      }),
+    );
+
+    return c.json({ success: true });
+  },
+);
+
+// ── Remove member ─────────────────────────────────────────────────────────
+orgs.delete(
+  '/:slug/members/:userId',
+  requireAuth,
+  requireOrgBySlug('viewer'),
+  requirePermission('manage_team'),
+  auditLog({ action: 'membership.removed', entityType: 'membership' }),
+  async (c) => {
+    const org = c.get('org');
+    const targetUserId = c.req.param('userId');
+
+    const target = await withOrgContext(org.organizationId, (tx) =>
+      tx.memberships.findFirst({
+        where: { organization_id: org.organizationId, user_id: targetUserId },
+      }),
+    );
+    if (!target) return c.json({ error: 'Member not found' }, 404);
+    if (target.role === 'owner') return c.json({ error: 'Cannot remove owner' }, 403);
+
+    await withOrgContext(org.organizationId, (tx) => tx.memberships.delete({ where: { id: target.id } }));
+    return c.json({ success: true });
+  },
+);
+
+// ── Send invitation ───────────────────────────────────────────────────────
+const inviteSchema = z.object({
+  email: z.string().email(),
+  role: z.enum(['admin', 'analyst', 'editor', 'viewer']).default('viewer'),
+});
+
+orgs.post(
+  '/:slug/invitations',
+  requireAuth,
+  requireOrgBySlug('viewer'),
+  requirePermission('manage_team'),
+  async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const parsed = inviteSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'Validation failed', issues: parsed.error.issues }, 422);
+    }
+
+    const org = c.get('org');
+    const user = c.get('user');
+    const { token, hash } = generateOpaqueToken(32);
+    const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
+
+    // `invitations` is deliberately NOT RLS-protected (see
+    // @bebest/database rls.sql's "Special case — invitations") because
+    // redeeming one happens before the caller has any org context to
+    // prove — so plain `db`, not `withOrgContext`, is correct here too,
+    // not just at the accept step below.
+    // Cancel any existing pending invite for this email+org first.
+    await db.invitations.deleteMany({
+      where: { organization_id: org.organizationId, email: parsed.data.email, accepted_at: null },
+    });
+
+    await db.invitations.create({
+      data: {
+        organization_id: org.organizationId,
+        invited_by: user.id,
+        email: parsed.data.email,
+        role: parsed.data.role,
+        token_hash: hash,
+        expires_at: expiresAt,
+      },
+    });
+
+    // NEEDS EmailSender wiring: apps/api/routes/auth.ts takes an
+    // EmailSender for magic links; invitations should too, once this
+    // route is converted to the same factory pattern. Tracked in
+    // apps/api/README.md's "not done yet" list.
+    // eslint-disable-next-line no-console -- dev-mode substitute for email delivery
+    console.log(`[dev email] invitation token for ${parsed.data.email}: ${token}`);
+
+    return c.json({ success: true, expiresAt }, 201);
+  },
+);
+
+// ── Accept invitation ─────────────────────────────────────────────────────
+orgs.post('/invitations/accept', requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = z.object({ token: z.string().min(1) }).safeParse(body);
+  if (!parsed.success) return c.json({ error: 'Invalid token' }, 400);
+
+  const tokenHash = hashToken(parsed.data.token);
+  const invitation = await db.invitations.findFirst({ where: { token_hash: tokenHash } });
+
+  if (!invitation) return c.json({ error: 'Invalid token' }, 404);
+  if (invitation.accepted_at) return c.json({ error: 'Already accepted' }, 409);
+  if (invitation.revoked_at) return c.json({ error: 'Invitation revoked' }, 410);
+  if (invitation.expires_at < new Date()) return c.json({ error: 'Invitation expired' }, 410);
+
+  const user = c.get('user');
+  if (user.email.toLowerCase() !== invitation.email.toLowerCase()) {
+    return c.json({ error: 'This invitation was sent to a different email address' }, 403);
+  }
+
+  await withUserContext(user.id, async (tx) => {
+    await tx.invitations.update({
+      where: { id: invitation.id },
+      data: { accepted_at: new Date() },
+    });
+    const existing = await tx.memberships.findFirst({
+      where: { organization_id: invitation.organization_id, user_id: user.id },
+    });
+    if (!existing) {
+      await tx.memberships.create({
+        data: {
+          organization_id: invitation.organization_id,
+          user_id: user.id,
+          role: invitation.role,
+          created_by: invitation.invited_by,
+        },
+      });
+    }
+  });
+
+  return c.json({
+    success: true,
+    organizationId: invitation.organization_id,
+    role: invitation.role,
+  });
+});
+
+export default orgs;

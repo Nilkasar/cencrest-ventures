@@ -1,0 +1,28 @@
+{
+  "name": "@bebest/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "generate": "prisma generate",
+    "validate": "prisma validate",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.5.0"
+  },
+  "devDependencies": {
+    "@bebest/config": "workspace:*",
+    "@types/node": "^22.13.10",
+    "prisma": "^6.5.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.9"
+  }
+}
