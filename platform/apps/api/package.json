@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "seed:plans": "tsx src/scripts/seed-plans.ts"
   },
   "dependencies": {
     "@bebest/ai-provider": "workspace:*",

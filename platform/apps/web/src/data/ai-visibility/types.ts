@@ -12,6 +12,11 @@ export type AiRunStatus = "queued" | "running" | "completed" | "failed";
 export interface AiRun {
   id: string;
   brandId: string;
+  /** Epic 8 (Competitive Intelligence) addition — `null` for a normal
+   *  brand-visibility run (Epic 7's original case), the tracked
+   *  competitor's id when this run was pointed at a `competitors` row
+   *  instead. See `serializeAiRun` in `apps/api/src/lib/ai-visibility/serialize.ts`. */
+  competitorId: string | null;
   querySetId: string;
   /** Snapshotted at PREPARE time — e.g. `["openai","anthropic","google","perplexity"]`.
    *  Never Ollama; see `docs/12-ai/AI_ARCHITECTURE.md`'s routing table. */

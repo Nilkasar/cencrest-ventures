@@ -48,6 +48,21 @@ model organizations {
   id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name       String    @db.VarChar(255)
   slug       String    @unique(map: "organizations_slug_unique") @db.VarChar(255)
+  // Epic 16 (Billing) addition — docs/16-billing/BILLING_ARCHITECTURE.md's
+  // "DATA RETENTION ON CANCELLATION" section literally requires
+  // `org.status = 'cancelled'` on subscription cancellation, and the ported
+  // schema (Epic 0) had no status concept on organizations at all — a real
+  // gap, not a duplicate of anything. VARCHAR + CHECK (checks.sql), same
+  // "evolving-but-closed vocabulary" treatment as `subscriptions.plan` per
+  // DECISIONS.md §6, not a native enum. Deliberately does NOT get a
+  // parallel `cancellation_date` column even though the doc also mentions
+  // one: an org has exactly one `subscriptions` row (1:1), and that row's
+  // own `cancelled_at` already carries the same timestamp — a second column
+  // holding the identical value could only ever drift from it, the same
+  // "don't add a column that can disagree with itself" reasoning
+  // DECISIONS.md §17 already applied to `pages.schema_types` vs a
+  // would-be `has_schema_markup` boolean.
+  status     String    @default("active") @db.VarChar(20)
   created_by String    @db.Uuid
   created_at DateTime  @default(now()) @db.Timestamptz(6)
   updated_at DateTime  @default(now()) @db.Timestamptz(6)
@@ -164,6 +179,8 @@ model organizations {
   sitemaps                  sitemaps[]
   snapshot_requests         snapshot_requests[]
   subscriptions             subscriptions?
+  // Epic 16 (Billing) addition — see `billing_webhook_events` model below.
+  billing_webhook_events    billing_webhook_events[]
   usage_records             usage_records[]
   use_cases                 use_cases[]
   visibility_scores         visibility_scores[]
@@ -613,20 +630,128 @@ model evaluation_runs {
 // BILLING
 // ============================================================================
 
+// Epic 16 (Billing) addition. `docs/06-database/SCHEMA.md` §6's literal DDL
+// (repo-root `docs/`, not `platform/docs/` — the epic spec's own path
+// reference is one directory off) never had a `plans` table at all — Epic 0
+// only ported `subscriptions.plan` as a bare string. This is a genuine new
+// table, not a hardening pass, same category as Epic 2's `brand_entities`/
+// Epic 7's `ai_runs` additions. Deliberately NOT tenant-scoped (no
+// `organization_id`, no RLS) — it is global reference data every org reads
+// the same rows from, the identical treatment DECISIONS.md §1 already gives
+// `ai_providers`/`ai_models`/`prompt_templates`. See
+// `prisma/migrations/0009_billing/rls.sql`'s header for the full reasoning.
+model plans {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug           String    @unique @db.VarChar(50) // free, starter, growth, pro, agency, managed, enterprise — see checks.sql
+  name           String    @db.VarChar(100)
+  description    String?
+  // SCHEMA.md's literal DDL types these as INTEGER (cents), not DECIMAL —
+  // kept exactly. Every seeded row's value is NULL: BILLING_ARCHITECTURE.md
+  // says outright "Prices are UNDECIDED. Do not implement with fixed
+  // prices" — NULL here is a literal instruction from the source doc, not a
+  // gap, and applies to all seven tiers, not only the two "custom/contact"
+  // ones.
+  price_monthly  Int?
+  price_yearly   Int?
+  currency       String    @default("USD") @db.VarChar(3)
+  // Every key from `apps/api/src/lib/entitlements.ts`'s existing
+  // `PlanLimits` (Epics 2/5/7's `competitors_tracked`/
+  // `queries_per_query_set`/`ai_queries_per_month`) plus every
+  // documented-but-not-yet-enforced key from BILLING_ARCHITECTURE.md's
+  // "Plan Limits" JSON example (`pages_analyzed`/`snapshots_per_month`/
+  // `team_members`/`agents`/`agent_runs_per_month`/`autonomy_level_max`/
+  // `white_label`/`client_accounts`) — see `@bebest/database`'s
+  // `src/plan-catalog.ts` for the exact seeded shape and the full
+  // per-tier-per-key sourcing notes.
+  limits         Json      @default("{}")
+  // Deliberately an empty object for every seeded row (not populated with
+  // invented key names) — no route in this epic or any prior one reads
+  // `plans.features` yet; every gating key this epic's own spec names is
+  // grouped under `limits` above instead (the epic spec's own literal key
+  // list puts `agents`/`white_label` there, not here). Inventing feature
+  // flag names nothing reads would be exactly the kind of unfounded guess
+  // DECISIONS.md's "deliberately not constrained" philosophy (§6) warns
+  // against — left for whichever future epic (12+) defines real ones.
+  features       Json      @default("{}")
+  active         Boolean   @default(true)
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @default(now()) @db.Timestamptz(6)
+
+  subscriptions subscriptions[]
+
+  @@index([active], map: "idx_plans_active")
+}
+
 model subscriptions {
-  id                     String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organization_id        String              @unique @db.Uuid
-  stripe_customer_id     String?             @unique @db.VarChar(255)
-  stripe_subscription_id String?             @unique @db.VarChar(255)
-  plan                   String              @default("free") @db.VarChar(50) // free, starter, growth, agency — see checks.sql
-  status                 subscription_status @default(active)
-  current_period_start   DateTime?           @db.Timestamptz(6)
-  current_period_end     DateTime?           @db.Timestamptz(6)
-  created_at             DateTime            @default(now()) @db.Timestamptz(6)
-  updated_at             DateTime            @default(now()) @db.Timestamptz(6)
-  organizations          organizations       @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  id                    String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id       String              @unique @db.Uuid
+  // NOT NULL, matching SCHEMA.md's literal DDL exactly — every org's
+  // subscription always resolves to a real `plans` row (bootstrapped to the
+  // seeded `free` plan's id at org-creation time; see
+  // `apps/api/src/routes/orgs.ts`).
+  plan_id               String              @db.Uuid
+  // Denormalized cache of `plans.slug`, kept in sync by application code on
+  // every `plan_id` change (see `apps/api/src/lib/billing/subscriptions.ts`).
+  // NOT in SCHEMA.md's literal DDL — the one deliberate addition beyond it,
+  // kept specifically so `apps/api/src/lib/entitlements.ts`'s pre-existing
+  // `chk_subscriptions_plan`-constrained bare-string read path (and its
+  // already-VERIFIED Epic 2/5/7 regression tests, which mock exactly that
+  // shape) keeps working unmodified even once `plan_id`/`plans` is the real
+  // source of truth. See entitlements.ts's own header comment for the full
+  // "why two columns, and why that isn't drift" reasoning.
+  plan                  String              @default("free") @db.VarChar(50)
+  // Renamed from `stripe_customer_id`/`stripe_subscription_id` — provider-
+  // agnostic per the `PaymentProvider` abstraction (BILLING_ARCHITECTURE.md
+  // principle #4: "switching from Stripe to Paddle requires changing one
+  // adapter"). `external_customer_id` is additive beyond SCHEMA.md's literal
+  // DDL (that DDL has no customer-id column on `subscriptions` at all) —
+  // needed because `PaymentProvider.createCustomer` returns an id this table
+  // is the natural place to persist. `external_id` matches SCHEMA.md's
+  // literal field name exactly (the renamed Stripe *subscription* id).
+  external_customer_id String?             @unique @db.VarChar(255)
+  external_id           String?            @unique @db.VarChar(255)
+  status                subscription_status @default(active)
+  // Kept nullable (SCHEMA.md's literal DDL has these NOT NULL) — a brand
+  // new free-tier subscription bootstrapped at org-creation time has no
+  // real billing period yet; forcing a fake date here would be worse than
+  // leaving it null until a real `PaymentProvider.createSubscription` call
+  // sets it, same "don't fabricate a value nothing produced yet" instinct
+  // DECISIONS.md applies throughout.
+  current_period_start  DateTime?           @db.Timestamptz(6)
+  current_period_end    DateTime?           @db.Timestamptz(6)
+  trial_ends_at         DateTime?           @db.Timestamptz(6)
+  cancelled_at          DateTime?           @db.Timestamptz(6)
+  created_at            DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime            @default(now()) @db.Timestamptz(6)
+  organizations         organizations       @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  plans                 plans               @relation(fields: [plan_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
   @@index([organization_id], map: "idx_subscriptions_org")
+  @@index([plan_id], map: "idx_subscriptions_plan_id")
+}
+
+// Epic 16 (Billing) addition — genuinely new table, no prior-epic
+// equivalent. Required by the epic spec's own literal idempotency
+// requirement ("a replayed webhook must not double-apply an effect — dedupe
+// by event ID"), which needs somewhere durable to record "this external
+// event id has already been processed" that survives past a single request.
+// Deliberately NOT RLS-protected: a webhook arrives knowing only an
+// external customer/subscription id, not an `organization_id` — there is no
+// tenant context to set before the very first lookup that resolves one,
+// the identical situation DECISIONS.md §7b documents for `invitations`.
+// `organization_id` is nullable for the same reason (resolved AFTER the
+// signature is verified and the payload is parsed, not before).
+model billing_webhook_events {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  external_event_id  String    @unique @db.VarChar(255)
+  event_type         String    @db.VarChar(100)
+  organization_id    String?   @db.Uuid
+  payload            Json
+  processed_at       DateTime? @db.Timestamptz(6)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  organizations      organizations? @relation(fields: [organization_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([organization_id], map: "idx_billing_webhook_events_org")
 }
 
 model usage_records {
@@ -1252,6 +1377,8 @@ model competitors {
   created_by_user       users?                  @relation("competitors_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
   updated_by_user       users?                  @relation("competitors_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
   gap_analysis          gap_analysis[]
+  // Epic 8 (Competitive Intelligence) addition — see `ai_runs.competitor_id`.
+  ai_runs               ai_runs[]
 
   @@index([brand_id], map: "idx_competitors_brand")
   @@index([organization_id], map: "idx_competitors_org")
@@ -2105,6 +2232,26 @@ model ai_runs {
   organization_id String   @db.Uuid
   brand_id        String   @db.Uuid
   query_set_id    String   @db.Uuid
+  // Epic 8 (Competitive Intelligence) addition. NULL = this run measures
+  // "our" brand (Epic 7's original, unmodified case). Non-null = this run
+  // reuses the IDENTICAL pipeline (`apps/api/src/lib/ai-visibility/
+  // pipeline.ts`) pointed at one `competitors` row instead of `brands` —
+  // same query_set, same providers, same extraction schema, only the
+  // tracked entity's name/aliases fed into the extraction prompt differ.
+  // Checked first per this epic's brief: the Epic 0 ported schema's
+  // `competitor_mentions`/`competitor_visibility`/`geo_gaps` tables already
+  // model a brand-vs-competitor comparison, but all three key off the
+  // LEGACY `analyses`/`prompt_runs` pipeline (see the "AI RUNS / RESPONSES
+  // (legacy...)" section below and DECISIONS.md §19's `ai_responses` naming
+  // note) — not `ai_runs`. Adding a column here (rather than repurposing
+  // those legacy tables) is the same "new epic, new pipeline, old tables
+  // left completely alone" precedent §19 itself already established.
+  // `brand_id` above stays REQUIRED even on a competitor run: it is the
+  // org's own brand this competitor is being measured against, i.e. every
+  // row (competitor run or not) is still "this brand's data" for RLS/
+  // scoping purposes — `competitor_id` is additive context, not a
+  // replacement for `brand_id`.
+  competitor_id String? @db.Uuid
   // The resolved provider name list this run actually fanned out to
   // (docs/12-ai/AI_ARCHITECTURE.md's `taskDefaults['geo.query']` —
   // openai/anthropic/google/perplexity), snapshotted at PREPARE time so a
@@ -2146,6 +2293,11 @@ model ai_runs {
   // schema (DECISIONS.md §5).
   query_sets         query_sets           @relation(fields: [query_set_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   created_by_user    users                @relation("ai_runs_created_by", fields: [created_by], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  // Restrict, same defense-in-depth default as every other non-composition
+  // FK on this table (DECISIONS.md §5) — a competitor row is soft-deleted
+  // (`deleted_at`), never hard-deleted, so the cascade case is not actually
+  // reachable in practice, same caveat as the `query_sets` FK above.
+  competitors        competitors?         @relation(fields: [competitor_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   ai_run_responses   ai_run_responses[]
   brand_observations brand_observations[]
 
@@ -2153,6 +2305,12 @@ model ai_runs {
   @@index([brand_id], map: "idx_ai_runs_brand")
   @@index([query_set_id], map: "idx_ai_runs_query_set")
   @@index([status], map: "idx_ai_runs_status")
+  // Epic 8 addition — `GET /brands/me/competitors/:competitorId/ai-runs`
+  // and every competitive-gap/share-of-voice computation filter by exactly
+  // this predicate (`brand_id` + `competitor_id`), same "every FK a query
+  // actually filters by gets its own index" rule as every other index on
+  // this table.
+  @@index([competitor_id], map: "idx_ai_runs_competitor")
 }
 
 /// One (query x provider) execution within an `ai_runs` run — the
@@ -3742,6 +3900,18 @@ enum subscription_status {
   canceled
   trialing
   incomplete
+  // Epic 16 (Billing) addition. BILLING_ARCHITECTURE.md's "BILLING EVENTS →
+  // ACTIONS" table documents `subscription.unpaid` as a distinct webhook
+  // event from `subscription.cancelled` — "Downgrade to free tier, notify"
+  // (day-10 of the failed-payment grace schedule) is NOT the same outcome
+  // as an actual cancellation (`canceled`): the org keeps its (now free)
+  // subscription and "can reactivate by updating payment method," it was
+  // never told to stop. Reusing `past_due` for this state would collide two
+  // genuinely different, separately-documented states into one value; a new
+  // enum value is the correct fix, safe to add outright (never applied to a
+  // database — see this package's DECISIONS.md header) rather than
+  // reinterpreting an existing one.
+  unpaid
 }
 
 enum usage_metric {

@@ -2,7 +2,7 @@
 
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Bell, CreditCard, SlidersHorizontal, UserPlus } from "lucide-react";
+import { Bell, SlidersHorizontal, UserPlus } from "lucide-react";
 import {
   Avatar,
   Badge,
@@ -22,6 +22,7 @@ import { PageHeader } from "@/components/patterns/page-header";
 import { ComingSoon } from "@/components/patterns/coming-soon";
 import { StubActionButton } from "@/components/patterns/stub-action-button";
 import { BrandProfilePanel } from "@/components/settings/brand-profile-panel";
+import { BillingPanel } from "@/components/settings/billing-panel";
 import { currentUser, currentOrganization } from "@/data/fixtures";
 
 const TAB_VALUES = ["brand", "team", "notifications", "billing", "autonomy"] as const;
@@ -111,13 +112,7 @@ function SettingsTabs() {
       </TabsContent>
 
       <TabsContent value="billing">
-        <ComingSoon
-          icon={<CreditCard size={20} />}
-          eyebrow="Billing"
-          title="No billing set up yet"
-          description="Plan, usage against entitlements (competitors tracked, seats, queries run), invoices, and payment method will live here."
-          epic={16}
-        />
+        <BillingPanel />
       </TabsContent>
 
       <TabsContent value="autonomy">

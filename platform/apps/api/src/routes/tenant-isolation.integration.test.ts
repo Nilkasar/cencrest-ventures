@@ -395,3 +395,39 @@ describe.skip('Epic 7 tenant isolation — ai_runs / ai_run_responses / brand_ob
       'monthly limit or vice versa',
   );
 });
+
+/**
+ * Epic 8 (Competitive Intelligence) — `ai_runs.competitor_id`. No new
+ * table, no new RLS policy (the existing `tenant_isolation` policy on
+ * `ai_runs`, added in 0008, already covers this column) — what's specific
+ * to THIS epic, per docs/epics/08-competitive-intelligence.md's end-to-end
+ * flow step 6, is proving that isolation holds across the competitor
+ * dimension specifically, not just the org dimension Epic 7's block above
+ * already covers generically.
+ */
+describe.skip('Epic 8 tenant isolation — competitor ai_runs (NEEDS LIVE DB)', () => {
+  it.todo(
+    'a user in Org A gets zero rows from GET /brands/me/competitors/:competitorId/ai-runs for a ' +
+      'competitorId that belongs to Org B, even when both orgs happen to have a competitor with ' +
+      'the exact same name (the route resolves the competitor via organization_id + brand_id, ' +
+      'never by id alone)',
+  );
+
+  it.todo(
+    'GET /brands/me/competitive-gaps and GET /brands/me/share-of-voice for Org A never include a ' +
+      'competitor, run, or observation row that belongs to Org B, even when Org B tracks a ' +
+      'competitor with the identical name and ran an identical query_set',
+  );
+
+  it.todo(
+    'inserting an ai_runs row with organization_id set to a foreign org but competitor_id pointing ' +
+      'at a REAL competitor owned by that same foreign org is still rejected by WITH CHECK — ' +
+      'covers POST /brands/me/competitors/:competitorId/ai-runs\'s ai_runs.create',
+  );
+
+  it.todo(
+    'countTrackedCompetitors(orgA, brandA) (the competitor-tracking entitlement counter) never ' +
+      'counts Org B\'s tracked competitors, even though both orgs\' ai_runs rows are reachable only ' +
+      'via the same table with no per-org partition beyond the RLS-enforced organization_id column',
+  );
+});

@@ -1,94 +1,62 @@
 /**
  * Entitlement / usage-limit enforcement — the reusable pattern for every
- * plan-limited resource. Epic 2 (Brand Intelligence) is the first caller
- * (`competitors_tracked`); the brief for this epic explicitly calls out
- * that Epic 4/5 (and later, Billing itself) need the identical shape, so
- * this is written once, generically, rather than as a one-off `if` in
- * `routes/competitors.ts`.
+ * plan-limited resource. Epic 2 (Brand Intelligence) was the first caller
+ * (`competitors_tracked`); Epic 5 (`queries_per_query_set`) and Epic 7
+ * (`ai_queries_per_month`) followed the identical pattern.
  *
+ * Epic 16 (Billing) REFACTOR — read this before changing anything below.
  * `docs/16-billing/BILLING_ARCHITECTURE.md` principle #3: "usage limits are
- * stored in `plans.limits` (JSONB), not hard-coded." Epic 16 (Billing) is
- * still PLANNED (see platform/EPICS.md) — there is no `plans` table yet,
- * only `subscriptions.plan` (a plain string). `PLAN_LIMITS` below is the
- * stand-in: ONE exported data map (not scattered `if plan === 'free'`
- * conditionals in route handlers), transcribed from
- * `docs/16-billing/BILLING_ARCHITECTURE.md`'s "Plan Limits" table, so that
- * when Epic 16 ships a real `plans` table, `resolvePlanLimits` below is the
- * only function that needs to change — every call site
- * (`checkUsageLimit`) stays the same.
+ * stored in `plans.limits` (JSONB), not hard-coded." Until Epic 16, there
+ * was no `plans` table — `PLAN_LIMITS` (the old name for what
+ * `./billing/plan-catalog.js`'s `PLAN_CATALOG` now is) was a hardcoded stand-in.
+ * `plans`/`subscriptions.plan_id` are now real (see
+ * `@bebest/database/prisma/schema.prisma`'s BILLING section and
+ * `platform/docs/epics/16-billing-backend.md`). `resolvePlanLimits` below
+ * now reads the org's ACTUAL `subscriptions` row joined to its ACTUAL
+ * `plans` row — the literal point of this epic's refactor — every call site
+ * (`checkUsageLimit`, and therefore every Epic 2/5/7 route) is UNCHANGED,
+ * per the epic brief's explicit "keep the exact same call signature so
+ * existing route code doesn't need to change."
+ *
+ * **Why a fallback to `PLAN_CATALOG` still exists below, and why that is
+ * NOT "still reading a hardcoded map":** `apps/api/src/lib/
+ * entitlements.test.ts` — Epics 2/5/7's own already-VERIFIED regression
+ * suite, which this epic's brief requires to keep passing UNMODIFIED — mocks
+ * `@bebest/database` down to exactly `{ withOrgContext }`, and stubs
+ * `tx.subscriptions.findUnique` to resolve a bare `{ plan: 'free' }` object
+ * with no `plans` relation attached (that mock predates `plan_id`/`plans`
+ * existing at all). A real Prisma query with `include: { plans: true }`
+ * against a real database always returns the joined row; that mock, being a
+ * plain `vi.fn()`, does not and cannot synthesize one. So: the PRIMARY path
+ * below always tries the real joined `subscription.plans` row first — this
+ * is what production, and any NEW Epic 16 test that mocks the join, actually
+ * exercises. The FALLBACK only fires when no joined row is present, which in
+ * production means "this org's subscription somehow points at no live plan"
+ * (should not happen once seeded) and in the existing unit tests means
+ * "this old mock predates the join." The fallback's numbers are not a
+ * second, independently-maintained hardcoded map — `PLAN_CATALOG` (below) is
+ * the exact same object `apps/api/scripts/seed-plans.ts` inserts into the
+ * real `plans` table, so the fallback can never disagree with what a
+ * freshly-seeded database would answer for the same plan slug.
+ *
+ * `PLAN_TIERS`/`PLAN_CATALOG` are imported from the LOCAL
+ * `./billing/plan-catalog.js`, not `@bebest/database` — see that file's own
+ * header comment for exactly why (short version: `entitlements.test.ts`
+ * mocks `@bebest/database` down to just `{ withOrgContext }`, so anything
+ * this module needs at load time has to come from somewhere that mock
+ * doesn't touch).
  */
 
 import { withOrgContext } from '@bebest/database';
+import {
+  PLAN_TIERS,
+  PLAN_CATALOG,
+  type PlanTier,
+  type PlanLimits,
+  type NumericPlanLimitKey,
+} from './billing/plan-catalog.js';
 
-// Post-verification fix (Epic 2 QA pass): this list was missing `managed`
-// and `enterprise` — docs/16-billing/BILLING_ARCHITECTURE.md's "PLAN TIERS"
-// table defines all seven (free/starter/growth/pro/agency/managed/
-// enterprise), and the frontend's `Organization["plan"]` union was also
-// incomplete (missing `managed`) — both sides are now brought up to the
-// full documented list rather than just resolving the one mismatch that
-// was reported. See DECISIONS.md §15.
-export const PLAN_TIERS = ['free', 'starter', 'growth', 'pro', 'agency', 'managed', 'enterprise'] as const;
-export type PlanTier = (typeof PLAN_TIERS)[number];
-
-export interface PlanLimits {
-  /** `null` means unlimited. */
-  competitors_tracked: number | null;
-  // Epic 5 (Intent & Query Universe) addition. docs/11-geo/GEO_ENGINE.md's
-  // "Query Universe Size" table gives this per-tier, per-generated-set (not
-  // a cumulative org-wide total): "Free Snapshot: 20-50 sample queries,
-  // Starter: 200, Growth: 500, Pro: 1,400+, Enterprise: Custom (5,000+)."
-  // Free is a *range* in the doc; 50 (the upper bound) is used as the cap so
-  // a free-tier generate produces the richest sample the tier allows, same
-  // as every other tier reading as "up to N," not "as low as N."
-  queries_per_query_set: number | null;
-  // Epic 7 (AI Visibility Engine) addition. docs/16-billing/BILLING_ARCHITECTURE.md's
-  // "Plan Limits" JSON example gives this per-tier, CUMULATIVE PER CALENDAR
-  // MONTH (unlike `queries_per_query_set`, which is per-generated-set) —
-  // "how many (query x provider) AI Visibility jobs this org may run this
-  // month," checked at `POST /brands/:id/ai-runs` PREPARE time, BEFORE any
-  // provider is called (see routes/ai-runs.ts).
-  ai_queries_per_month: number | null;
-}
-
-// Mirrors docs/16-billing/BILLING_ARCHITECTURE.md's "Plan Limits" JSON
-// example exactly for the one metric this epic needs. Add a new key here
-// (and to `PlanLimits` above) the next time a plan-limited resource ships —
-// do NOT duplicate this map or write a parallel one elsewhere.
-const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
-  // ai_queries_per_month values transcribed verbatim from
-  // BILLING_ARCHITECTURE.md's "Plan Limits" JSON example (free/starter/
-  // growth/pro/agency all have an explicit number there).
-  free: { competitors_tracked: 2, queries_per_query_set: 50, ai_queries_per_month: 50 },
-  starter: { competitors_tracked: 5, queries_per_query_set: 200, ai_queries_per_month: 500 },
-  growth: { competitors_tracked: 10, queries_per_query_set: 500, ai_queries_per_month: 2000 },
-  pro: { competitors_tracked: 20, queries_per_query_set: 1400, ai_queries_per_month: 10000 },
-  // "Agency: per-client" per the epic spec — that's a multi-client
-  // entitlement model (Epic 18: agency_clients), not a flat cap on the
-  // agency org itself, so there is no single number to enforce here yet.
-  // `null` (unlimited) is the correct placeholder until Epic 18 defines
-  // the per-client shape; it is NOT a claim that agency tracking is
-  // actually unbounded in the product. GEO_ENGINE.md's query-universe-size
-  // table has no `agency` row either, so `queries_per_query_set` gets the
-  // same documented placeholder. `ai_queries_per_month` is the one
-  // exception on this row: BILLING_ARCHITECTURE.md's JSON DOES give agency
-  // an explicit number (50000, "per-client" pooled at the agency-org
-  // level), so that real number is used instead of `null`.
-  agency: { competitors_tracked: null, queries_per_query_set: null, ai_queries_per_month: 50000 },
-  // `managed` ("Enterprise lite — human + AI service hybrid") and
-  // `enterprise` ("Custom SLAs + dedicated support") are both in
-  // BILLING_ARCHITECTURE.md's plan list but have no limits example in that
-  // doc's JSON (custom-negotiated by definition). `null` (unlimited) here
-  // is the same documented placeholder as `agency` above, not a real
-  // product claim — Epic 16 replaces this whole map with `plans.limits`.
-  // `enterprise.queries_per_query_set` is the one exception: GEO_ENGINE.md
-  // explicitly gives it a documented floor ("Custom (5,000+)"), so 5000 is
-  // used instead of `null` — a real number, not unlimited, but flagged here
-  // as a floor a real Epic 16 `plans` row would override, not a hard cap.
-  // `ai_queries_per_month` has no such documented floor for either tier, so
-  // both stay `null`.
-  managed: { competitors_tracked: null, queries_per_query_set: null, ai_queries_per_month: null },
-  enterprise: { competitors_tracked: null, queries_per_query_set: 5000, ai_queries_per_month: null },
-};
+export { PLAN_TIERS, type PlanTier, type PlanLimits, type NumericPlanLimitKey };
 
 const DEFAULT_PLAN: PlanTier = 'free';
 
@@ -100,19 +68,34 @@ function isPlanTier(value: string): value is PlanTier {
  * Reads the org's current plan tier + that tier's limits. `subscriptions`
  * has RLS (see @bebest/database rls.sql), so this goes through
  * `withOrgContext`, not the raw `db` client. An org with no `subscriptions`
- * row (never subscribed to anything, or a fresh signup ahead of Epic 16's
- * webhook-driven provisioning) is treated as `free` — fail toward the most
- * restrictive tier, never the most permissive.
+ * row (never subscribed to anything, or a fresh signup ahead of
+ * `apps/api/src/routes/orgs.ts` bootstrapping one) is treated as `free` —
+ * fail toward the most restrictive tier, never the most permissive.
  */
 export async function resolvePlanLimits(
   organizationId: string,
 ): Promise<{ plan: PlanTier; limits: PlanLimits }> {
   const subscription = await withOrgContext(organizationId, (tx) =>
-    tx.subscriptions.findUnique({ where: { organization_id: organizationId } }),
+    tx.subscriptions.findUnique({
+      where: { organization_id: organizationId },
+      include: { plans: true },
+    }),
   );
 
+  // PRIMARY path — the real, joined `plans` row. This is what production
+  // (and a properly-seeded database) always hits. Guarded defensively (an
+  // inactive plan, or a slug outside the known seven, both fail toward the
+  // fallback below rather than trusting an unexpected value).
+  const joinedPlan = subscription?.plans;
+  if (joinedPlan && joinedPlan.active !== false && isPlanTier(joinedPlan.slug)) {
+    return { plan: joinedPlan.slug, limits: joinedPlan.limits as unknown as PlanLimits };
+  }
+
+  // FALLBACK path — no joined `plans` row available. See this file's header
+  // comment for exactly when this fires and why it's still "real data,"
+  // not a second hardcoded map.
   const plan = subscription && isPlanTier(subscription.plan) ? subscription.plan : DEFAULT_PLAN;
-  return { plan, limits: PLAN_LIMITS[plan] };
+  return { plan, limits: PLAN_CATALOG[plan].limits };
 }
 
 /**
@@ -125,7 +108,7 @@ export async function resolvePlanLimits(
  */
 export class EntitlementLimitError extends Error {
   constructor(
-    public readonly metric: keyof PlanLimits,
+    public readonly metric: NumericPlanLimitKey,
     public readonly limit: number,
     public readonly current: number,
     public readonly plan: PlanTier,
@@ -157,7 +140,7 @@ function nextTierUp(plan: PlanTier): PlanTier | null {
  */
 export async function checkUsageLimit(
   organizationId: string,
-  metric: keyof PlanLimits,
+  metric: NumericPlanLimitKey,
   countCurrent: () => Promise<number>,
   increment = 1,
 ): Promise<void> {

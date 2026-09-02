@@ -92,4 +92,9 @@ export const ALWAYS_AUDITED_ACTIONS = [
   // cover.
   'lead.converted',
   'deal.stage_changed',
+  // Epic 16 (Billing) addition — a rejected webhook (bad/tampered
+  // signature) is exactly the "security-relevant event" SECURITY.md's audit
+  // requirement exists for, distinct from `billing.changed` (a legitimate,
+  // successfully-applied billing change) — see routes/billing-webhooks.ts.
+  'billing.webhook_rejected',
 ] as const;

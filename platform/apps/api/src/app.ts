@@ -23,6 +23,11 @@ import pages from './routes/pages.js';
 import seo from './routes/seo.js';
 import aiRuns from './routes/ai-runs.js';
 import aiRunDetails from './routes/ai-run-details.js';
+import competitorAiRuns from './routes/competitor-ai-runs.js';
+import competitiveIntelligence from './routes/competitive-intelligence.js';
+import plans from './routes/plans.js';
+import subscription from './routes/subscription.js';
+import billingWebhooks from './routes/billing-webhooks.js';
 import { ConsoleEmailSender } from './lib/email.js';
 import type { AppEnv } from './types/context.js';
 
@@ -122,6 +127,28 @@ app.route('/api/brands/me/seo', seo);
 // addressed by its own id, not a brand's, same as `/api/crawl-jobs/:id`.
 app.route('/api/brands/me/ai-runs', aiRuns);
 app.route('/api/ai-runs', aiRunDetails);
+
+// Epic 8 — Competitive Intelligence. Reuses Epic 7's exact pipeline pointed
+// at a `competitors` row instead of the brand (`ai_runs.competitor_id`,
+// see @bebest/database DECISIONS.md's Epic 8 section). Spec's literal
+// `POST /brands/:id/competitors/:competitorId/ai-runs` is adapted to
+// `/brands/me/competitors/:competitorId/ai-runs`, same single-brand-per-org
+// convention as every route above; `competitive-gaps`/`share-of-voice`/
+// `competitors/:id/movement` match the spec's `/brands/:id/...` shape the
+// same way.
+app.route('/api/brands/me/competitors', competitorAiRuns);
+app.route('/api/brands/me', competitiveIntelligence);
+
+// Epic 16 — Billing. `plans` is public reference data (no auth) for a
+// pricing/upgrade UI. `/api/orgs/me/subscription` follows the same
+// `requireOrgFromToken` "me" convention as every Epic 2+ brand-scoped route
+// above, at the org level instead of the brand level (billing is an
+// org-wide concern, not a brand one). `/api/webhooks/billing` is
+// unauthenticated by design — its own signature check IS the
+// authentication (see routes/billing-webhooks.ts).
+app.route('/api/plans', plans);
+app.route('/api/orgs/me/subscription', subscription);
+app.route('/api/webhooks/billing', billingWebhooks);
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 

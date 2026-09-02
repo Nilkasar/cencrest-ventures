@@ -207,6 +207,12 @@ export type {
   job_type,
   run_status,
   subscription_status,
+  // Epic 16 (Billing)
+  plans,
+  subscriptions,
+  usage_records,
+  usage_metric,
+  billing_webhook_events,
   // Epic 1 (CRM)
   leads,
   deals,

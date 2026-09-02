@@ -89,6 +89,16 @@ interface JobContext {
   brandQueryPromptVersion: string;
   extractionTemplate: PromptTemplate;
   extractionPromptVersion: string;
+  // Epic 8 (Competitive Intelligence): the ENTITY this run is measuring —
+  // "our" brand for a normal Epic 7 run, or one `competitors` row for a
+  // competitor run (`ai_runs.competitor_id` set). Field names kept as
+  // `brandName`/`brandAliasesText` (not renamed to something entity-generic)
+  // deliberately: they feed the SAME `{{brandName}}`/`{{brandAliases}}`
+  // placeholders in `prompts/geo/extraction-brand-observation.v1.0.txt`
+  // (already entity-agnostic prose — "the name ... of one specific brand"
+  // reads correctly whether that "brand" is ours or a competitor's), so
+  // reusing the exact prompt template unmodified, per this epic's brief, is
+  // literally what motivates keeping the field names unchanged here.
   brandName: string;
   brandAliasesText: string;
 }
@@ -241,6 +251,21 @@ export async function runAiVisibilityRun(
     tx.queries.findMany({ where: { query_set_id: run.query_set_id, deleted_at: null }, orderBy: { created_at: 'asc' } }),
   );
 
+  // Epic 8 (Competitive Intelligence): the ONLY branch point this epic adds
+  // to Epic 7's pipeline. `run.competitor_id` (read from the row itself, not
+  // a new function parameter — see routes/ai-runs.ts and
+  // routes/competitor-ai-runs.ts, both of which just set the column at
+  // create time) selects which entity's name/aliases get extracted for.
+  // Everything else below — QUEUE, EXECUTE, the two-call-per-job evidence
+  // guarantee, AGGREGATE's formula v1.0 — runs completely unmodified,
+  // exactly the "extend/parameterize, don't fork" instruction this epic's
+  // brief gives.
+  const competitor = run.competitor_id
+    ? await withOrgContext(organizationId, (tx) => tx.competitors.findUniqueOrThrow({ where: { id: run.competitor_id! } }))
+    : null;
+  const trackedEntityName = competitor ? competitor.name : brand.name;
+  const trackedEntityAliases = competitor ? competitor.aliases : brand.aliases;
+
   await withOrgContext(organizationId, (tx) =>
     tx.ai_runs.update({ where: { id: runId }, data: { status: 'running', started_at: new Date() } }),
   );
@@ -249,7 +274,7 @@ export async function runAiVisibilityRun(
   const extractionTemplate = loadPromptTemplate({ baseDir, category: 'geo', name: 'extraction-brand-observation' });
   const brandQueryPromptVersion = promptVersionFor(brandQueryTemplate);
   const extractionPromptVersion = promptVersionFor(extractionTemplate);
-  const brandAliasesText = brand.aliases.length > 0 ? brand.aliases.join(', ') : 'none';
+  const brandAliasesText = trackedEntityAliases.length > 0 ? trackedEntityAliases.join(', ') : 'none';
   const providerNames = run.providers;
 
   // QUEUE + EXECUTE: one job per (query x provider). Providers for a given
@@ -273,7 +298,7 @@ export async function runAiVisibilityRun(
           brandQueryPromptVersion,
           extractionTemplate,
           extractionPromptVersion,
-          brandName: brand.name,
+          brandName: trackedEntityName,
           brandAliasesText,
         }),
       ),

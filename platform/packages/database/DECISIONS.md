@@ -1109,3 +1109,61 @@ applied to a database. `apps/api`'s consumption of these four tables (the
 `SEODataProvider` abstraction, the technical/content checklist, the
 opportunity-scoring formula and its unit tests, the routes) is documented
 in `platform/docs/epics/04-seo-intelligence-backend.md`.
+
+## 21. Epic 8 (Competitive Intelligence) schema addition
+
+`docs/epics/08-competitive-intelligence.md`'s brief is explicit: this epic
+"runs the identical pipeline against competitors instead of the brand" —
+Epic 7's `ai_runs`/`ai_run_responses`/`brand_observations` tables, not a
+second parallel set. The brief also says to check first whether the ported
+schema already anticipated a brand-vs-competitor comparison before adding
+anything new.
+
+**It did, but for the wrong pipeline.** The ported schema already has
+`competitor_mentions`, `competitor_visibility`, `gap_analysis`, and
+`geo_gaps` — all genuinely about comparing a brand to its competitors. Every
+one of them, though, keys off the LEGACY pipeline this package's own
+`ai_runs` section (§19) already carved a deliberate line around:
+`competitor_mentions.analysis_id` → `analyses`, `competitor_visibility.run_id`
+→ `prompt_runs`, `gap_analysis`/`geo_gaps` → `intents`/`analyses`. None of
+the four has any FK to `ai_runs`. Repurposing them would mean either (a)
+writing Epic 8's data into a legacy table a different, untouched pipeline
+also writes to (silently coupling two unrelated systems), or (b) adding an
+`ai_run_id` FK to a table whose entire other column set was designed around
+`analyses`/`prompt_runs`/`intents` semantics that don't apply here. Both are
+worse than the alternative: one small, additive column on the table this
+epic actually reuses.
+
+**The addition**: `ai_runs.competitor_id String? @db.Uuid`, FK to
+`competitors` (`onDelete: Restrict`, same defense-in-depth default as this
+table's `query_sets` FK — a competitor is soft-deleted, never hard-deleted,
+same as everywhere else in this schema, §5), plus
+`idx_ai_runs_competitor` (every FK a route actually filters by gets its own
+index, §11's rule). `NULL` is Epic 7's original, completely unmodified case
+("this run measures our brand"); non-null means "this run measures one
+`competitors` row instead," reusing every other column on the row as-is —
+`brand_id` still denormalizes the org's OWN brand (never overwritten with
+the competitor's id) because it's what every RLS policy and tenant-scoped
+query on this table already filters by; `query_set_id` is unchanged so a
+competitor run and the brand's run it gets compared against can (and, for
+`GET /brands/me/competitive-gaps`, must) share the identical query set.
+
+**Why no new migration folder.** Every existing `prisma/migrations/000N_*`
+folder in this package holds ONLY hand-written SQL Prisma's schema DSL can't
+express itself — CHECK constraints, RLS policies, partial indexes (see this
+file's own repeated "Prisma's schema.prisma does not have first-class
+syntax for..." explanation, §6/§11). A nullable FK column with a plain
+`@@index` is fully expressible in `schema.prisma` directly and needs none of
+those three things: no CHECK (it's a straightforward FK, not a closed
+vocabulary), no new RLS policy (the existing `tenant_isolation` policy on
+`ai_runs`, added in 0008, already covers every column on the row, this one
+included), no partial index. There is therefore nothing for a `0009_*`
+folder to hold — the exact same reasoning the ported schema's own
+`queries.source`/`query_sets.plan_tier` base columns already established
+(§18: those were added directly in `schema.prisma` with only their later
+CHECK constraints getting a dedicated migration folder, 0006).
+
+`apps/api`'s consumption (extending `lib/ai-visibility/pipeline.ts` to
+resolve the tracked entity from `run.competitor_id`, the two new routes, the
+Competitive Gap / Share of AI Voice / gap-classification math) is documented
+in `platform/docs/epics/08-competitive-intelligence-backend.md`.

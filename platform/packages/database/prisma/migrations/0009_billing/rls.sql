@@ -1,0 +1,33 @@
+-- BeBest platform — Row-Level Security for Epic 16 (Billing)
+--
+-- Unlike every other epic's rls.sql in this folder, this one does NOT add a
+-- `tenant_isolation` policy to any new table, on purpose:
+--
+--   - `plans` — global reference data (every org reads the identical rows),
+--     the same treatment DECISIONS.md §1 already gives `ai_providers`/
+--     `ai_models`/`prompt_templates`. No `organization_id` column exists to
+--     scope a policy on, and none should be added.
+--   - `billing_webhook_events` — a webhook arrives knowing only an external
+--     customer/subscription id, not an `organization_id`; there is no
+--     tenant context to set before the very first lookup that resolves one.
+--     Identical situation to `invitations` (DECISIONS.md §7b) and
+--     `organization_rate_limits` (§7a) — both are also deliberately left
+--     without RLS for the same reason ("the caller cannot prove tenant
+--     membership before the row it needs to read is the very thing that
+--     would establish it"). `apps/api`'s webhook route filters by
+--     `external_event_id`/`external_customer_id` in its own WHERE clauses
+--     instead, matching how those other tables' routes already work.
+--
+-- `subscriptions` and `usage_records` already have their `tenant_isolation`
+-- policy from `prisma/migrations/0000_init/rls.sql` (they were in the
+-- original 24 tables with a direct `organization_id` column — see
+-- DECISIONS.md §1). Adding `subscriptions.plan_id`/`external_customer_id`/
+-- `external_id`/`trial_ends_at`/`cancelled_at` and `organizations.status`
+-- are all plain column additions that do not touch `organization_id` — no
+-- RLS change is needed for either table.
+--
+-- Not applied automatically — same caveat as every other migration folder
+-- in this package: `prisma validate`/`generate` only, no live database
+-- connection was ever made building this epic.
+
+-- (intentionally no ALTER/CREATE POLICY statements in this file)

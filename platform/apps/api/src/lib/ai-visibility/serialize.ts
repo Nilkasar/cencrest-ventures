@@ -14,6 +14,11 @@ export function serializeAiRun(run: ai_runs) {
   return {
     id: run.id,
     brandId: run.brand_id,
+    // Epic 8 (Competitive Intelligence) addition — `null` for a normal
+    // brand-visibility run (Epic 7's original case), the tracked
+    // competitor's id otherwise. See `ai_runs.competitor_id` in
+    // packages/database/prisma/schema.prisma.
+    competitorId: run.competitor_id,
     querySetId: run.query_set_id,
     providers: run.providers,
     status: run.status,

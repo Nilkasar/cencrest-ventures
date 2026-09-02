@@ -8,7 +8,7 @@ import { getBrandForOrg, NO_BRAND_ERROR } from '../lib/brand-context.js';
 import { checkUsageLimit, EntitlementLimitError } from '../lib/entitlements.js';
 import { countAiQueriesThisMonth } from '../lib/ai-visibility/usage.js';
 import { getDefaultAiProviderRegistry } from '../lib/ai-visibility/provider-registry.js';
-import { runAiVisibilityRun } from '../lib/ai-visibility/pipeline.js';
+import { scheduleAiVisibilityRun } from '../lib/ai-visibility/schedule-run.js';
 import { serializeAiRun } from '../lib/ai-visibility/serialize.js';
 import type { AppEnv } from '../types/context.js';
 
@@ -28,9 +28,12 @@ aiRunsRoute.get('/', requireAuth, requireOrgFromToken('viewer'), requirePermissi
   const brand = await getBrandForOrg(org.organizationId);
   if (!brand) return c.json(NO_BRAND_ERROR, 404);
 
+  // Epic 8 addition: `competitor_id: null` — this list is "the brand's own"
+  // AI-visibility history, never mixed with competitor runs (see
+  // routes/competitor-ai-runs.ts for those, listed per-competitor).
   const rows = await withOrgContext(org.organizationId, (tx) =>
     tx.ai_runs.findMany({
-      where: { organization_id: org.organizationId, brand_id: brand.id },
+      where: { organization_id: org.organizationId, brand_id: brand.id, competitor_id: null },
       orderBy: { created_at: 'desc' },
     }),
   );
@@ -107,6 +110,7 @@ aiRunsRoute.post('/', requireAuth, requireOrgFromToken('viewer'), requirePermiss
       data: {
         organization_id: org.organizationId,
         brand_id: brand.id,
+        competitor_id: null,
         query_set_id: querySet.id,
         providers,
         status: 'queued',
@@ -118,24 +122,7 @@ aiRunsRoute.post('/', requireAuth, requireOrgFromToken('viewer'), requirePermiss
 
   await writeManualAuditEvent(c, { action: 'ai_run.created', entityType: 'ai_run', entityId: run.id });
 
-  // TODO: replace with durable queue (pg-boss) — same documented,
-  // no-queue-package-in-this-monorepo placeholder routes/crawl.ts already
-  // uses (checked again at this epic's spec time: still true). A process
-  // restart mid-run currently strands it in `running` forever with no
-  // retry — tracked in the backend doc's "not done" list, not solved here.
-  setImmediate(() => {
-    void runAiVisibilityRun(run.id, org.organizationId, brand.id).catch(async (err) => {
-      await withOrgContext(org.organizationId, (tx) =>
-        tx.ai_runs.update({
-          where: { id: run.id },
-          data: { status: 'failed', error: String((err as Error)?.message ?? err), completed_at: new Date() },
-        }),
-      ).catch(() => {
-        // Best-effort — if even this write fails, the run is left in
-        // whatever state runAiVisibilityRun last successfully wrote.
-      });
-    });
-  });
+  scheduleAiVisibilityRun(run.id, org.organizationId, brand.id);
 
   return c.json(serializeAiRun(run), 202);
 });

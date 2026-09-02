@@ -20,6 +20,7 @@ let responseSeq = 0;
 let observationSeq = 0;
 
 const BRAND = { id: 'brand-1', name: 'Acme', aliases: ['Acme Corp'] };
+const COMPETITOR = { id: 'competitor-1', name: 'Rival Inc', aliases: ['Rival'] };
 const QUERIES = [
   { id: 'q1', text: 'What is the best CRM?', created_at: new Date('2026-01-01') },
   { id: 'q2', text: 'best invoicing tool?', created_at: new Date('2026-01-02') },
@@ -51,6 +52,12 @@ const tx = {
   },
   brands: {
     findUniqueOrThrow: async () => BRAND,
+  },
+  competitors: {
+    findUniqueOrThrow: async ({ where: { id } }: { where: { id: string } }) => {
+      if (id !== COMPETITOR.id) throw new Error(`competitors ${id} not found`);
+      return COMPETITOR;
+    },
   },
   queries: {
     findMany: async () => QUERIES,
@@ -290,4 +297,72 @@ describe('runAiVisibilityRun', () => {
       expect(state.ai_runs['run-1'].scoring_formula_version).toBe('1.0');
     },
   );
+
+  // ── Epic 8 (Competitive Intelligence): the ONE branch point this epic
+  // adds — `ai_runs.competitor_id` set — reuses every step above
+  // unmodified except which entity's name/aliases feed the extraction
+  // prompt. ──────────────────────────────────────────────────────────────
+  it('extracts for the COMPETITOR\'s name/aliases (not the brand\'s) when ai_runs.competitor_id is set, and stores the result identically in brand_observations', async () => {
+    const openai = fakeProvider('openai', 'gpt-4o');
+    openai.complete.mockResolvedValue(completionResult('Rival Inc is a solid choice for this.', 'openai', 'gpt-4o'));
+
+    const ollama = fakeProvider('ollama', 'qwen3:8b');
+    let extractionUserPrompt = '';
+    ollama.extract.mockImplementation(async ({ userPrompt }: { userPrompt: string }) => {
+      extractionUserPrompt = userPrompt;
+      return extractionResult({
+        brandMentioned: true,
+        brandFirstPosition: 0.0,
+        brandMentionCount: 1,
+        brandSentiment: 'positive',
+        brandContext: 'Rival Inc is a solid choice',
+        brandRecommended: true,
+        brandRecommendationStrength: 'strong',
+        competitorsMentioned: ['Acme'],
+        citedUrls: [],
+        citedDomains: [],
+        responseLanguage: 'en',
+        responseWordCount: 8,
+      });
+    });
+
+    const registry = new AIProviderRegistry({ default: 'ollama', providers: { openai, ollama } });
+
+    state.ai_runs['run-competitor-1'] = {
+      id: 'run-competitor-1',
+      organization_id: 'org-1',
+      brand_id: BRAND.id,
+      competitor_id: COMPETITOR.id,
+      query_set_id: 'qs-1',
+      providers: ['openai'],
+      status: 'queued',
+      total_jobs: 2,
+      completed_jobs: 0,
+      failed_jobs: 0,
+    };
+
+    const { runAiVisibilityRun } = await import('./pipeline.js');
+    await runAiVisibilityRun('run-competitor-1', 'org-1', BRAND.id, {
+      registry,
+      promptsBaseDir: path.join(import.meta.dirname, '../../prompts'),
+    });
+
+    // The extraction prompt was rendered with the COMPETITOR's name/aliases,
+    // never the brand's.
+    expect(extractionUserPrompt).toContain('Rival Inc');
+    expect(extractionUserPrompt).toContain('Rival');
+    expect(extractionUserPrompt).not.toContain('Brand name: Acme');
+
+    // The response/observation rows are written exactly like a brand run —
+    // same tables, same shape, `brand_id` still the org's real brand (never
+    // overwritten with the competitor's id).
+    const response = state.ai_run_responses.find((r) => r.ai_run_id === 'run-competitor-1');
+    expect(response!.brand_id).toBe(BRAND.id);
+    const observation = state.brand_observations.find((o) => o.ai_run_id === 'run-competitor-1');
+    expect(observation!.brand_mentioned).toBe(true);
+    expect(observation!.brand_id).toBe(BRAND.id);
+
+    expect(state.ai_runs['run-competitor-1'].status).toBe('completed');
+    expect(state.ai_runs['run-competitor-1'].ai_visibility_score).not.toBeNull();
+  });
 });
