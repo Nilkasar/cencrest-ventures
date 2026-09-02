@@ -196,3 +196,29 @@ Four project subagents already exist from the prior session (`.claude/agents/gro
 
 ### Status at the end of this entry
 Epic 0 (Monorepo & Platform Foundation) is **IN PROGRESS** — scaffold done, schema audit + auth/orgs/RBAC/multi-tenancy/audit-logging build starting next via `backend-architect`, with `frontend-engineer` starting the premium design system in parallel. This log will be updated again as each epic in `platform/EPICS.md` completes — treat `platform/EPICS.md` + this file together as the authoritative status, not `PROJECT_STATUS.md`.
+
+---
+
+## Session: 2026-09-03 — Epic 0 complete; Wave 1 (Epics 1, 2, 6) launched via Workflow orchestration
+
+### Epic 0 — BUILT (migration pending), committed `5d853ca`
+
+Both halves finished and were independently reviewed (spot-checked actual code, not just the agents' own summaries) before committing:
+
+- **`@bebest/database`**: hardened port of the old 96-model schema — RLS enabled+`FORCE`d on 80 tenant tables, ~25 CHECK constraints, supplemental indexes, `created_by`/`updated_by` gaps filled, FK `ON DELETE` policy reviewed table-by-table, `role` enum widened to match `docs/08-security/SECURITY.md`. **Three real RLS design bugs found and fixed by manual reasoning, not tooling**: `memberships` needed an OR-based (user-or-org) policy; `organization_rate_limits` and `invitations` needed to be *excluded* from RLS entirely because they're queried before any tenant context can exist. Full reasoning in `platform/packages/database/DECISIONS.md`.
+- **`@bebest/api`**: magic-link-only RS256 auth with rotating refresh tokens, RBAC-as-data matching the security doc's role matrix (role always re-read from DB, never trusted from the token), durable Postgres-backed rate limiting (replacing the old in-memory version), automatic audit logging. 90 passing vitest tests, zero live-DB dependencies; a dedicated `tenant-isolation.integration.test.ts` documents exactly which scenarios still need a real database to prove.
+- **`@bebest/ui` + `@bebest/web`**: premium design system ("Ink" neutral + "Verdant" accent, Fraunces/Inter/JetBrains Mono, no blue/violet AI-SaaS gradient) with 15 accessible Radix primitives; full Next.js app shell, all 12 nav destinations (including a new CRM section) rendering real pages, not 404s. Verified clean typecheck/lint/build.
+- **No database was ever connected to.** Migration files (`prisma/migrations/0000_init/{rls,checks,indexes}.sql`) are generated and committed; applying them is the user's own step (commands listed in `platform/docs/epics/00-platform-foundation-backend.md`).
+
+### Specs written ahead (growth-strategist scoping passes)
+
+`platform/docs/epics/{01-crm, 02-brand-intelligence, 03-website-intelligence, 04-seo-intelligence, 05-intent-query-universe, 06-ai-provider-abstraction}.md`. Two real gaps found in the original docs and resolved rather than left ambiguous: `docs/06-database/SCHEMA.md` never gives `accounts`/`deals` their own table definitions despite `docs/05-architecture/ARCHITECTURE.md` listing them — Epic 1's spec defines `accounts` as a view over `organizations` (not a duplicate entity) and specifies `deals` fresh. Same gap exists for the Website/SEO schema groups — resolved in Epics 3/4's specs the same way.
+
+### Wave 1 launched via the Workflow tool (user explicitly asked for multi-agent orchestration with monitoring)
+
+Dependency analysis: Epic 0 unblocks Epics 1 (CRM), 2 (Brand Intelligence), and 6 (AI Provider Abstraction) independently of each other — so they build **in parallel**, backend+frontend together per epic (Epic 6 is backend-only, no UI), with each epic's verification **pipelined** (starts the moment that epic's own build finishes, not gated on the other epics). 8 agents this wave: 5 build + 3 `qa-flow-tester`-persona verify agents, run at `effort: 'high'` for the verify pass. Run ID `wf_1530b217-fdb`. Custom subagent types from `.claude/agents/` are still not resolving as invokable `agentType`s in this session (same issue as earlier — likely needs a fresh session start) — personas are embedded directly in each agent's prompt instead, same workaround as Epic 0.
+
+### Open items for next session
+- Confirm Wave 1's results once the workflow completes (not done as of this entry).
+- Still need to actually run `pnpm install` / migrations against a real database — explicitly the user's own step, never done by Claude in this build.
+- Custom `.claude/agents/*.md` subagent types (`growth-strategist`, `backend-architect`, `frontend-engineer`, `qa-flow-tester`) should be re-checked in a fresh session — if they resolve there, future waves can use `agentType` directly instead of embedding personas in every prompt.

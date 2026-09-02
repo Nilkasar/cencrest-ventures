@@ -8,7 +8,7 @@ Status values: `PLANNED` → `SPEC READY` → `IN PROGRESS` → `BUILT (migratio
 
 | # | Epic | Domain | Spec | Status |
 |---|---|---|---|---|
-| 0 | Monorepo & Platform Foundation | Scaffold, schema audit, auth, orgs, RBAC, multi-tenancy, audit logging | — | IN PROGRESS |
+| 0 | Monorepo & Platform Foundation | Scaffold, schema audit, auth, orgs, RBAC, multi-tenancy, audit logging | [00-backend](docs/epics/00-platform-foundation-backend.md) / [00-frontend](docs/epics/00-platform-foundation-frontend.md) | BUILT (migration pending) |
 | 1 | CRM | Leads, Contacts, Accounts, Deals, Activities, pipeline UI | [01-crm.md](docs/epics/01-crm.md) | SPEC READY |
 | 2 | Brand Intelligence | Brands, competitors, entities, use cases, brand claims | [02-brand-intelligence.md](docs/epics/02-brand-intelligence.md) | SPEC READY |
 | 3 | Website Intelligence (Crawler) | Crawl jobs, pages, page issues, sitemaps, SSRF-safe fetch | [03-website-intelligence.md](docs/epics/03-website-intelligence.md) | SPEC READY |
