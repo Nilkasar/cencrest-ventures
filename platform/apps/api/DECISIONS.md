@@ -155,3 +155,64 @@ Epics 1–19 per `platform/EPICS.md`, each of which owns its own schema
 hardening review (already done for the whole schema at once in
 `@bebest/database`, so those epics inherit hardened tables) and route
 implementation.
+
+## Test isolation (QA follow-up: flaky `brands.test.ts` / `crm-access.test.ts`)
+
+A QA pass reported `pnpm --filter @bebest/api test` occasionally failing a
+single test with a 500 instead of the expected 4xx, on a different test
+file each time (once `routes/brands.test.ts`, once
+`middleware/crm-access.test.ts`), while every affected file passed cleanly
+run on its own — the signature of shared mutable state leaking between
+test files that happen to share a worker.
+
+**What it wasn't.** `lib/rate-limiter.ts` (the suspect named in the
+original report) holds no in-memory state at all — see this file's own
+"Rate limiting" section above; the `Map`-based limiter was already fully
+replaced by the Postgres-backed one before this pass, so there is no
+module-level counter left to leak. Every mock singleton in the suite
+(`db.*` vi.fn()s, `withUserContext`/`withOrgContext`) is declared fresh
+per test file and none are exported/shared across files.
+
+**What it was.** `middleware/auth.test.ts`'s last test ("the dev bypass
+never activates in production even if the flag is set") set
+`process.env.NODE_ENV = 'production'` and reset it back to `'test'` with a
+plain statement at the *end of the test body*. Every other test file in
+this suite that mutates a shared `process.env` key (`crm-access.test.ts`,
+`internal-org.test.ts`, `accounts.test.ts`, `activities.test.ts`,
+`deals.test.ts`, `leads.test.ts`) instead captures the key's original
+value once and restores it unconditionally in `afterEach` — `auth.test.ts`
+was the one file that didn't follow that discipline. A plain
+end-of-test-body reset only runs if every assertion above it in that same
+test passes; if that test ever regressed (or was ever affected by a slow
+CI run turning an assertion into an exception before reaching the reset
+line), `NODE_ENV` would stay stuck at `'production'` for the rest of the
+worker process — and Vitest's default `pool: forks`/`threads` can and does
+reuse a worker process/thread across multiple test files when there are
+more files than CPU cores, so that leak would surface as an unrelated,
+unpredictable test file failing in a later file that happens to land in
+the same worker, exactly matching the reported symptom.
+(Confirmed by instrumenting every test file to log its process id: under
+this repo's actual defaults — `isolate: true`, the default for both
+`pool: forks` and `pool: threads` — Vitest tears down and restarts the
+worker per test file specifically to prevent this class of bug, which is
+why the leak could not be forced to reproduce on a 12-core dev box even
+under `--pool=threads --maxWorkers=2` and other Node/CI setups that force
+worker reuse; it would only fire under `--no-isolate` or a hypothetical
+future change to that default. It was still exactly the shared-state gap
+QA's report described, present as latent risk rather than an active
+failure in this environment.)
+
+**Fix.** `auth.test.ts` now captures `NODE_ENV` and
+`ALLOW_DEV_AUTH_BYPASS`'s original values once (module scope, before any
+test runs) and restores both unconditionally in `afterEach`, matching the
+capture-and-restore-in-`afterEach` pattern already used consistently by
+every other env-var-mutating test file in this suite. The inline
+end-of-test reset was removed — cleanup no longer depends on the test body
+reaching its last line.
+
+**Verification.** `pnpm --filter @bebest/api test` run 5 consecutive times
+(identical: 23 files passed / 1 skipped, 178 tests passed / 29 todo, every
+run) plus additional stress runs forcing worker reuse
+(`--pool=threads --maxWorkers=2 --minWorkers=2`, 3 runs) to confirm the
+fix holds even under configurations that maximize the chance of a
+process.env leak surfacing.

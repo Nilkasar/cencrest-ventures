@@ -130,7 +130,7 @@ export default function UseCasesStep() {
               <CardContent className="flex items-start justify-between gap-4">
                 <div className="flex flex-col gap-2 min-w-0">
                   <p className="font-medium text-[14px] text-foreground">{useCase.title}</p>
-                  <p className="text-[13px] leading-relaxed text-muted-foreground">{useCase.solution}</p>
+                  <p className="text-[13px] leading-relaxed text-muted-foreground">{useCase.solutions.join(" · ")}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {useCase.companySizes.map((size) => (
                       <Badge key={size} variant="neutral" size="sm">

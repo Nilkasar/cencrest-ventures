@@ -23,7 +23,6 @@ export {
   type brand_entities,
   type use_cases,
   type brand_claims,
-  type competitor_priority,
   type claim_confidence,
   type role,
   type job_status,

@@ -213,3 +213,35 @@ exists.
   with `localStorage["bebest-theme"] = "dark"` set before load (every
   screen holds contrast and legibility with zero hardcoded light-mode
   color leaking through).
+
+## Post-verification fixes
+
+- **Kanban "move to Lost" didn't capture a real reason.** A
+  qa-flow-tester-persona pass found that `deals-board-view.tsx` called
+  `updateDealStage(dealId, 'lost', "Moved from board — reason not
+  captured.")` with a canned string from both the drag-and-drop drop
+  handler and the per-card `DropdownMenu` "Move to ▸ Lost" item — the
+  required lost-reason capture only actually worked from the separate Deal
+  Detail screen. Fixed by giving `DealsBoardView` the same reason-prompt
+  pattern `deal-detail-view.tsx` already used, reusing `@bebest/ui`'s
+  `Dialog` + `Input` (rather than the detail screen's inline
+  non-modal card, since the board has no per-deal sidebar to inline it
+  into): `handleMoveStage` — the single function both the drop handler and
+  `DealCard`'s `onMoveStage` call — now opens a shared `Dialog` when the
+  target stage is `'lost'` instead of calling `updateDealStage` directly.
+  The deal is not moved and no API call is made until the reason dialog is
+  confirmed; Cancel (via the Cancel button, the dialog's own close
+  control, or Escape/overlay click through `onOpenChange`) just clears the
+  pending dealId and reason state, leaving the deal in its original stage
+  with no card movement to roll back. Confirming calls the same
+  `applyStageChange` helper non-lost transitions use, passing the trimmed
+  reason (or `undefined` if left blank, matching the detail screen's
+  "reason is optional but no longer canned" behavior). One dialog instance
+  lives at the bottom of `DealsBoardView`, driven by `lostPromptDealId` /
+  `lostReason` / `lostSubmitting` state — no per-card dialog duplication.
+  Verified `pnpm --filter @bebest/web typecheck`, `lint`, and `build` all
+  pass, and traced both trigger paths in code: dragging a card onto the
+  Lost column calls `handleDrop` → `handleMoveStage`, and the card's
+  dropdown "Move to ▸ Lost" item calls `onMoveStage` → the same
+  `handleMoveStage` — both now route through the shared dialog before any
+  `updateDealStage('lost', …)` call is made.

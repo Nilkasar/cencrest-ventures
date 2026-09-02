@@ -270,3 +270,81 @@ rather than silently renaming the other agent's folder out from under it.
   five in the concurrent CRM agent's own `deals.test.ts`/`crm-access.test.ts`
   files — not touched by, or caused by, this build.
 - `@bebest/database`'s own suite: 7 tests, unchanged, passing.
+
+---
+
+## Post-verification fixes (qa-flow-tester pass)
+
+A later pass (frontend/backend paired, since the findings spanned the API
+contract both sides share) found this epic's frontend and backend had never
+actually been wired together (the frontend shipped entirely against
+`localStorage`, see the frontend doc's own "Post-verification fixes"), and
+that where they *did* agree on shape, three of those agreements were
+actually both sides independently deviating from the spec text in
+compatible-but-wrong ways. Fixed on this (backend) side, each checked
+against the literal spec text cited, not against whichever side was more
+convenient to change — full reasoning for each is in
+`packages/database/DECISIONS.md` §15, referenced rather than duplicated
+here:
+
+- **`brands.industry` → `industries`/`categories`/`markets` (arrays), and
+  `key_differentiators` → `differentiators`.** This build's own §13 called
+  the plural array fields a spec gap and left the ported `industry` VARCHAR
+  in place "since a brand profile is still fully usable with one industry
+  string." Re-reading `docs/06-database/SCHEMA.md` §2's literal `brands`
+  DDL shows that call was wrong — the spec specifies arrays, and the
+  frontend (already built against the spec's literal field names) was
+  right. `industry` removed, `industries`/`categories`/`markets` added
+  (`String[] @default([])`), `key_differentiators` renamed to
+  `differentiators`. `routes/brands.ts`'s Zod schema, serializer, and
+  create/update payloads updated; `brands.test.ts` updated; the now-orphaned
+  `idx_brands_industry` index removed.
+- **`competitors.priority`: enum → `Int`.** This build modeled it as a new
+  `competitor_priority` enum (`primary`/`secondary`/`watch`) "consistent
+  with `competition_type`." SCHEMA.md's literal DDL for this exact column —
+  `priority SMALLINT NOT NULL DEFAULT 1, -- 1=primary, 2=secondary,
+  3=watch` — is numeric, and the frontend's `CompetitorPriority = 1 | 2 | 3`
+  (built directly against that comment) was right. The `competitor_priority`
+  enum is removed; `priority` is now `Int @default(1) @db.SmallInt`,
+  validated at the Zod boundary (`z.union([z.literal(1), z.literal(2),
+  z.literal(3)])`) instead of by a DB enum. `routes/competitors.ts` and
+  `competitors.test.ts` updated; the now-unused `competitor_priority` type
+  export removed from `src/client.ts`/`src/index.ts`.
+- **`use_cases.solutions` needed no backend change.** SCHEMA.md's
+  `solutions TEXT[]` already matched this build's table exactly — the
+  frontend's singular `solution: string` was the actual mismatch, fixed on
+  that side only (see the frontend doc).
+- **Plan tiers: `PLAN_TIERS`/`PLAN_LIMITS` were missing `managed` and
+  `enterprise`.** `docs/16-billing/BILLING_ARCHITECTURE.md` documents seven
+  tiers; this build's `lib/entitlements.ts` only had five (the five that
+  existed when this epic was scoped). Both added, `competitors_tracked:
+  null` (unlimited) for both — the same documented placeholder already used
+  for `agency`, not a real product number (neither tier has one in the
+  spec). `chk_subscriptions_plan`'s CHECK constraint (already fixed forward
+  once in `0001_brand_intelligence/checks.sql` to add `'pro'`) needed the
+  same two values — fixed forward again in a new
+  `prisma/migrations/0003_epic2_contract_fixes/checks.sql` (0002 is CRM's)
+  rather than re-editing an already-committed migration file, same rule
+  this epic's own §13 established. `lib/entitlements.test.ts` gained
+  coverage for both new tiers.
+- **The frontend is now actually wired to these routes.**
+  `apps/web/src/lib/onboarding-client.ts` calls `GET/PATCH /brands/me` and
+  `GET/POST/PATCH/DELETE /brands/me/{competitors,use-cases,claims}` for
+  real via `apiClient` — see the frontend doc for what changed on that side.
+  Nothing about this epic's route contracts, RBAC, entitlement enforcement,
+  or response shapes changed to support that beyond the three fixes above;
+  the routes were already written to the right shape once the shape itself
+  was corrected.
+- **`tenant-isolation.integration.test.ts`** gained five new
+  explicitly-named `describe.skip` blocks (still `NEEDS LIVE DB`, still not
+  runnable without a real database — not attempted), one per this epic's
+  table (`brands`, `competitors`, `brand_entities`, `use_cases`,
+  `brand_claims`), replacing the generic Epic 0/1 coverage those tables
+  previously relied on with concrete, nameable per-table `it.todo`s so the
+  DoD checklist has one to point at per table.
+
+Verification re-run after these fixes: `pnpm --filter @bebest/database
+generate` and `prisma validate` (schema-only, `DATABASE_URL` set to a dummy
+value for validate — no connection attempted), `pnpm --filter @bebest/api
+test` (178 passing / 29 todo, 0 failing), `typecheck`, and `lint` — all
+clean.

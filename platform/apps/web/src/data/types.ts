@@ -9,7 +9,13 @@ export interface Organization {
   id: string;
   name: string;
   slug: string;
-  plan: "free" | "starter" | "growth" | "pro" | "agency" | "enterprise";
+  // Post-verification fix (Epic 2 QA pass): `managed` was missing —
+  // docs/16-billing/BILLING_ARCHITECTURE.md's "PLAN TIERS" table documents
+  // seven tiers (free/starter/growth/pro/agency/managed/enterprise); this
+  // union had six. `apps/api/src/lib/entitlements.ts`'s `PLAN_TIERS` had
+  // the same gap and was fixed the same way — see
+  // packages/database/DECISIONS.md §15.
+  plan: "free" | "starter" | "growth" | "pro" | "agency" | "managed" | "enterprise";
 }
 
 export interface CurrentUser {
@@ -66,7 +72,13 @@ export interface UseCase {
   industries: string[];
   companySizes: string[];
   painPoints: string[];
-  solution: string;
+  // Post-verification fix (Epic 2 QA pass): was `solution: string`
+  // (singular). docs/06-database/SCHEMA.md's `use_cases` DDL specifies
+  // `solutions TEXT[]`, and the ported backend schema already matched that
+  // exactly (`packages/database/prisma/schema.prisma`'s `use_cases.solutions
+  // String[]`) — this frontend type was the side that deviated. See
+  // packages/database/DECISIONS.md §15.
+  solutions: string[];
   createdAt: string;
   updatedAt: string;
 }

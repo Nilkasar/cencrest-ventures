@@ -276,7 +276,7 @@ export function BrandProfilePanel() {
               {useCases.map((useCase) => (
                 <div key={useCase.id} className="flex flex-col gap-1.5 border-b border-border pb-4 last:border-0 last:pb-0">
                   <p className="text-[13.5px] font-medium text-foreground">{useCase.title}</p>
-                  <p className="text-[12.5px] leading-relaxed text-muted-foreground">{useCase.solution}</p>
+                  <p className="text-[12.5px] leading-relaxed text-muted-foreground">{useCase.solutions.join(" · ")}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {useCase.companySizes.map((size) => (
                       <Badge key={size} variant="neutral" size="sm">

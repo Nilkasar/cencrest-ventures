@@ -80,7 +80,7 @@ describe('GET /competitors', () => {
         website_url: null,
         description: null,
         competition_type: 'direct',
-        priority: 'primary',
+        priority: 1,
         aliases: [],
         created_at: new Date(),
         updated_at: new Date(),
@@ -91,7 +91,7 @@ describe('GET /competitors', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as Array<Record<string, unknown>>;
     expect(body).toHaveLength(1);
-    expect(body[0]).toMatchObject({ id: 'c-1', name: 'Rival Co', priority: 'primary' });
+    expect(body[0]).toMatchObject({ id: 'c-1', name: 'Rival Co', priority: 1 });
   });
 });
 
@@ -115,7 +115,7 @@ describe('POST /competitors — entitlement enforcement (free plan = 2)', () => 
       website_url: null,
       description: null,
       competition_type: null,
-      priority: 'secondary',
+      priority: 1,
       aliases: [],
       created_at: new Date(),
       updated_at: new Date(),
@@ -175,7 +175,7 @@ describe('POST /competitors — entitlement enforcement (free plan = 2)', () => 
       website_url: null,
       description: null,
       competition_type: null,
-      priority: 'secondary',
+      priority: 1,
       aliases: [],
       created_at: new Date(),
       updated_at: new Date(),

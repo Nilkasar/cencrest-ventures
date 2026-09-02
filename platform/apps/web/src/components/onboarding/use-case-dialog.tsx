@@ -10,7 +10,6 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
-  Textarea,
 } from "@bebest/ui";
 import { TagInput } from "./tag-input";
 import { PillMultiSelect } from "./pill-multiselect";
@@ -22,7 +21,12 @@ export interface UseCaseFormValues {
   industries: string[];
   companySizes: string[];
   painPoints: string[];
-  solution: string;
+  // Post-verification fix (Epic 2 QA pass): was `solution: string`
+  // (singular) — see `UseCase.solutions` in `@/data/types` for why this is
+  // now an array. Collected the same way as the other array fields (a
+  // `TagInput`, one solution/benefit per entry) instead of one free-text
+  // paragraph.
+  solutions: string[];
 }
 
 interface UseCaseDialogProps {
@@ -33,7 +37,7 @@ interface UseCaseDialogProps {
   submitting?: boolean;
 }
 
-const EMPTY_FORM: UseCaseFormValues = { title: "", industries: [], companySizes: [], painPoints: [], solution: "" };
+const EMPTY_FORM: UseCaseFormValues = { title: "", industries: [], companySizes: [], painPoints: [], solutions: [] };
 
 /** Outer wrapper — see `CompetitorDialog` for why the form itself is a
  *  separately keyed component with no reset effect. */
@@ -71,17 +75,17 @@ function UseCaseDialogForm({
           industries: editing.industries,
           companySizes: editing.companySizes,
           painPoints: editing.painPoints,
-          solution: editing.solution,
+          solutions: editing.solutions,
         }
       : EMPTY_FORM,
   );
-  const [errors, setErrors] = useState<{ title?: string; solution?: string; companySizes?: string }>({});
+  const [errors, setErrors] = useState<{ title?: string; solutions?: string; companySizes?: string }>({});
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     const nextErrors: typeof errors = {};
     if (!form.title.trim()) nextErrors.title = "Give this use case a short title.";
-    if (!form.solution.trim()) nextErrors.solution = "Describe how you solve it.";
+    if (form.solutions.length === 0) nextErrors.solutions = "Describe at least one way you solve it.";
     if (form.companySizes.length === 0) nextErrors.companySizes = "Select at least one company size.";
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
@@ -125,13 +129,13 @@ function UseCaseDialogForm({
           value={form.painPoints}
           onChange={(painPoints) => setForm({ ...form, painPoints })}
         />
-        <Textarea
-          label="Solution"
-          placeholder="How you solve it, in a sentence or two."
-          value={form.solution}
-          onChange={(event) => setForm({ ...form, solution: event.target.value })}
-          error={errors.solution}
-          rows={2}
+        <TagInput
+          label="Solutions"
+          description="How you solve it — add one or more, press Enter after each."
+          placeholder="e.g. Real-time GPS tracking on every load"
+          value={form.solutions}
+          onChange={(solutions) => setForm({ ...form, solutions })}
+          error={errors.solutions}
         />
       </div>
 

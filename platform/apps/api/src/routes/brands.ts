@@ -18,12 +18,14 @@ function serializeBrand(brand: brands) {
     name: brand.name,
     description: brand.description,
     websiteUrl: brand.website_url,
-    industry: brand.industry,
+    industries: brand.industries,
+    categories: brand.categories,
+    markets: brand.markets,
     logoUrl: brand.logo_url,
     aliases: brand.aliases,
     positioning: brand.positioning,
     valueProposition: brand.value_proposition,
-    keyDifferentiators: brand.key_differentiators,
+    differentiators: brand.differentiators,
     createdAt: brand.created_at,
     updatedAt: brand.updated_at,
   };
@@ -53,16 +55,27 @@ brandsRoute.get(
 
 // ── PATCH /brands/me — create-or-update (the onboarding wizard's "Brand
 // basics" step has no separate create endpoint; PATCH upserts) ────────────
+const stringArray = (maxItems: number, maxLen: number) =>
+  z.array(z.string().trim().min(1).max(maxLen)).max(maxItems);
+
+// Post-verification fix (Epic 2 QA pass): `industry` (singular) replaced
+// with `industries`/`categories`/`markets` (plural arrays) and
+// `keyDifferentiators` renamed to `differentiators` — docs/06-database/
+// SCHEMA.md §2's `brands` DDL specifies all four as arrays, and the
+// frontend (`apps/web/src/data/types.ts`) was already built against that
+// shape. See packages/database/DECISIONS.md §15.
 const patchBrandSchema = z.object({
   name: z.string().trim().min(1).max(255).optional(),
   description: z.string().trim().max(5000).nullable().optional(),
   websiteUrl: httpUrlSchema.nullable().optional(),
-  industry: z.string().trim().max(100).nullable().optional(),
+  industries: stringArray(20, 100).optional(),
+  categories: stringArray(20, 100).optional(),
+  markets: stringArray(20, 100).optional(),
   logoUrl: httpUrlSchema.nullable().optional(),
   aliases: z.array(z.string().trim().min(1).max(255)).max(20).optional(),
   positioning: z.string().trim().max(2000).nullable().optional(),
   valueProposition: z.string().trim().max(2000).nullable().optional(),
-  keyDifferentiators: z.array(z.string().trim().min(1).max(500)).max(20).optional(),
+  differentiators: z.array(z.string().trim().min(1).max(500)).max(20).optional(),
 });
 
 brandsRoute.patch(
@@ -98,12 +111,14 @@ brandsRoute.patch(
             ...(input.name !== undefined && { name: input.name }),
             ...(input.description !== undefined && { description: input.description }),
             ...(input.websiteUrl !== undefined && { website_url: input.websiteUrl }),
-            ...(input.industry !== undefined && { industry: input.industry }),
+            ...(input.industries !== undefined && { industries: input.industries }),
+            ...(input.categories !== undefined && { categories: input.categories }),
+            ...(input.markets !== undefined && { markets: input.markets }),
             ...(input.logoUrl !== undefined && { logo_url: input.logoUrl }),
             ...(input.aliases !== undefined && { aliases: input.aliases }),
             ...(input.positioning !== undefined && { positioning: input.positioning }),
             ...(input.valueProposition !== undefined && { value_proposition: input.valueProposition }),
-            ...(input.keyDifferentiators !== undefined && { key_differentiators: input.keyDifferentiators }),
+            ...(input.differentiators !== undefined && { differentiators: input.differentiators }),
             updated_by: user.id,
             updated_at: new Date(),
           },
@@ -116,12 +131,14 @@ brandsRoute.patch(
           name: input.name as string,
           description: input.description ?? null,
           website_url: input.websiteUrl ?? null,
-          industry: input.industry ?? null,
+          industries: input.industries ?? [],
+          categories: input.categories ?? [],
+          markets: input.markets ?? [],
           logo_url: input.logoUrl ?? null,
           aliases: input.aliases ?? [],
           positioning: input.positioning ?? null,
           value_proposition: input.valueProposition ?? null,
-          key_differentiators: input.keyDifferentiators ?? [],
+          differentiators: input.differentiators ?? [],
           created_by: user.id,
         },
       });

@@ -115,3 +115,95 @@ describe.skip('CRM tenant isolation — leads/deals/activities (NEEDS LIVE DB)',
       'reject out-of-range values',
   );
 });
+
+/**
+ * Epic 2 (Brand Intelligence) — `brands`, `competitors`, `brand_entities`,
+ * `use_cases`, `brand_claims`. Same NEEDS LIVE DB constraint as every block
+ * above. Unlike CRM, these five ARE ordinary customer-tenant tables (every
+ * row's `organization_id` is a real customer org, not a fixed internal
+ * one) — the generic scenarios in the first `describe.skip` above already
+ * cover them structurally, but a qa-flow-tester pass asked for these named
+ * per-table instead of left as generic coverage, so the DoD checklist has a
+ * concrete, nameable item per table. Each block also covers the one thing
+ * genuinely specific to that table's route design (see
+ * `apps/api/src/lib/brand-context.ts` and `lib/entitlements.ts`).
+ */
+describe.skip('Epic 2 tenant isolation — brands (NEEDS LIVE DB)', () => {
+  it.todo(
+    'a user in Org A gets a 404 (not Org B\'s brand) from GET /brands/me — getBrandForOrg\'s ' +
+      'findFirst is scoped by organization_id, not just "the first brand row in the table"',
+  );
+
+  it.todo(
+    'withOrgContext(orgA, ...) never returns Org B\'s brand even when both orgs have exactly ' +
+      'one brand row each (the common case, since this epic assumes one brand per org)',
+  );
+
+  it.todo(
+    'inserting/updating a brands row with organization_id set to a foreign org is rejected by ' +
+      'WITH CHECK, even via PATCH /brands/me\'s upsert path (create-or-update must not let a ' +
+      'caller attach their write to another org\'s row)',
+  );
+});
+
+describe.skip('Epic 2 tenant isolation — competitors (NEEDS LIVE DB)', () => {
+  it.todo(
+    'a user in Org A gets zero rows from GET /brands/me/competitors for Org B\'s competitors, ' +
+      'even when both orgs are on the same plan tier with the same competitor count',
+  );
+
+  it.todo(
+    'inserting a competitors row with organization_id set to a foreign org is rejected by ' +
+      'WITH CHECK',
+  );
+
+  it.todo(
+    'checkUsageLimit(\'competitors_tracked\') for Org A counts ONLY Org A\'s non-deleted ' +
+      'competitors — Org B being at or over its own plan limit must never affect Org A\'s ' +
+      'entitlement check (proves the count query in routes/competitors.ts is tenant-scoped, ' +
+      'not just brand-scoped)',
+  );
+
+  it.todo(
+    'a user in Org A cannot PATCH or DELETE a competitor row that belongs to Org B, even when ' +
+      'given Org B\'s competitor id directly (id-guessing must still 404, not leak or mutate)',
+  );
+});
+
+describe.skip('Epic 2 tenant isolation — brand_entities (NEEDS LIVE DB)', () => {
+  it.todo('a user in Org A gets zero rows from GET /brands/me/entities for Org B\'s entities');
+
+  it.todo(
+    'inserting a brand_entities row with organization_id set to a foreign org is rejected by ' +
+      'WITH CHECK',
+  );
+
+  it.todo(
+    'a user in Org A cannot PATCH or DELETE a brand_entities row that belongs to Org B via its id',
+  );
+});
+
+describe.skip('Epic 2 tenant isolation — use_cases (NEEDS LIVE DB)', () => {
+  it.todo('a user in Org A gets zero rows from GET /brands/me/use-cases for Org B\'s use cases');
+
+  it.todo(
+    'inserting a use_cases row with organization_id set to a foreign org is rejected by WITH CHECK',
+  );
+
+  it.todo(
+    'a user in Org A cannot PATCH or DELETE a use_cases row that belongs to Org B via its id',
+  );
+});
+
+describe.skip('Epic 2 tenant isolation — brand_claims (NEEDS LIVE DB)', () => {
+  it.todo('a user in Org A gets zero rows from GET /brands/me/claims for Org B\'s brand claims');
+
+  it.todo(
+    'inserting a brand_claims row with organization_id set to a foreign org is rejected by ' +
+      'WITH CHECK',
+  );
+
+  it.todo(
+    'a user in Org A cannot PATCH or DELETE a brand_claims row that belongs to Org B via its id',
+  );
+});

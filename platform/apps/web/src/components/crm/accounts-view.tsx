@@ -30,6 +30,7 @@ const PLAN_LABEL: Record<Account["plan"], string> = {
   growth: "Growth",
   pro: "Pro",
   agency: "Agency",
+  managed: "Managed",
   enterprise: "Enterprise",
 };
 

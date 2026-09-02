@@ -201,7 +201,6 @@ export type {
   brand_entities,
   use_cases,
   brand_claims,
-  competitor_priority,
   claim_confidence,
   role,
   job_status,

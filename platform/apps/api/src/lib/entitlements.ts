@@ -20,7 +20,14 @@
 
 import { withOrgContext } from '@bebest/database';
 
-export const PLAN_TIERS = ['free', 'starter', 'growth', 'pro', 'agency'] as const;
+// Post-verification fix (Epic 2 QA pass): this list was missing `managed`
+// and `enterprise` — docs/16-billing/BILLING_ARCHITECTURE.md's "PLAN TIERS"
+// table defines all seven (free/starter/growth/pro/agency/managed/
+// enterprise), and the frontend's `Organization["plan"]` union was also
+// incomplete (missing `managed`) — both sides are now brought up to the
+// full documented list rather than just resolving the one mismatch that
+// was reported. See DECISIONS.md §15.
+export const PLAN_TIERS = ['free', 'starter', 'growth', 'pro', 'agency', 'managed', 'enterprise'] as const;
 export type PlanTier = (typeof PLAN_TIERS)[number];
 
 export interface PlanLimits {
@@ -44,6 +51,14 @@ const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   // the per-client shape; it is NOT a claim that agency tracking is
   // actually unbounded in the product.
   agency: { competitors_tracked: null },
+  // `managed` ("Enterprise lite — human + AI service hybrid") and
+  // `enterprise` ("Custom SLAs + dedicated support") are both in
+  // BILLING_ARCHITECTURE.md's plan list but have no limits example in that
+  // doc's JSON (custom-negotiated by definition). `null` (unlimited) here
+  // is the same documented placeholder as `agency` above, not a real
+  // product claim — Epic 16 replaces this whole map with `plans.limits`.
+  managed: { competitors_tracked: null },
+  enterprise: { competitors_tracked: null },
 };
 
 const DEFAULT_PLAN: PlanTier = 'free';

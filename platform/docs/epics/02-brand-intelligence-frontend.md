@@ -255,6 +255,114 @@ frontend doc flagged for the same reason. Worth doing before this ships,
 especially for the stepper's connecting-line fill and the entitlement
 error's `danger`-on-`danger-muted` contrast in dark mode.
 
+---
+
+## Post-verification fixes (qa-flow-tester pass)
+
+A later pass found two real problems with what's described above: this
+frontend was never actually wired to the backend that landed alongside it
+(everything below was still true — "no backend exists yet" — well after
+the backend half shipped), and a handful of the deliberate
+"schema reconciliation" gaps this doc flagged for the backend to resolve
+were resolved in the wrong direction. Fixed as a paired frontend+backend
+pass since the fixes are one contract, not two independent changes — full
+reasoning for the schema side is in `packages/database/DECISIONS.md` §15.
+
+**Wiring** — `src/lib/onboarding-client.ts` is no longer a `localStorage`
+mock. Every exported function now calls the real API via `apiClient`
+(`GET/PATCH /brands/me`, `GET/POST/PATCH/DELETE
+/brands/me/{competitors,use-cases,claims}`), keeping its original
+signatures so no call site's shape changed except `addCompetitor`, which
+dropped its now-redundant `plan` argument — the entitlement limit is
+enforced server-side now, this file no longer needs to pre-check it to
+decide which error to throw.
+
+The wizard's "resume where you left off" requirement (`docs/epics/
+02-brand-intelligence.md`'s UI surface note) now works differently under
+the hood, though the observable behavior is the same: there is no
+`completedSteps` field in the API (there is no onboarding-progress table —
+the five spec tables are the only persisted state), so `getBrandProfile`
+DERIVES which steps are done from what actually exists — a brand with a
+name means "brand basics" is done, `industries.length > 0` means
+"industry" is done, `useCases.length >= 3` means "use cases" is done, and
+so on. Two steps have no data-derivable minimum ("competitors" only blocks
+Continue at zero via this app's own client-side rule; "claims" is
+genuinely optional per the spec), so a small `localStorage` cache
+(`bebest.onboarding-visited.v1.<orgId>`) supplements the derivation for
+exactly those steps' "visited with zero items" case, plus a second key
+for the cosmetic "Setup completed <date>" line Settings shows (the API has
+no `completed_at` field either). This is the "localStorage can remain as
+an optional local draft/cache" the brief allowed for — it is never the
+only source for anything the API can answer itself, and losing it just
+means a step with nothing in it re-prompts once, not silent data loss.
+
+**Data-contract fixes** — checked against the actual spec text, not
+against whichever side was more convenient to change:
+
+- **`Brand.industries`/`categories`/`markets`/`differentiators`: no
+  frontend change.** These were already right (`src/data/types.ts` was
+  built directly against `docs/06-database/SCHEMA.md`'s literal `brands`
+  DDL) — the backend's ported schema was the side that deviated (a
+  singular `industry` string, and `key_differentiators` instead of
+  `differentiators`). Fixed on the backend; see that doc.
+- **`UseCase.solution` (singular) → `solutions: string[]`.** SCHEMA.md's
+  `use_cases` DDL specifies `solutions TEXT[]`, and the backend's table
+  already matched it — this frontend type was the actual mismatch.
+  `use-case-dialog.tsx`'s "Solution" field is now a `TagInput` ("Solutions"
+  — one or more entries) instead of a single `Textarea`, matching how every
+  other array field in this wizard (aliases, differentiators, pain points)
+  is collected, rather than silently wrapping one string in a one-element
+  array. `use-cases/page.tsx` and `brand-profile-panel.tsx`'s read views
+  join the array for display (`useCase.solutions.join(" · ")`).
+- **`Competitor.priority = 1 | 2 | 3`: no frontend change, confirmed
+  correct.** This doc originally flagged this as an open question for the
+  backend to resolve either way. Re-reading SCHEMA.md's literal
+  `competitors` DDL — `priority SMALLINT NOT NULL DEFAULT 1, -- 1=primary,
+  2=secondary, 3=watch` — confirms the frontend's numeric union was right
+  all along; the backend had modeled it as a string enum and was fixed to
+  match.
+- **`Organization["plan"]` was missing `managed`.** This doc's own "Data
+  layer" section already widened this union once (to add `free`) but
+  missed `managed` — `docs/16-billing/BILLING_ARCHITECTURE.md` documents
+  seven tiers (free/starter/growth/pro/agency/managed/enterprise), this
+  union had six. Added, plus the two call sites this affects again
+  (`components/crm/{accounts-view,account-detail-view}.tsx`'s exhaustive
+  `PLAN_LABEL` records — same pattern as the first `free` addition).
+  `src/data/brand-constants.ts`'s `PLAN_COMPETITOR_LIMITS` and
+  `PLAN_UPGRADE_PATH` maps updated the same way (`managed`, like `agency`,
+  has no documented flat competitor number, so it's treated as unlimited).
+
+**Build-breaking bug (Problem 3 in the fix brief)** — re-checked and not
+reproducible: `pnpm --filter @bebest/web build`, `typecheck`, and `lint`
+all passed cleanly on this codebase before any fix-pass changes were made,
+and `competitor-dialog.tsx` has no `window.open` call at all (`onOpenChange`
+is only ever wired to `Dialog`'s own prop and a plain `setDialogOpen`/
+`onOpenChange(false)` callback — no signature mismatch). Whatever produced
+that error in an earlier state of the branch was not present by the time
+this pass started; re-verified after every change below (typecheck, lint,
+and build all still pass, all 24 routes still prerender).
+
+**Manual round-trip trace** (the epic's own end-to-end flow step 5): saving
+"Brand basics" calls `saveBrandBasics` → `PATCH /brands/me` → the response
+is mapped back into a `Brand` and `getBrandProfile` re-fetches the brand +
+its (still-empty) children fresh from the API → `onboarding-context.tsx`
+adopts the result via `setProfile`. `settings/page.tsx`'s "Brand profile"
+tab renders `<BrandProfilePanel>`, which calls the SAME `useBrandProfile`
+hook independently (its own `getBrandProfile` call, not a shared React
+cache) — so the name/website/description saved from the wizard shows up on
+`/settings?tab=brand` because both screens read the one real source
+(the API), not because of any shared client-side state. Traced the same
+path for adding a competitor (`addCompetitor` → `POST
+/brands/me/competitors` → re-fetch → appears in both the wizard's table and
+Settings' competitors table with the same numeric priority badge).
+
+Verification re-run after these fixes: `pnpm --filter @bebest/web
+typecheck`, `lint`, and `build` (all 24 routes, including all 7 onboarding
+routes, still prerender/build clean) — no live backend was started in this
+session, so the actual network calls were verified by reading the code
+against `apps/api`'s route/schema definitions and the passing `apps/api`
+test suite, not by clicking through a running app.
+
 ## Deferred to later epics (unchanged from the spec)
 
 - Real backend persistence, RLS-scoped queries, and the actual entitlement

@@ -50,12 +50,17 @@ competitorsRoute.get(
 );
 
 // ── POST /brands/me/competitors — create (entitlement-checked) ─────────────
+// Post-verification fix (Epic 2 QA pass): `priority` was modeled as a
+// string enum (`primary`/`secondary`/`watch`); docs/06-database/SCHEMA.md's
+// literal `competitors` DDL is `priority SMALLINT NOT NULL DEFAULT 1, --
+// 1=primary, 2=secondary, 3=watch` — numeric, matching the frontend's
+// `CompetitorPriority = 1 | 2 | 3`. See packages/database/DECISIONS.md §15.
 const createCompetitorSchema = z.object({
   name: z.string().trim().min(1).max(255),
   websiteUrl: httpUrlSchema.nullable().optional(),
   description: z.string().trim().max(5000).nullable().optional(),
   competitionType: z.enum(['direct', 'indirect', 'aspirational']).nullable().optional(),
-  priority: z.enum(['primary', 'secondary', 'watch']).optional(),
+  priority: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
   aliases: z.array(z.string().trim().min(1).max(255)).max(20).optional(),
 });
 
@@ -119,7 +124,7 @@ competitorsRoute.post(
           website_url: input.websiteUrl ?? null,
           description: input.description ?? null,
           competition_type: input.competitionType ?? null,
-          priority: input.priority ?? 'secondary',
+          priority: input.priority ?? 1,
           aliases: input.aliases ?? [],
           created_by: user.id,
         },

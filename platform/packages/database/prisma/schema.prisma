@@ -1023,12 +1023,26 @@ model brands {
   name                String    @db.VarChar(255)
   description         String?
   website_url         String?   @db.VarChar(500)
-  industry            String?   @db.VarChar(100)
+  // Post-verification fix (Epic 2 QA pass): the ported schema had a
+  // singular `industry` string here — docs/06-database/SCHEMA.md §2's
+  // literal `brands` DDL specifies `industries TEXT[]`, `categories TEXT[]`,
+  // and `markets TEXT[]` (all plural, multi-value), and the frontend was
+  // already built against that spec (`apps/web/src/data/types.ts`). The
+  // ported schema, not the frontend, was the side that deviated — see
+  // packages/database/DECISIONS.md §15 for the full reasoning. `industry`
+  // is replaced (not kept alongside) since nothing outside this table ever
+  // read it and this migration has never been applied to a database.
+  industries          String[]  @default([])
+  categories          String[]  @default([])
+  markets             String[]  @default([])
   logo_url            String?   @db.VarChar(500)
   aliases             String[]
   positioning         String?
   value_proposition   String?
-  key_differentiators String[]
+  // Renamed from `key_differentiators` to match SCHEMA.md's literal column
+  // name (`differentiators TEXT[]`) — same array type, name-only fix, see
+  // DECISIONS.md §15.
+  differentiators     String[]
   created_by          String    @db.Uuid
   updated_by          String?   @db.Uuid
   created_at          DateTime  @default(now()) @db.Timestamptz(6)
@@ -1101,7 +1115,12 @@ model brands {
   visibility_scores       visibility_scores[]
 
   @@index([created_by], map: "idx_brands_creator")
-  @@index([industry], map: "idx_brands_industry")
+  // idx_brands_industry (a btree index on the old singular `industry`
+  // column) removed along with that column — see DECISIONS.md §15. No
+  // replacement GIN index added for `industries[]`: none of the other
+  // array columns on this table (`aliases`, `categories`, `markets`,
+  // `differentiators`) are indexed either, and nothing in this epic's API
+  // surface queries brands by industry membership yet.
   @@index([organization_id], map: "idx_brands_organization")
 }
 
@@ -1172,7 +1191,16 @@ model competitors {
   // rather than worked around in the API because they're core, queryable
   // attributes of a competitor row, not derived data — see
   // packages/database/DECISIONS.md §13.
-  priority              competitor_priority     @default(secondary)
+  //
+  // Post-verification fix: §13's first pass modeled this as an enum
+  // (`primary`/`secondary`/`watch`) "consistent with `competition_type`."
+  // Re-reading SCHEMA.md's literal DDL line for this table —
+  // `priority SMALLINT NOT NULL DEFAULT 1, -- 1=primary, 2=secondary,
+  // 3=watch` — shows the spec itself specifies a numeric SMALLINT, not a
+  // string enum; the frontend's `CompetitorPriority = 1 | 2 | 3` was right
+  // and this schema was the side that deviated. Fixed to `Int @db.SmallInt`
+  // — see DECISIONS.md §15.
+  priority              Int                     @default(1) @db.SmallInt
   aliases               String[]                @default([])
   created_by            String?                 @db.Uuid
   updated_by            String?                 @db.Uuid
@@ -2689,12 +2717,9 @@ enum competition_type {
   aspirational
 }
 
-// Epic 2 (Brand Intelligence) addition — see competitors.priority.
-enum competitor_priority {
-  primary
-  secondary
-  watch
-}
+// `competitor_priority` enum removed in the Epic 2 QA fix pass —
+// `competitors.priority` is now a plain `Int` (SMALLINT), matching
+// SCHEMA.md's literal DDL; see that field's comment and DECISIONS.md §15.
 
 enum crawl_status {
   pending

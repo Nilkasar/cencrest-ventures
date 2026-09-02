@@ -60,7 +60,7 @@ export default function CompetitorsStep() {
     try {
       const updated = editing
         ? await updateCompetitor(organizationId, editing.id, values)
-        : await addCompetitor(organizationId, plan, values);
+        : await addCompetitor(organizationId, values);
       setProfile(updated);
       setDialogOpen(false);
     } catch (error) {

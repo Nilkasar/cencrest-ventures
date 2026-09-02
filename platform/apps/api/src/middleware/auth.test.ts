@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach, afterAll } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { Hono } from 'hono';
 import { generateKeyPair } from 'jose';
 
@@ -12,6 +12,24 @@ vi.mock('@bebest/database', () => ({
 }));
 
 describe('requireAuth', () => {
+  // Every other test file in this suite that mutates a shared `process.env`
+  // key captures its ORIGINAL value once and restores it in `afterEach`
+  // (see crm-access.test.ts, internal-org.test.ts, leads/deals/activities/
+  // accounts.test.ts) so a value set for one test can never leak into the
+  // next — regardless of whether the test that set it passed or threw.
+  // This file used to be the one exception: the "never activates in
+  // production" test below set `NODE_ENV = 'production'` and reset it back
+  // to 'test' with a plain statement at the end of the test body. That
+  // reset only ever runs if every assertion above it in the same test
+  // passes — a single regression in that test would leave `NODE_ENV`
+  // stuck at 'production' for every test that runs after it (in this file,
+  // and in any other file that happens to share this file's worker
+  // process/thread — see DECISIONS.md's "Test isolation" entry). Restoring
+  // unconditionally in `afterEach`, like every other file already does,
+  // removes that dependency on the test body succeeding.
+  const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+  const ORIGINAL_ALLOW_DEV_AUTH_BYPASS = process.env.ALLOW_DEV_AUTH_BYPASS;
+
   beforeEach(async () => {
     vi.resetModules();
     findUniqueMock.mockReset();
@@ -21,6 +39,14 @@ describe('requireAuth', () => {
     const { __setKeysForTesting } = await import('../lib/jwt.js');
     const { privateKey, publicKey } = await generateKeyPair('RS256');
     __setKeysForTesting(privateKey, publicKey);
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_NODE_ENV === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = ORIGINAL_NODE_ENV;
+
+    if (ORIGINAL_ALLOW_DEV_AUTH_BYPASS === undefined) delete process.env.ALLOW_DEV_AUTH_BYPASS;
+    else process.env.ALLOW_DEV_AUTH_BYPASS = ORIGINAL_ALLOW_DEV_AUTH_BYPASS;
   });
 
   afterAll(async () => {
@@ -140,6 +166,5 @@ describe('requireAuth', () => {
     const app = await buildApp();
     const res = await app.request('/protected', { headers: { 'x-user-id': 'user-1' } });
     expect(res.status).toBe(401);
-    process.env.NODE_ENV = 'test';
   });
 });

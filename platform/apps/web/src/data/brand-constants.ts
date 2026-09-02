@@ -74,8 +74,16 @@ export const COMPANY_SIZE_LABEL: Map<string, string> = new Map(
 /**
  * `competitors_tracked` entitlement, per `docs/epics/02-brand-intelligence.md`
  * §"Entitlements": free 2, starter 5, growth 10, pro 20, agency per-client.
- * `enterprise` isn't in the spec's plan list; treated as unlimited here
- * (custom-negotiated) until billing (Epic 16) defines it for real.
+ * Mirrors `apps/api/src/lib/entitlements.ts`'s `PLAN_LIMITS` exactly — keep
+ * the two in sync (the backend is the source of truth once a request
+ * actually round-trips; this is only the client-side counter/limit UI).
+ *
+ * Post-verification fix (Epic 2 QA pass): `managed` was missing from this
+ * map entirely (a lookup would have been `undefined`, not just wrong) —
+ * `docs/16-billing/BILLING_ARCHITECTURE.md`'s plan list has seven tiers,
+ * this had six. `managed`/`enterprise` are both custom-SLA tiers with no
+ * documented flat number, so both are `Infinity` here, the same treatment
+ * `agency` already got — see packages/database/DECISIONS.md §15.
  */
 export const PLAN_COMPETITOR_LIMITS: Record<Organization["plan"], number> = {
   free: 2,
@@ -83,6 +91,7 @@ export const PLAN_COMPETITOR_LIMITS: Record<Organization["plan"], number> = {
   growth: 10,
   pro: 20,
   agency: Number.POSITIVE_INFINITY,
+  managed: Number.POSITIVE_INFINITY,
   enterprise: Number.POSITIVE_INFINITY,
 };
 
@@ -91,6 +100,8 @@ const PLAN_UPGRADE_PATH: Partial<Record<Organization["plan"], Organization["plan
   starter: "growth",
   growth: "pro",
   pro: "agency",
+  agency: "managed",
+  managed: "enterprise",
 };
 
 export function competitorLimitFor(plan: Organization["plan"]): number {

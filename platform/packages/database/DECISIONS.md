@@ -540,3 +540,75 @@ Other additions, all following the standard §1-§6 hardening rules:
   collision either way.
 - Nothing here was applied to a database — `prisma validate`/`generate`
   only, same rule as every other section in this document.
+
+---
+
+## 15. Epic 2 QA pass — data-contract fixes between §13's schema and the frontend
+
+A qa-flow-tester-persona review found that §13's Epic 2 schema and the
+frontend built against `docs/epics/02-brand-intelligence.md` (per that
+frontend's own "Schema reconciliation" note) disagreed on three points.
+The frontend was NOT assumed to be correct by default — each was checked
+against the actual spec text it claims to follow, and the losing side was
+the one fixed. All three changes are to tables added in §13, which have
+never been applied to any database (`prisma validate`/`generate` only), so
+renaming/retyping columns outright (rather than an additive
+deprecate-and-migrate dance) is safe.
+
+- **`brands.industry` (singular) → `industries`/`categories`/`markets`
+  (plural arrays).** `docs/06-database/SCHEMA.md` §2's literal `brands`
+  DDL is unambiguous: `industries TEXT[]`, `categories TEXT[]`,
+  `markets TEXT[]`. §13's note ("the spec's plural fields don't exist —
+  only a singular `industry` string... left as-is") treated this as an
+  acceptable gap rather than checking whether the *schema* or the *spec*
+  was supposed to win — re-reading the spec, the schema was the deviation.
+  Fixed: `industry` removed, `industries`/`categories`/`markets`
+  (`String[] @default([])`) added. `key_differentiators` was also renamed
+  to `differentiators` to match SCHEMA.md's literal column name (it was
+  already a `String[]`, so this is a name-only fix, not a type change).
+  `apps/api/src/routes/brands.ts`'s Zod schema, serializer, and
+  create/update payloads were updated to match; `brands.test.ts` updated.
+- **`competitors.priority`: enum → `Int`.** §13 modeled this as a new
+  `competitor_priority` enum (`primary`/`secondary`/`watch`), reasoning
+  "consistent with how `competition_type` is already handled." Re-reading
+  SCHEMA.md's literal DDL line for this exact column —
+  `priority SMALLINT NOT NULL DEFAULT 1, -- 1=primary, 2=secondary,
+  3=watch` — shows the spec itself chose a numeric SMALLINT, not a string
+  enum, and the frontend's `CompetitorPriority = 1 | 2 | 3` (built directly
+  against that DDL comment) was right all along. §13's own stated rationale
+  ("a raw `1`/`2`/`3` int a caller could pass out-of-range") is handled by
+  Zod's `z.union([z.literal(1), z.literal(2), z.literal(3)])` at the API
+  boundary instead of a DB enum — validation happens at the same layer
+  everything else in these routes is already validated at. Fixed: the
+  `competitor_priority` enum removed entirely, `competitors.priority` is
+  now `Int @default(1) @db.SmallInt`. `apps/api/src/routes/competitors.ts`
+  and `competitors.test.ts` updated; `src/client.ts`/`src/index.ts`'s
+  `competitor_priority` type export removed (nothing else referenced it).
+- **`use_cases.solutions` — no schema change; the frontend was wrong.**
+  SCHEMA.md's `use_cases` DDL has `solutions TEXT[]`, and §13's table
+  already matches it exactly. The frontend's `UseCase.solution` (singular
+  string) was the actual mismatch — fixed on the frontend side, not here;
+  see `platform/docs/epics/02-brand-intelligence-frontend.md`'s
+  "Post-verification fixes" section.
+- **Plan tiers: `PLAN_TIERS`/`PLAN_LIMITS` were missing `managed` and
+  `enterprise`.** `docs/16-billing/BILLING_ARCHITECTURE.md`'s "PLAN TIERS"
+  table lists seven tiers (free/starter/growth/pro/agency/managed/
+  enterprise); `apps/api/src/lib/entitlements.ts` only had five, and the
+  frontend's `Organization["plan"]` union was separately missing `managed`
+  (it already had `enterprise`). Both sides fixed to the full seven —
+  fixing only enough to resolve the reported mismatch (e.g. adding just
+  `managed` to the backend) would have left `enterprise` real-plan
+  subscriptions silently downgraded to `free` by `resolvePlanLimits`'s
+  fail-safe default, an actual bug distinct from the reported one. Both
+  new tiers get `competitors_tracked: null` (unlimited) in `PLAN_LIMITS`,
+  the same documented placeholder already used for `agency` — Epic 16
+  doesn't give either a concrete number (custom SLAs, by definition), so
+  `null` isn't a guess, it's the accurate "not a flat number" answer. The
+  `chk_subscriptions_plan` CHECK constraint (§13, then already-fixed-forward
+  once for `'pro'`) needed the same two values; rather than editing
+  `0001_brand_intelligence/checks.sql` again, the fix is forward in a new
+  `prisma/migrations/0003_epic2_contract_fixes/checks.sql` (0002 is CRM's,
+  per §14) — same "fix forward, don't edit an already-committed migration
+  file" rule §13 itself established.
+- As with every other section: `prisma validate`/`generate` only, nothing
+  applied to a database.

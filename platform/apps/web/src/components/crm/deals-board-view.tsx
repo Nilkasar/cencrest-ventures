@@ -90,9 +90,34 @@ export function DealsBoardView() {
     setQ("");
   }
 
-  async function handleMoveStage(dealId: string, stage: DealStage) {
-    await updateDealStage(dealId, stage, stage === "lost" ? "Moved from board — reason not captured." : undefined);
+  async function applyStageChange(dealId: string, stage: DealStage, reason?: string) {
+    await updateDealStage(dealId, stage, reason);
     reload();
+  }
+
+  function handleMoveStage(dealId: string, stage: DealStage) {
+    if (stage === "lost") {
+      setLostReason("");
+      setLostPromptDealId(dealId);
+      return;
+    }
+    void applyStageChange(dealId, stage);
+  }
+
+  function closeLostPrompt() {
+    setLostPromptDealId(null);
+    setLostReason("");
+  }
+
+  async function confirmLostReason() {
+    if (!lostPromptDealId) return;
+    setLostSubmitting(true);
+    try {
+      await applyStageChange(lostPromptDealId, "lost", lostReason.trim() || undefined);
+      closeLostPrompt();
+    } finally {
+      setLostSubmitting(false);
+    }
   }
 
   function handleDrop(stage: DealStage) {
@@ -254,6 +279,34 @@ export function DealsBoardView() {
           })}
         </div>
       )}
+
+      <Dialog
+        open={lostPromptDealId !== null}
+        onOpenChange={(next) => {
+          if (!next) closeLostPrompt();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Why was this lost?</DialogTitle>
+            <DialogDescription>Capture a reason before moving this deal to Lost. It&apos;s recorded in the audit log.</DialogDescription>
+          </DialogHeader>
+          <Input
+            placeholder="e.g. Went with an incumbent agency"
+            value={lostReason}
+            onChange={(event) => setLostReason(event.target.value)}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button type="button" variant="ghost" size="sm" onClick={closeLostPrompt}>
+              Cancel
+            </Button>
+            <Button type="button" variant="danger" size="sm" loading={lostSubmitting} onClick={confirmLostReason}>
+              Mark lost
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
