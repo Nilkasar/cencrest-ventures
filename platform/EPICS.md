@@ -25,7 +25,7 @@ Status values: `PLANNED` → `SPEC READY` → `IN PROGRESS` → `BUILT (migratio
 | 14 | Measurement & Learning Loop | Re-measurement, before/after attribution | — | PLANNED |
 | 15 | Reporting & Notifications | Weekly/monthly digests, in-app + email notifications | — | PLANNED |
 | 16 | Billing | Plans, subscriptions, entitlements, Stripe adapter | [spec](docs/epics/16-billing.md) / [backend](docs/epics/16-billing-backend.md) / [frontend](docs/epics/16-billing-frontend.md) | VERIFIED (migration pending) — entitlements.ts refactored onto real plans/subscriptions tables (fallback path spot-checked directly in code — only fires when no seeded row exists, not a second hardcoded map), Epics 2/5/7 regression suite confirmed green independently by qa-flow-tester (482/482), PaymentProvider + NullPaymentProvider + HMAC-verified idempotent webhook state machine, cancellation never hard-deletes |
-| 17 | Free AI + SEO Snapshot | Public snapshot flow (feeds CRM leads) | — | PLANNED |
+| 17 | Free AI + SEO Snapshot | Public snapshot flow (feeds CRM leads) | [17-free-snapshot.md](docs/epics/17-free-snapshot.md) | SPEC READY |
 | 18 | Agency / White Label / Integrations | Multi-client, white-label, Search Console etc. | — | PLANNED |
 | 19 | Production Hardening | Observability, rate-limit durability, load testing | — | PLANNED |
 | 20 | Marketing Site Rebuild | Root site rebuilt clean on top of the finished platform | — | PLANNED |

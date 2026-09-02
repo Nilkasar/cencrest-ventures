@@ -301,3 +301,13 @@ Epics 0, 1, 2, 3, 4, 5, 6, 7 are now all `VERIFIED` in `platform/EPICS.md`.
 ### Wave 4 — next up
 
 Epic 8 (Competitive Intelligence, needs Epic 7 — done) is the next dependency-unblocked item on the specced roadmap. Also starting Epic 16 (Billing) in parallel since it only depends on Epic 0 (done) and is fully independent of the SEO/GEO pipeline — writing its spec now to keep both build tracks fed.
+
+### Wave 4 results (commit `e210fc5`) — both VERIFIED first pass, process fix holding
+
+Epic 8 correctly reused Epic 7's pipeline (added a nullable `competitor_id` to `ai_runs` rather than building a parallel pipeline) — Share of AI Voice and the four gap types all tested at the documented boundary cases. Epic 16 did the harder job well: refactored `entitlements.ts` onto real seeded `plans`/`subscriptions` data while keeping the exact call signature Epics 2/5/7 already use, with a narrowly-scoped fallback (only fires when no subscription row exists) — spot-checked directly in `resolvePlanLimits` myself, confirmed it's not a second hardcoded map wearing a disguise. qa-flow-tester independently re-ran Epic 2/5/7's own entitlement tests inside the full suite (not trusting the backend doc's claim) and confirmed zero regression: 482/482 passing.
+
+Epics 0, 1, 2, 3, 4, 5, 6, 7, 8, 16 are now all `VERIFIED`.
+
+### Wave 5 — next up
+
+Epic 9 (Opportunity Engine, needs Epic 4 + Epic 8 — both done) is ready. Writing Epic 17 (Free AI + SEO Snapshot) spec now to pair with it — Epic 17 needs Epic 1 (CRM) + Epic 7 (AI baseline), both done, and is high product value (it's the actual public lead-generation entry point `PRODUCT_VISION.md` describes, and ties together CRM/crawler/SEO/AI-visibility into one public, unauthenticated flow).
