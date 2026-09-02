@@ -259,3 +259,25 @@ Epics 0, 1, 2, 6 are now `VERIFIED` in `platform/EPICS.md`. Migration applicatio
 ### Wave 2 — next up
 
 Dependency-driven: Epic 3 (Website Intelligence/Crawler) and Epic 5 (Intent & Query Universe) both only depend on Epic 2 (done) and not on each other, so they build in parallel next. Epic 4 (SEO Intelligence) needs both Epic 2 and Epic 3's schema to exist, and Epic 7 (AI Visibility Engine) needs both Epic 5 and Epic 6 — both deferred to Wave 3 rather than risking a three-way concurrent schema edit in one wave.
+
+---
+
+## Session: 2026-09-03 (cont.) — Wave 2 results reveal a systemic pattern; process changed
+
+### Wave 2 results (commit `4e0f16f`) — same integration gap, twice more
+
+Both Epic 3 and Epic 5 came back `needs-fixes` from qa-flow-tester, and **both had the identical failure mode Epic 2 had**: a genuinely solid backend (SSRF-safe crawler with real incremental progress, deterministic query-universe generator, both well-tested) and a genuinely well-designed frontend, built in parallel against each side's own invented fixtures, never actually wired together, disagreeing on field names/enums when checked (`status: pending` vs `queued`, `severity: critical/warning/info` vs `low/medium/high`, `errorMessage` vs `error`, etc.). Epic 5's backend also had two real logic bugs the verify pass caught: `PATCH /:id/activate` never archives a brand's previously-active query set (no single-active-set guarantee), and the entitlement cap was enforced on `POST /generate` but not on the manual-add endpoint, so a user could bypass their plan's query limit entirely.
+
+**This is now a pattern, not a one-off** — three epics in a row hit the exact same class of bug from running backend and frontend fully in parallel against invented contracts.
+
+### Process change: added a second standing rule to `platform/EPICS.md`
+
+From Wave 3 onward, **backend builds first, then frontend wires directly against the real deployed routes** — no more parallel fixture-building where each side guesses the other's contract. This trades some wall-clock parallelism per epic for eliminating the bug class at the source instead of catching it after the fact every wave.
+
+### Fix wave dispatched (Workflow `wf_e6fea498-e5d`, 2 agents in parallel — not yet reported in as of this entry)
+1. Epic 3: wire `data/website/client.ts` to the real crawl/pages routes, fix the 4 enum/field mismatches, replace the fake 26-second progress timer with real polling of the backend's actual incremental counters.
+2. Epic 5: wire `data/query-universe/client.ts` to the real query-sets routes, reconcile the contract (deliberately, per-field — add to backend if load-bearing for the UI, drop from frontend if not), fix the single-active-set bug, fix the entitlement-bypass bug.
+
+### Open items for next session
+- Confirm the Wave 2 fix results.
+- Epic 4 (SEO Intelligence, needs Epic 2+3) and Epic 7 (AI Visibility Engine, needs Epic 5+6) are next once Wave 2's fixes land — build these with the new backend-first-then-frontend process.
