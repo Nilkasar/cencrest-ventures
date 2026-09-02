@@ -1,45 +1,32 @@
 "use client";
 
-import { Check, Loader2, X } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { Badge, Card, CardContent, cn } from "@bebest/ui";
-import type { CrawlProgress, CrawlStep } from "@/data/website/types";
-import { STATUS_LABEL } from "@/data/website/fixtures";
+import type { CrawlJob } from "@/data/website/types";
+import { STATUS_LABEL } from "@/data/website/labels";
 import { formatRelativeTime } from "@/lib/format";
 
-function StepIcon({ state }: { state: CrawlStep["state"] }) {
-  if (state === "done") {
-    return (
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-accent bg-accent-muted text-accent">
-        <Check size={14} />
-      </span>
-    );
-  }
-  if (state === "active") {
-    return (
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-accent bg-accent text-accent-foreground">
-        <Loader2 size={14} className="animate-[spin_0.9s_linear_infinite]" />
-      </span>
-    );
-  }
-  if (state === "failed") {
-    return (
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-danger bg-danger-muted text-danger">
-        <X size={14} />
-      </span>
-    );
-  }
-  return <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-surface" aria-hidden="true" />;
-}
-
 /**
- * Real step-by-step crawl status — per the epic's UI surface note: "not a
- * generic spinner." Every step names what's actually happening (validating
- * robots.txt, discovering the sitemap, fetching pages, analyzing for
- * issues) and the active step shows live counters, not just a percentage.
+ * Real crawl status — per the epic's UI surface note: "not a generic
+ * spinner." Two named phases (queued, then fetching pages with live
+ * counters), because that's the actual granularity the real crawl pipeline
+ * reports.
+ *
+ * Post-verification fix: this used to render a synthesized six-step
+ * timeline (queued → validating → discovering → crawling → analyzing →
+ * finalizing) derived from elapsed time against a fake, fixed 26-second
+ * schedule — there was never a real signal behind the middle four steps.
+ * `apps/api/src/lib/crawler/engine.ts`'s `updateProgress` only ever writes
+ * `status` plus `pages_crawled`/`pages_found`/`pages_failed`, incrementally,
+ * as it runs — so this panel now renders exactly that, live, from
+ * `GET /crawl-jobs/:id` (`useCrawlJob`'s poll loop), instead of inventing
+ * phases the backend has no way to report. The "just fetched: <url>" line
+ * is gone for the same reason — no endpoint returns the URL a job most
+ * recently fetched.
  */
-export function CrawlProgressPanel({ progress }: { progress: CrawlProgress }) {
-  const { job, steps, lastFetchedUrl } = progress;
-  const activeIndex = steps.findIndex((s) => s.state === "active");
+export function CrawlProgressPanel({ job }: { job: CrawlJob }) {
+  const queued = job.status === "queued";
+  const pct = job.progressPct ?? (job.pagesFound > 0 ? Math.min(100, Math.round((job.pagesCrawled / job.pagesFound) * 100)) : 0);
 
   return (
     <Card>
@@ -59,56 +46,65 @@ export function CrawlProgressPanel({ progress }: { progress: CrawlProgress }) {
         </div>
 
         <ol role="status" aria-live="polite" className="flex flex-col">
-          {steps.map((step, index) => {
-            const isLast = index === steps.length - 1;
-            return (
-              <li key={step.key} className="flex gap-3">
-                <div className="flex flex-col items-center">
-                  <StepIcon state={step.state} />
-                  {!isLast && (
+          <li className="flex gap-3">
+            <div className="flex flex-col items-center">
+              <StepIcon active={queued} done={!queued} />
+              <div className={cn("w-px flex-1 min-h-[28px] my-0.5", !queued ? "bg-accent" : "bg-border")} aria-hidden="true" />
+            </div>
+            <div className="pb-6">
+              <p className={cn("text-[13.5px] font-medium", queued ? "text-foreground" : "text-muted-foreground")}>Queued</p>
+              <p className="text-[12.5px] text-muted-foreground mt-0.5 max-w-[52ch]">Waiting for a crawl slot to free up.</p>
+            </div>
+          </li>
+
+          <li className="flex gap-3">
+            <div className="flex flex-col items-center">
+              <StepIcon active={!queued} done={false} />
+            </div>
+            <div>
+              <p className={cn("text-[13.5px] font-medium", queued ? "text-muted-foreground" : "text-foreground")}>Fetching pages</p>
+              <p className="text-[12.5px] text-muted-foreground mt-0.5 max-w-[52ch]">
+                Requesting each page at up to 2 requests/second, extracting titles, headings, structured data, and checking for
+                issues as it goes.
+              </p>
+              {!queued && (
+                <div className="mt-2.5 flex flex-col gap-1.5">
+                  <div className="flex items-center gap-3 font-mono text-[12px] text-foreground">
+                    <span>
+                      {job.pagesCrawled} of ~{job.pagesFound || "?"} pages fetched
+                    </span>
+                    {job.pagesFailed > 0 && <span className="text-danger">{job.pagesFailed} failed</span>}
+                  </div>
+                  <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-surface">
                     <div
-                      className={cn(
-                        "w-px flex-1 min-h-[28px] my-0.5",
-                        index < Math.max(activeIndex, 0) || step.state === "done" ? "bg-accent" : "bg-border",
-                      )}
-                      aria-hidden="true"
+                      className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
+                      style={{ width: `${pct}%` }}
                     />
-                  )}
+                  </div>
                 </div>
-                <div className={cn("pb-6", isLast && "pb-0")}>
-                  <p
-                    className={cn(
-                      "text-[13.5px] font-medium",
-                      step.state === "pending" ? "text-muted-foreground" : "text-foreground",
-                    )}
-                  >
-                    {step.label}
-                  </p>
-                  <p className="text-[12.5px] text-muted-foreground mt-0.5 max-w-[52ch]">{step.description}</p>
-                  {step.state === "active" && step.key === "crawling" && (
-                    <div className="mt-2.5 flex flex-col gap-1.5">
-                      <div className="flex items-center gap-2 font-mono text-[12px] text-foreground">
-                        <span>
-                          {job.pagesCrawled} of ~{job.pagesFound || "?"} pages fetched
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-surface">
-                        <div
-                          className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
-                          style={{ width: `${job.pagesFound ? Math.min(100, (job.pagesCrawled / job.pagesFound) * 100) : 0}%` }}
-                        />
-                      </div>
-                      {lastFetchedUrl && (
-                        <p className="text-[11.5px] text-subtle-foreground truncate max-w-xs">Just fetched: {lastFetchedUrl}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </li>
-            );
-          })}
+              )}
+            </div>
+          </li>
         </ol>
       </CardContent>
     </Card>
   );
+}
+
+function StepIcon({ active, done }: { active: boolean; done: boolean }) {
+  if (done) {
+    return (
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-accent bg-accent-muted text-accent">
+        <Check size={14} />
+      </span>
+    );
+  }
+  if (active) {
+    return (
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-accent bg-accent text-accent-foreground">
+        <Loader2 size={14} className="animate-[spin_0.9s_linear_infinite]" />
+      </span>
+    );
+  }
+  return <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-surface" aria-hidden="true" />;
 }

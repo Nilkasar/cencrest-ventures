@@ -1,73 +1,75 @@
 /**
  * Epic 3 — Website Intelligence (Crawler) domain model.
  *
- * Field names follow the ported Prisma schema
- * (`packages/database/prisma/schema.prisma`'s "WEBSITE INTELLIGENCE
- * (crawler)" section) rather than `docs/epics/03-website-intelligence.md`'s
- * prose where the two disagree — same rule Epic 2's frontend completion doc
- * established ("this frontend was built against the spec's described shape
- * ... treat this file as the contract to reconcile toward" applies in
- * reverse here: the schema already exists, so it is the contract). Two
- * concrete divergences from the spec text:
+ * Post-verification fix: this file used to follow the ported Prisma
+ * schema's PRE-Epic-3-backend field names/enum values (a mock era — see
+ * `platform/docs/epics/03-website-intelligence-frontend.md`'s original
+ * "Schema reconciliation" section for what that used to say). Epic 3's real
+ * backend (`platform/apps/api/src/routes/{crawl,crawl-jobs,pages}.ts`) has
+ * since landed and fixed the schema forward to the epic spec's literal text
+ * — see `03-website-intelligence-backend.md`'s "Frontend contract
+ * reconciliation needed" table. This file now matches that backend's actual
+ * serializers exactly (verified by reading each route file, not guessed):
  *
- * - `crawl_jobs.status` is `pending | running | completed | failed |
- *   cancelled` in the schema, not the spec prose's `queued | running |
- *   completed | failed`. UI copy still says "Queued" for `pending` — see
- *   `STATUS_LABEL` in `fixtures.ts` — the customer-facing word and the
- *   stored enum value are allowed to differ.
- * - `page_issues.severity` is `critical | warning | info` in the schema,
- *   not the spec prose's `low | medium | high`.
- * - The spec's domain model also lists a `sitemaps` table; no such model
- *   exists in the ported schema (checked — see
- *   `packages/database/DECISIONS.md`, which never mentions one). Not built
- *   here for the same reason Epic 2's frontend didn't build an `entities`
- *   onboarding step for a table the UI surface never actually asked for:
- *   flagged in `03-website-intelligence-frontend.md` for the backend to
- *   resolve, not silently dropped.
+ * - `CrawlJob.status` is `"queued" | "running" | "completed" | "failed" |
+ *   "cancelled"` — was `"pending" | ...`.
+ * - `PageIssue.severity` is `"low" | "medium" | "high"` — was
+ *   `"critical" | "warning" | "info"`.
+ * - `CrawlJob.error` (was `errorMessage`) — matches `crawl_jobs.error`.
+ * - `Page.canonicalUrl` (was `canonical`) — matches `pages.canonical_url`.
+ * - `CrawlJob.organizationId` dropped — neither route serializer
+ *   (`serializeCrawlJob` in `routes/crawl.ts`/`routes/crawl-jobs.ts`)
+ *   returns it.
+ * - `Page.organizationId` / `Page.brandId` dropped — `serializePage` in
+ *   `routes/pages.ts` returns neither; a page is already scoped to the one
+ *   crawl job (and therefore the one brand/org) the caller asked for.
+ * - `PageIssue.pageId` / `.organizationId` / `.brandId` / `.createdAt`
+ *   dropped — `serializePage`'s nested `issues` array is
+ *   `{ id, issueType, severity, detail }` only; an issue's page is already
+ *   known from the `Page` it's nested under (`PageIssueWithPage.page`), and
+ *   the API never returns a per-issue timestamp (the page's own
+ *   `crawledAt` is the closest real signal for "when this was found").
+ * - `Page.issues: PageIssue[]` added, and `Page.hasSchemaMarkup: boolean`
+ *   added — both are real fields `serializePage` actually returns.
+ * - `CrawlJob.progressPct` added (optional — only `GET /crawl-jobs/:id`
+ *   computes it, not the `POST /brands/me/crawl` response).
+ * - The `CrawlStep`/`CrawlStepKey`/`CrawlStepState`/`CrawlProgress` UI-only
+ *   types are gone. They existed to synthesize a six-phase timeline
+ *   (queued → validating → discovering → crawling → analyzing →
+ *   finalizing) from a fake, fixed-duration clock
+ *   (`computeElapsedState` in the old `client.ts`) — there was never a real
+ *   backend signal for those six phases. The real crawl pipeline
+ *   (`apps/api/src/lib/crawler/engine.ts`) only ever reports
+ *   `status: "queued" | "running" | ...` plus the incrementally-updated
+ *   `pagesCrawled` / `pagesFound` / `pagesFailed` counters — so the
+ *   progress UI now renders `CrawlJob` directly instead of a synthesized
+ *   step list. See `components/website/crawl-progress-panel.tsx`.
+ * - `CrawlResultSummary` (unused anywhere in the app, and typed against the
+ *   old `critical | warning | info` severities) is gone.
  */
 
-export type CrawlJobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+export type CrawlJobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
 export interface CrawlJob {
   id: string;
-  organizationId: string;
   brandId: string;
   rootUrl: string;
   status: CrawlJobStatus;
   pagesCrawled: number;
   pagesFound: number;
-  errorMessage: string | null;
+  pagesFailed: number;
+  /** Only present on `GET /crawl-jobs/:id` responses (`routes/crawl-jobs.ts`
+   *  computes it); the `POST /brands/me/crawl` response that creates a job
+   *  doesn't carry it yet, since nothing has run at that point. */
+  progressPct?: number;
+  error: string | null;
   startedAt: string | null;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-/** Named phases of a single crawl, in order. Not a schema table — this is
- *  purely a UI concept, synthesized client-side from a job's timestamps so
- *  the progress screen can show real, distinct steps (per the epic's UI
- *  surface note: "not a generic spinner") instead of one bare percentage. */
-export type CrawlStepKey = "queued" | "validating" | "discovering" | "crawling" | "analyzing" | "finalizing";
-
-export type CrawlStepState = "pending" | "active" | "done" | "failed";
-
-export interface CrawlStep {
-  key: CrawlStepKey;
-  label: string;
-  description: string;
-  state: CrawlStepState;
-}
-
-/** Live view of a job in progress — what the progress screen polls for. */
-export interface CrawlProgress {
-  job: CrawlJob;
-  steps: CrawlStep[];
-  /** Only set while the "crawling" step is active — the most recently
-   *  fetched URL, for the "just fetched: /blog/post-4" live-status line. */
-  lastFetchedUrl: string | null;
-}
-
-export type IssueSeverity = "critical" | "warning" | "info";
+export type IssueSeverity = "low" | "medium" | "high";
 
 export type IssueType =
   | "missing_title"
@@ -83,46 +85,38 @@ export type IssueType =
   | "thin_content"
   | "noindex";
 
+export interface PageIssue {
+  id: string;
+  issueType: IssueType;
+  severity: IssueSeverity;
+  detail: string | null;
+}
+
 export interface Page {
   id: string;
-  organizationId: string;
   crawlJobId: string;
-  brandId: string;
   url: string;
   title: string | null;
   metaDescription: string | null;
   h1: string | null;
-  canonical: string | null;
+  canonicalUrl: string | null;
   statusCode: number | null;
   wordCount: number;
   loadMs: number | null;
   internalLinks: number;
   externalLinks: number;
+  hasSchemaMarkup: boolean;
   schemaTypes: string[];
   crawledAt: string;
+  issues: PageIssue[];
 }
 
-export interface PageIssue {
-  id: string;
-  organizationId: string;
-  brandId: string;
-  pageId: string;
-  issueType: IssueType;
-  severity: IssueSeverity;
-  detail: string | null;
-  createdAt: string;
-}
-
-/** A `page_issues` row joined with its parent `page` — the shape the
- *  page-issues list actually renders (per the epic's UI surface: a list of
- *  issues grouped by severity, each one naming the page it's on). */
+/** A `page_issues` row flattened back out with the parent `page` it came
+ *  from — the shape the page-issues list actually renders (per the epic's
+ *  UI surface: a list of issues grouped by severity, each one naming the
+ *  page it's on). Built client-side in `data/website/client.ts` from
+ *  `GET /brands/me/pages`'s page-centric response — the API has no
+ *  issue-centric list endpoint of its own. */
 export interface PageIssueWithPage extends PageIssue {
   page: Page;
-}
-
-export interface CrawlResultSummary {
-  jobId: string;
-  totalPages: number;
-  issuesBySeverity: Record<IssueSeverity, number>;
-  totalIssues: number;
 }

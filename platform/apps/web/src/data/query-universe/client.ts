@@ -1,69 +1,27 @@
-import { ApiError } from "@/lib/api-client";
-import { currentOrganization } from "@/data/fixtures";
-import { NORTHWIND_GENERATION_SEED } from "./seed";
-import { generateQueryCandidates } from "./generator";
-import { queryLimitFor } from "./constants";
+import { apiClient, ApiError } from "@/lib/api-client";
+import { QUERY_CATEGORIES } from "./types";
 import type { PlanTier, Query, QueryCategory, QueryIntentType, QueryPriority, QuerySet } from "./types";
 
 /**
- * The Query Universe's data-access seam — same shape as `data/crm/client.ts`:
- * every screen calls through here, never the seed/generator directly, so
- * wiring `platform/apps/api`'s real routes later (`POST /brands/:id/
- * query-sets/generate`, `query-sets` list/get/activate/archive, `queries`
- * list/add/edit/remove — see the epic's "API surface") is a swap inside
- * these functions, not a rewrite of any component. Until then: an in-memory
- * store, mutated directly, behind a simulated network delay.
+ * The Query Universe's data-access seam — same shape as `data/crm/client.ts`
+ * and (the closest real precedent) `lib/onboarding-client.ts`: every screen
+ * calls through here, never a fixture or `apiClient` directly.
+ *
+ * Post-verification fix (qa-flow-tester pass — see
+ * `docs/epics/05-intent-query-universe-frontend.md`'s "Post-verification
+ * fixes" section): this file used to be a self-contained in-memory fixture
+ * store (`seed.ts` + `generator.ts`, both now removed — nothing else
+ * imported them) with zero calls to `apiClient`, even though
+ * `apps/api/src/routes/query-sets.ts`'s real, tested routes
+ * (`/brands/me/query-sets/...`) existed the whole time. Every exported
+ * function keeps its original name and signature except `fetchQueryUniverse`
+ * and `generateQuerySet`, which drop their now-meaningless `brandId`
+ * parameter — the real API scopes to the caller's org's one brand
+ * implicitly (same "single-brand-per-org" convention every other epic's
+ * routes use), so there is nothing for the frontend to pass. Neither call
+ * site (`query-universe-view.tsx`) ever passed one.
  */
 
-const LATENCY_MS = 400;
-
-/** Same convention as `data/crm/client.ts`'s `?bbDemoError=1`. */
-function shouldSimulateError(): boolean {
-  if (typeof window === "undefined") return false;
-  return new URLSearchParams(window.location.search).get("bbDemoError") === "1";
-}
-
-/** `?bbDemoPlan=free|starter|growth|pro|agency|managed|enterprise` overrides
- *  `currentOrganization.plan` for this screen only — lets you see the
- *  entitlement cap actually bind (Northwind's brand profile produces more
- *  candidates than the Free or Starter tier allows) without needing a
- *  second fixture organization. Falls back to the real plan for any
- *  missing/invalid value. */
-function resolvePlanTier(): PlanTier {
-  const validPlans: PlanTier[] = ["free", "starter", "growth", "pro", "agency", "managed", "enterprise"];
-  if (typeof window !== "undefined") {
-    const override = new URLSearchParams(window.location.search).get("bbDemoPlan");
-    if (override && (validPlans as string[]).includes(override)) return override as PlanTier;
-  }
-  return currentOrganization.plan;
-}
-
-async function simulate<T>(value: T): Promise<T> {
-  await new Promise((resolve) => setTimeout(resolve, LATENCY_MS));
-  if (shouldSimulateError()) {
-    throw new ApiError(
-      "The query universe service didn't respond in time. (Simulated via ?bbDemoError=1 — remove it to clear.)",
-      503,
-    );
-  }
-  return value;
-}
-
-function clone<T>(value: T): T {
-  return typeof structuredClone === "function" ? structuredClone(value) : JSON.parse(JSON.stringify(value));
-}
-
-function nowIso(): string {
-  return new Date().toISOString();
-}
-
-function nextId(prefix: string, store: { id: string }[]): string {
-  return `${prefix}_${store.length + 1}_${Math.random().toString(36).slice(2, 7)}`;
-}
-
-/** Thrown when an action would take a `query_sets` row past its plan's cap —
- *  the epic brief's "reject with a clear, specific error naming the limit
- *  and the upgrade path" (same posture as Epic 2's `EntitlementError`). */
 export class QueryLimitError extends Error {
   constructor(
     public readonly limit: number,
@@ -74,19 +32,114 @@ export class QueryLimitError extends Error {
   }
 }
 
-export const DEFAULT_BRAND_ID = "brand_fixture_northwind";
+// ── Wire shapes returned by apps/api's serializers (camelCase, whitelisted
+// fields — see routes/query-sets.ts's `serializeQuerySet`/`serializeQuery`) ─
 
-let querySetStore: QuerySet[] = [];
-let queryStore: Query[] = [];
+interface ApiQuerySet {
+  id: string;
+  name: string;
+  description: string | null;
+  queryCount: number;
+  version: number;
+  status: QuerySet["status"];
+  planTier: PlanTier;
+  planLimit: number;
+  potentialCount: number;
+  createdAt: string;
+  updatedAt: string;
+  activatedAt: string | null;
+  archivedAt: string | null;
+}
+
+interface ApiQuery {
+  id: string;
+  querySetId: string;
+  text: string;
+  // The backend keeps these nullable in the schema (see
+  // packages/database/DECISIONS.md §18) but both write routes now guarantee
+  // a non-null value on every row this API creates — `mapQuery` below falls
+  // back defensively rather than trusting that at the type level.
+  intentType: QueryIntentType | null;
+  category: string | null;
+  tags: string[];
+  priority: QueryPriority;
+  source: "generated" | "manual";
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ApiErrorBody {
+  message?: string;
+  limit?: number;
+  plan?: PlanTier;
+}
+
+function mapQuerySet(api: ApiQuerySet): QuerySet {
+  return {
+    id: api.id,
+    name: api.name,
+    description: api.description,
+    queryCount: api.queryCount,
+    version: api.version,
+    status: api.status,
+    planTier: api.planTier,
+    planLimit: api.planLimit,
+    potentialCount: api.potentialCount,
+    createdAt: api.createdAt,
+    updatedAt: api.updatedAt,
+    activatedAt: api.activatedAt,
+    archivedAt: api.archivedAt,
+  };
+}
+
+/** `category` is only closed to the ten template values by convention (the
+ *  manual-add dialog's `<Select>` only offers those ten) — the backend
+ *  itself stores it as an open string (a human curator may use any label,
+ *  see DECISIONS.md §16). A row outside the ten falls back to `"category"`
+ *  rather than producing a `QueryCategory` value the UI's lookup tables
+ *  (`QUERY_CATEGORY_META`, etc.) don't have an entry for. */
+function mapQuery(api: ApiQuery): Query {
+  return {
+    id: api.id,
+    querySetId: api.querySetId,
+    text: api.text,
+    intentType: api.intentType ?? "informational",
+    category: isQueryCategory(api.category) ? api.category : "category",
+    tags: api.tags,
+    priority: api.priority,
+    source: api.source,
+    createdAt: api.createdAt,
+    updatedAt: api.updatedAt,
+  };
+}
+
+const QUERY_CATEGORY_SET = new Set<string>(QUERY_CATEGORIES);
+
+function isQueryCategory(value: string | null): value is QueryCategory {
+  return value !== null && QUERY_CATEGORY_SET.has(value);
+}
+
+function isNotFound(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 404;
+}
+
+/** Rethrows a 402 (entitlement) as `QueryLimitError`; anything else is
+ *  rethrown as-is — same shape as `onboarding-client.ts`'s
+ *  `translateError`. */
+function translateError(err: unknown): never {
+  if (err instanceof ApiError && err.status === 402) {
+    const body = err.body as ApiErrorBody | undefined;
+    throw new QueryLimitError(body?.limit ?? 0, body?.plan ?? "free");
+  }
+  throw err;
+}
 
 export interface QueryUniverseSnapshot {
   /** The set currently open for curation, if any. */
   draft: QuerySet | null;
   /** The set live downstream epics (7/GEO, 4/SEO) would consume. */
   active: QuerySet | null;
-  /** Superseded sets, newest first — kept for the version history the
-   *  activation lifecycle implies (a new draft's activation archives the
-   *  previously active set rather than silently overwriting it). */
+  /** Superseded sets, newest first. */
   archived: QuerySet[];
   /** `draft ?? active` — whichever set the main review list renders. */
   focused: QuerySet | null;
@@ -94,86 +147,46 @@ export interface QueryUniverseSnapshot {
   queries: Query[];
 }
 
-function snapshotFor(brandId: string): QueryUniverseSnapshot {
-  const sets = querySetStore.filter((s) => s.brandId === brandId);
-  const draft = sets.find((s) => s.status === "draft") ?? null;
-  const active = sets.find((s) => s.status === "active") ?? null;
-  const archived = sets
-    .filter((s) => s.status === "archived")
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  const focused = draft ?? active;
-  const queries = focused
-    ? queryStore
-        .filter((q) => q.querySetId === focused.id)
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-    : [];
-  return { draft: clone(draft), active: clone(active), archived: clone(archived), focused: clone(focused), queries: clone(queries) };
-}
-
-export async function fetchQueryUniverse(brandId: string = DEFAULT_BRAND_ID): Promise<QueryUniverseSnapshot> {
-  return simulate(snapshotFor(brandId));
-}
-
-/**
- * Runs the template generator against the (fixture) brand profile,
- * entitlement-capped, and returns a fresh `draft` set — mirrors
- * `POST /brands/:id/query-sets/generate`. Replaces any existing draft (a
- * user reviewing an unactivated draft who regenerates is discarding it, not
- * appending to it); a still-`active` set for the brand is left untouched —
- * activating the new draft is what retires it (see `activateQuerySet`).
- */
-export async function generateQuerySet(brandId: string = DEFAULT_BRAND_ID): Promise<QueryUniverseSnapshot> {
-  const existing = querySetStore.filter((s) => s.brandId === brandId);
-  const activeSet = existing.find((s) => s.status === "active");
-  const priorDraft = existing.find((s) => s.status === "draft");
-
-  const plan = resolvePlanTier();
-  const limit = queryLimitFor(plan);
-  const { candidates, potentialCount } = generateQueryCandidates(NORTHWIND_GENERATION_SEED, limit);
-
-  // Discard the prior draft (and its queries) — see doc comment above.
-  if (priorDraft) {
-    querySetStore = querySetStore.filter((s) => s.id !== priorDraft.id);
-    queryStore = queryStore.filter((q) => q.querySetId !== priorDraft.id);
+/** Mirrors `GET /brands/me/query-sets` (+ `GET .../:id/queries` for the
+ *  focused set) — the full snapshot the review screen renders. A 404 on the
+ *  list call means "no brand profile yet" (Epic 2 not completed), not an
+ *  error: it resolves to an all-empty snapshot so the screen just shows its
+ *  empty state rather than an error panel. */
+export async function fetchQueryUniverse(): Promise<QueryUniverseSnapshot> {
+  let sets: QuerySet[];
+  try {
+    const apiSets = await apiClient.get<ApiQuerySet[]>("/brands/me/query-sets");
+    sets = apiSets.map(mapQuerySet);
+  } catch (err) {
+    if (isNotFound(err)) {
+      return { draft: null, active: null, archived: [], focused: null, queries: [] };
+    }
+    throw err;
   }
 
-  const version = priorDraft ? priorDraft.version : activeSet ? activeSet.version + 1 : 1;
-  const now = nowIso();
-  const querySet: QuerySet = {
-    id: nextId("qset", querySetStore),
-    brandId,
-    organizationId: currentOrganization.id,
-    name: `Query Universe v${version}`,
-    description: `Generated from your brand profile — ${NORTHWIND_GENERATION_SEED.categories.join(", ")}.`,
-    queryCount: candidates.length,
-    version,
-    status: "draft",
-    planTier: plan,
-    planLimit: limit,
-    potentialCount,
-    createdAt: now,
-    updatedAt: now,
-    activatedAt: null,
-    archivedAt: null,
-  };
+  const draft = sets.find((s) => s.status === "draft") ?? null;
+  const active = sets.find((s) => s.status === "active") ?? null;
+  const archived = sets.filter((s) => s.status === "archived").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const focused = draft ?? active;
 
-  const queries: Query[] = candidates.map((c, index) => ({
-    id: `qry_${version}_${index + 1}_${Math.random().toString(36).slice(2, 7)}`,
-    querySetId: querySet.id,
-    text: c.text,
-    intentType: c.intentType,
-    category: c.category,
-    tags: c.tags,
-    priority: c.priority,
-    source: "generated",
-    createdAt: now,
-    updatedAt: now,
-  }));
+  let queries: Query[] = [];
+  if (focused) {
+    const apiQueries = await apiClient.get<ApiQuery[]>(`/brands/me/query-sets/${focused.id}/queries`);
+    queries = apiQueries.map(mapQuery);
+  }
 
-  querySetStore = [...querySetStore, querySet];
-  queryStore = [...queryStore, ...queries];
+  return { draft, active, archived, focused, queries };
+}
 
-  return simulate(snapshotFor(brandId));
+/** Mirrors `POST /brands/me/query-sets/generate` — the template generator,
+ *  entitlement-capped server-side, returns a fresh `draft` set. */
+export async function generateQuerySet(): Promise<QueryUniverseSnapshot> {
+  try {
+    await apiClient.post("/brands/me/query-sets/generate", {});
+  } catch (err) {
+    translateError(err);
+  }
+  return fetchQueryUniverse();
 }
 
 export interface NewQueryInput {
@@ -183,104 +196,49 @@ export interface NewQueryInput {
   priority: QueryPriority;
 }
 
-/** Manual curation — "add missing ones" per the epic's UI surface. Only
- *  valid against a `draft` set; an `active` set's version is frozen (see
- *  `types.ts`'s `QuerySet.version` doc comment). */
+/** Mirrors `POST /brands/me/query-sets/:id/queries` — draft-only and
+ *  entitlement-capped server-side (a 409/402 surfaces as an `ApiError`/
+ *  `QueryLimitError` respectively). */
 export async function addQuery(querySetId: string, input: NewQueryInput): Promise<Query> {
-  const set = querySetStore.find((s) => s.id === querySetId);
-  if (!set) throw new ApiError(`Query set ${querySetId} not found`, 404);
-  if (set.status !== "draft") {
-    throw new ApiError(`"${set.name}" is ${set.status} — only a draft set can be edited.`, 409);
+  try {
+    const created = await apiClient.post<ApiQuery>(`/brands/me/query-sets/${querySetId}/queries`, {
+      text: input.text,
+      category: input.category,
+      intentType: input.intentType,
+      priority: input.priority,
+    });
+    return mapQuery(created);
+  } catch (err) {
+    return translateError(err);
   }
-  const text = input.text.trim();
-  if (!text) throw new Error("Enter the query text.");
-  const existingQueries = queryStore.filter((q) => q.querySetId === querySetId);
-  if (existingQueries.some((q) => q.text.toLowerCase() === text.toLowerCase())) {
-    throw new Error("That query is already in this set.");
-  }
-  if (set.queryCount >= set.planLimit) {
-    throw new QueryLimitError(set.planLimit, set.planTier);
-  }
-
-  const now = nowIso();
-  const query: Query = {
-    id: nextId("qry", queryStore),
-    querySetId,
-    text,
-    intentType: input.intentType,
-    category: input.category,
-    tags: [input.category, "manual"],
-    priority: input.priority,
-    source: "manual",
-    createdAt: now,
-    updatedAt: now,
-  };
-  queryStore = [...queryStore, query];
-  set.queryCount = existingQueries.length + 1;
-  set.updatedAt = now;
-
-  return simulate(clone(query));
 }
 
-/** Removes an irrelevant query — "remove irrelevant queries" per the epic's
- *  UI surface. Same draft-only guard as `addQuery`. */
+/** Mirrors `DELETE /brands/me/query-sets/:id/queries/:queryId` — soft
+ *  delete, draft-only server-side. */
 export async function removeQuery(querySetId: string, queryId: string): Promise<void> {
-  const set = querySetStore.find((s) => s.id === querySetId);
-  if (!set) throw new ApiError(`Query set ${querySetId} not found`, 404);
-  if (set.status !== "draft") {
-    throw new ApiError(`"${set.name}" is ${set.status} — only a draft set can be edited.`, 409);
-  }
-  const before = queryStore.length;
-  queryStore = queryStore.filter((q) => q.id !== queryId);
-  if (queryStore.length === before) throw new ApiError(`Query ${queryId} not found`, 404);
-
-  set.queryCount = queryStore.filter((q) => q.querySetId === querySetId).length;
-  set.updatedAt = nowIso();
-  await simulate(undefined);
+  await apiClient.delete(`/brands/me/query-sets/${querySetId}/queries/${queryId}`);
 }
 
-/**
- * `draft` → `active`, freezing `version`. Per DoD #4: activating one set
- * archives whatever was previously active for the same brand instead of
- * letting two sets claim "active" at once — Epic 6/7 consume exactly one
- * active query_set per brand.
- */
+/** Mirrors `PATCH /brands/me/query-sets/:id/activate` — draft → active. The
+ *  backend archives the brand's previously-active set (if any) in the same
+ *  transaction (post-verification fix — see
+ *  `docs/epics/05-intent-query-universe-backend.md`), so there is nothing
+ *  left for this client to orchestrate client-side. */
 export async function activateQuerySet(querySetId: string): Promise<QuerySet> {
-  const set = querySetStore.find((s) => s.id === querySetId);
-  if (!set) throw new ApiError(`Query set ${querySetId} not found`, 404);
-  if (set.status !== "draft") {
-    throw new ApiError(`"${set.name}" is already ${set.status}.`, 409);
+  try {
+    const updated = await apiClient.patch<ApiQuerySet>(`/brands/me/query-sets/${querySetId}/activate`);
+    return mapQuerySet(updated);
+  } catch (err) {
+    return translateError(err);
   }
-  if (set.queryCount === 0) {
-    throw new Error("Add at least one query before activating this set.");
-  }
-
-  const now = nowIso();
-  for (const other of querySetStore) {
-    if (other.brandId === set.brandId && other.status === "active") {
-      other.status = "archived";
-      other.archivedAt = now;
-      other.updatedAt = now;
-    }
-  }
-  set.status = "active";
-  set.activatedAt = now;
-  set.updatedAt = now;
-
-  return simulate(clone(set));
 }
 
-/** Retires a set — a `draft` being discarded, or an `active` set being
- *  taken out of service without a replacement ready yet. */
+/** Mirrors `PATCH /brands/me/query-sets/:id/archive`. */
 export async function archiveQuerySet(querySetId: string): Promise<QuerySet> {
-  const set = querySetStore.find((s) => s.id === querySetId);
-  if (!set) throw new ApiError(`Query set ${querySetId} not found`, 404);
-  if (set.status === "archived") {
-    throw new ApiError(`"${set.name}" is already archived.`, 409);
+  try {
+    const updated = await apiClient.patch<ApiQuerySet>(`/brands/me/query-sets/${querySetId}/archive`);
+    return mapQuerySet(updated);
+  } catch (err) {
+    return translateError(err);
   }
-  const now = nowIso();
-  set.status = "archived";
-  set.archivedAt = now;
-  set.updatedAt = now;
-  return simulate(clone(set));
 }

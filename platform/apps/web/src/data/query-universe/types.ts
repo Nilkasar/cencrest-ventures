@@ -8,15 +8,19 @@ import type { Organization } from "@/data/types";
  * status; queries: text/intent_type/category/tags/priority) — that spec is
  * the contract this frontend was briefed to build against.
  *
- * It is NOT a 1:1 mirror of the currently-ported `packages/database/prisma/
- * schema.prisma` — see this epic's frontend completion doc's "Schema
- * reconciliation" note (same posture Epic 2's frontend took, documented in
- * `data/types.ts` above the `Brand`/`UseCase` interfaces): the ported
- * `query_sets` table has no `status`/`version`/`query_count` columns yet,
- * and `questions.type` is a `who/what/how/best/compare/other` phrasing
- * enum, not the four-value `intent_type` the epic spec calls for, nor the
- * ten generation categories below. Backend work should implement toward
- * this file, not the other way around.
+ * Post-verification fix (qa-flow-tester pass — see
+ * `docs/epics/05-intent-query-universe-frontend.md`'s "Post-verification
+ * fixes" section and `packages/database/DECISIONS.md` §18): this used to
+ * describe a gap against the ported schema; `apps/api`'s real
+ * `/brands/me/query-sets` routes now implement exactly this contract.
+ * `QuerySet` previously also had `brandId`/`organizationId` — checked
+ * against every component in `components/query-universe/` and found
+ * genuinely unused (no display, no client-side filtering once the real API
+ * scopes by the caller's org/brand implicitly), so they were removed here
+ * rather than added to the backend. The remaining fields
+ * (`planTier`/`planLimit`/`potentialCount`/`activatedAt`/`archivedAt`,
+ * `Query.source`) were each checked the same way and found genuinely
+ * displayed, so `apps/api` now persists and serializes all of them.
  */
 
 /**
@@ -58,10 +62,14 @@ export interface Query {
   category: QueryCategory;
   tags: string[];
   priority: QueryPriority;
-  /** Not in the spec's DB columns — added so the review screen can show
-   *  provenance ("generated" vs a human addition) without a black-box feel,
-   *  per the epic's "the customer effectively co-owns this" framing. Purely
-   *  additive: dropping it loses nothing a backend implementation needs. */
+  /** Not in the spec's literal DDL, but genuinely displayed — a "Manual"
+   *  badge in `category-section.tsx` and the "All queries" table
+   *  distinguishes what a human curated from what the template generator
+   *  produced, per the epic's "the customer effectively co-owns this"
+   *  framing. Post-verification fix: checked against those components (not
+   *  assumed) and confirmed load-bearing, so `apps/api`'s `queries` table
+   *  now has a real `source` column instead of this being a frontend-only
+   *  field — see `packages/database/DECISIONS.md` §18. */
   source: "generated" | "manual";
   createdAt: string;
   updatedAt: string;
@@ -75,15 +83,20 @@ export type PlanTier = Organization["plan"];
 
 export interface QuerySet {
   id: string;
-  brandId: string;
-  organizationId: string;
   name: string;
   description: string | null;
   /** Kept in sync with the live `queries` count by every mutation in
    *  `client.ts` — never read as a separately-trusted number. */
   queryCount: number;
-  /** Frozen at activation; a new generation starts the next draft at
-   *  `currentActiveVersion + 1`, never mutates a version once active. */
+  /** Frozen at activation — a subsequent edit is rejected (409), never
+   *  silently mutates an activated set's queries. Post-verification fix: this
+   *  comment previously said a new generation starts the next draft at
+   *  `currentActiveVersion + 1`; the real backend (`POST .../generate`)
+   *  always creates a fresh draft at `version: 1` — there is no
+   *  duplicate-into-a-new-draft-version flow yet (an intentional gap, see
+   *  `docs/epics/05-intent-query-universe-backend.md`'s "What was NOT
+   *  done"). "Frozen" here means locked against further edits, not
+   *  incremented. */
   version: number;
   status: QuerySetStatus;
   planTier: PlanTier;

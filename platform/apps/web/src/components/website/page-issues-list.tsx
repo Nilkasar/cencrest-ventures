@@ -23,19 +23,19 @@ import {
 import { ErrorPanel } from "@/components/patterns/error-panel";
 import { getPageIssues } from "@/data/website/client";
 import type { IssueSeverity, PageIssueWithPage } from "@/data/website/types";
-import { ISSUE_TYPE_LABEL, SEVERITY_LABEL } from "@/data/website/fixtures";
+import { ISSUE_TYPE_LABEL, SEVERITY_LABEL } from "@/data/website/labels";
 import { formatDate } from "@/lib/format";
 
 const PAGE_SIZE = 25;
 
 const SEVERITY_BADGE_VARIANT: Record<IssueSeverity, NonNullable<BadgeProps["variant"]>> = {
-  critical: "danger",
-  warning: "warning",
-  info: "outline",
+  high: "danger",
+  medium: "warning",
+  low: "outline",
 };
 
-function StatCard({ label, value, variant }: { label: string; value: number; variant: "critical" | "warning" | "info" | "total" }) {
-  const dotClass = { critical: "bg-danger", warning: "bg-warning", info: "bg-subtle-foreground", total: "bg-accent" }[variant];
+function StatCard({ label, value, variant }: { label: string; value: number; variant: "high" | "medium" | "low" | "total" }) {
+  const dotClass = { high: "bg-danger", medium: "bg-warning", low: "bg-subtle-foreground", total: "bg-accent" }[variant];
   return (
     <Card>
       <CardContent className="p-4">
@@ -80,12 +80,12 @@ function IssuesTableSkeleton() {
  * query param; "Load more" mirrors the paginated response shape rather
  * than rendering every row from a 500-page crawl at once.
  */
-export function PageIssuesList({ brandId, jobId }: { brandId: string; jobId: string }) {
+export function PageIssuesList({ jobId }: { jobId: string }) {
   const [severity, setSeverity] = useState<IssueSeverity | "all">("all");
   const [page, setPage] = useState(1);
   const [issues, setIssues] = useState<PageIssueWithPage[]>([]);
   const [total, setTotal] = useState(0);
-  const [bySeverity, setBySeverity] = useState<Record<IssueSeverity, number>>({ critical: 0, warning: 0, info: 0 });
+  const [bySeverity, setBySeverity] = useState<Record<IssueSeverity, number>>({ high: 0, medium: 0, low: 0 });
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -99,7 +99,7 @@ export function PageIssuesList({ brandId, jobId }: { brandId: string; jobId: str
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
-    getPageIssues(brandId, jobId, { severity, page: 1, pageSize: PAGE_SIZE })
+    getPageIssues(jobId, { severity, page: 1, pageSize: PAGE_SIZE })
       .then((result) => {
         if (cancelled) return;
         setIssues(result.issues);
@@ -117,12 +117,12 @@ export function PageIssuesList({ brandId, jobId }: { brandId: string; jobId: str
     return () => {
       cancelled = true;
     };
-  }, [brandId, jobId, severity, reloadToken]);
+  }, [jobId, severity, reloadToken]);
 
   function loadMore() {
     const nextPage = page + 1;
     setLoadingMore(true);
-    getPageIssues(brandId, jobId, { severity, page: nextPage, pageSize: PAGE_SIZE })
+    getPageIssues(jobId, { severity, page: nextPage, pageSize: PAGE_SIZE })
       .then((result) => {
         setIssues((prev) => [...prev, ...result.issues]);
         setPage(nextPage);
@@ -131,23 +131,23 @@ export function PageIssuesList({ brandId, jobId }: { brandId: string; jobId: str
       .finally(() => setLoadingMore(false));
   }
 
-  const totalIssues = bySeverity.critical + bySeverity.warning + bySeverity.info;
+  const totalIssues = bySeverity.high + bySeverity.medium + bySeverity.low;
 
   return (
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label="Total issues" value={totalIssues} variant="total" />
-        <StatCard label="Critical" value={bySeverity.critical} variant="critical" />
-        <StatCard label="Warning" value={bySeverity.warning} variant="warning" />
-        <StatCard label="Info" value={bySeverity.info} variant="info" />
+        <StatCard label="High" value={bySeverity.high} variant="high" />
+        <StatCard label="Medium" value={bySeverity.medium} variant="medium" />
+        <StatCard label="Low" value={bySeverity.low} variant="low" />
       </div>
 
       <Tabs value={severity} onValueChange={(v) => setSeverity(v as IssueSeverity | "all")}>
         <TabsList>
           <TabsTrigger value="all">All ({totalIssues})</TabsTrigger>
-          <TabsTrigger value="critical">Critical ({bySeverity.critical})</TabsTrigger>
-          <TabsTrigger value="warning">Warning ({bySeverity.warning})</TabsTrigger>
-          <TabsTrigger value="info">Info ({bySeverity.info})</TabsTrigger>
+          <TabsTrigger value="high">High ({bySeverity.high})</TabsTrigger>
+          <TabsTrigger value="medium">Medium ({bySeverity.medium})</TabsTrigger>
+          <TabsTrigger value="low">Low ({bySeverity.low})</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -173,7 +173,7 @@ export function PageIssuesList({ brandId, jobId }: { brandId: string; jobId: str
                 <TableHead>Issue</TableHead>
                 <TableHead>Page</TableHead>
                 <TableHead>Detail</TableHead>
-                <TableHead>Found</TableHead>
+                <TableHead>Crawled</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -195,7 +195,12 @@ export function PageIssuesList({ brandId, jobId }: { brandId: string; jobId: str
                     <p className="text-[12.5px] text-muted-foreground">{issue.detail}</p>
                   </TableCell>
                   <TableCell>
-                    <span className="text-[12.5px] text-muted-foreground whitespace-nowrap">{formatDate(issue.createdAt)}</span>
+                    {/* The API has no per-issue timestamp (`serializePage` in
+                        `routes/pages.ts` returns `{id, issueType, severity,
+                        detail}` for each nested issue, nothing more) — the
+                        page's own `crawledAt` is the closest real signal for
+                        "when this was found." */}
+                    <span className="text-[12.5px] text-muted-foreground whitespace-nowrap">{formatDate(issue.page.crawledAt)}</span>
                   </TableCell>
                 </TableRow>
               ))}

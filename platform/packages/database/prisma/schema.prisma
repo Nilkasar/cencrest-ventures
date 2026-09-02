@@ -1722,6 +1722,29 @@ model query_sets {
   // not a Postgres ENUM type). See DECISIONS.md §6 for why closed VARCHARs
   // get a CHECK instead of a native enum in this schema.
   status              String                @default("draft") @db.VarChar(50)
+  // Post-verification fix (Epic 5 QA pass — see DECISIONS.md §18 and
+  // docs/epics/05-intent-query-universe-backend.md's "Post-verification
+  // fixes"): the frontend's `QuerySet` type needs these five fields for real
+  // UI surfaces (the cap meter and "why 500 and not more" copy on
+  // `QuerySetSummaryCard`, the "Activated"/"Archived" timestamps shown
+  // there and in the version-history table) — none of it was persisted
+  // before. `plan_tier`/`plan_limit`/`potential_count` are frozen at
+  // `generate` time (not re-read from `subscriptions` on every request) so
+  // the explanation stays correct even after the org's plan later changes;
+  // `activated_at`/`archived_at` are set by the `activate`/`archive` routes.
+  plan_tier       String    @default("free") @db.VarChar(50)
+  // The cap actually applied at generation time. For a plan with no
+  // configured cap (`queries_per_query_set: null` — agency/managed, see
+  // apps/api/src/lib/entitlements.ts), this is set to `potential_count`
+  // (nothing was truncated), not a sentinel — the frontend type has no
+  // "unlimited" representation, so "the limit that bound" and "how many
+  // exist" are simply equal when no cap actually applied.
+  plan_limit      Int       @default(0)
+  // The uncapped candidate count the brand profile could have produced —
+  // lets the UI say "500 of 812 possible" only when the cap actually bound.
+  potential_count Int       @default(0)
+  activated_at    DateTime? @db.Timestamptz(6)
+  archived_at     DateTime? @db.Timestamptz(6)
   created_by          String                @db.Uuid
   updated_by          String?               @db.Uuid
   created_at          DateTime              @default(now()) @db.Timestamptz(6)
@@ -1741,6 +1764,12 @@ model query_sets {
   // use an index scan); this table's was missing one.
   @@index([organization_id], map: "idx_query_sets_organization")
   @@index([status], map: "idx_query_sets_status")
+  // Post-verification fix: the single-active-query-set enforcement added to
+  // `PATCH /:id/activate` (docs/epics/05-intent-query-universe-backend.md)
+  // queries "every OTHER active query_set for this brand" — a composite
+  // index on the exact predicate that query filters by, not just the two
+  // single-column indexes above.
+  @@index([brand_id, status], map: "idx_query_sets_brand_status")
 }
 
 /// The ten query-generation categories the template generator produces
@@ -1756,14 +1785,36 @@ model queries {
   organization_id String    @db.Uuid
   query_set_id    String    @db.Uuid
   text            String
-  // informational | commercial | comparison | transactional
+  // informational | commercial | comparison | transactional. Nullable at the
+  // DB layer (kept open for a future direct-write path this epic doesn't
+  // have), but the frontend's `Query.intentType` is non-nullable — Post-
+  // verification fix: both write routes in `routes/query-sets.ts` now
+  // guarantee a non-null value at the API boundary instead (`generate`
+  // always sets it from the template's category mapping; manual add derives
+  // it from the chosen category via `query-generator.ts`'s `CATEGORY_META`
+  // when the caller doesn't supply one), so nullability is enforced by
+  // application logic, not narrowed at the schema/CHECK level. See
+  // DECISIONS.md §18.
   intent_type String? @db.VarChar(50)
   // category | problem | commercial | comparison | feature | industry |
   // size | geography | intent | authority — the ten template categories;
   // this is what the review UI groups by (epic spec's "UI surface" section).
+  // Same nullability reconciliation as `intent_type` above: nullable here,
+  // but `routes/query-sets.ts`'s manual-add Zod schema now requires it on
+  // every write, matching the frontend's non-nullable `Query.category`.
+  // Deliberately still an open `VARCHAR`, not narrowed to the ten template
+  // values — see the CHECK-constraints note above this model for why.
   category  String?  @db.VarChar(100)
   tags      String[] @default([])
   priority  Int      @default(2) @db.SmallInt
+  // Post-verification fix (Epic 5 QA pass, DECISIONS.md §18): the frontend's
+  // `Query.source` field ("generated" vs "manual") is genuinely displayed —
+  // a "Manual" badge in the review UI distinguishing what a human curated
+  // from what the template generator produced — so it gets a real column
+  // instead of being dropped. Set once at creation by
+  // `apps/api/src/routes/query-sets.ts` (`generate` writes `'generated'`,
+  // the manual-add route writes `'manual'`); never changes after.
+  source          String    @default("generated") @db.VarChar(20)
   created_by      String?   @db.Uuid
   updated_by      String?   @db.Uuid
   created_at      DateTime  @default(now()) @db.Timestamptz(6)

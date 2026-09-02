@@ -318,3 +318,129 @@ rather than leaving implicit in the code:
   assertion unrelated to `query_sets`/`queries`) — not introduced, touched,
   or fixed by this build.
 - `@bebest/database`'s own suite: 7 tests, unchanged, passing.
+
+---
+
+## Post-verification fixes (qa-flow-tester pass)
+
+A qa-flow-tester-persona review of the completed backend+frontend halves
+above found the frontend never wired to the real API (see the frontend
+doc's own "Post-verification fixes"), a frontend/backend contract
+mismatch, and two real backend bugs. This section covers the backend side
+of all three; **no database was connected to at any point** — same
+`prisma validate`/`generate` (schema-only), no `migrate`/`db push`/`db
+pull`, same as every prior pass.
+
+### Contract mismatch — schema additions
+
+The frontend's `QuerySet` type required `brandId`/`organizationId`/
+`planTier`/`planLimit`/`potentialCount`/`activatedAt`/`archivedAt`, none of
+which this build persisted; `Query.source` was a frontend-only field. Each
+was checked against the actual review-UI components
+(`QuerySetSummaryCard`, `CategorySection`, the "All queries" table, the
+version-history table) before deciding whether to add it or drop it from
+the frontend — not a blanket "add everything" or "delete everything asked
+for."
+
+- **Added to `query_sets`**: `plan_tier`, `plan_limit`, `potential_count`,
+  `activated_at`, `archived_at` — all five are genuinely rendered (the
+  plan/cap meter and "capped by plan — N possible" copy, the "Activated"/
+  "Archived" timestamps in the summary card and the version-history table).
+  `plan_tier`/`plan_limit`/`potential_count` are frozen at `generate` time
+  (read from `resolvePlanLimits` once, not re-resolved on every read) so the
+  UI can still explain "why 500 and not more" after the org's plan later
+  changes — matching the frontend type's own doc comment. For a plan with
+  no configured cap (`queries_per_query_set: null`), `plan_limit` is set to
+  the actual generated count rather than an unlimited sentinel (the
+  frontend type has no such case).
+- **Dropped from the frontend type instead**: `brandId`/`organizationId` —
+  checked against every component in `components/query-universe/` and
+  found genuinely unused (no display, no client-side filtering once the
+  real API scopes by the caller's org/brand implicitly). The underlying
+  `query_sets.brand_id`/`organization_id` columns are untouched; they're
+  just no longer serialized to the client.
+- **Added to `queries`**: `source` (`generated`/`manual`) — genuinely
+  rendered (a "Manual" badge in `CategorySection` and the "All queries"
+  table), so it got a real, CHECK-constrained column instead of being
+  dropped from the frontend type.
+- **`intentType`/`category` nullability reconciled at the API boundary, not
+  the schema**: both columns stay nullable in the DB (kept open for a
+  hypothetical future direct-write path), but every write route in
+  `routes/query-sets.ts` now guarantees a non-null value — `generate`
+  always did; the manual-add route's Zod schema now requires `category`
+  (the dialog's `<Select>` always has a value — there's no "no category"
+  option to support) and derives `intentType` from `query-generator.ts`'s
+  newly-exported `CATEGORY_META` when the caller omits it, rather than
+  persisting `null`.
+
+Full schema reasoning: `packages/database/DECISIONS.md` §18 (new section).
+Migration: `packages/database/prisma/migrations/0006_epic5_
+postverification_fixes/checks.sql` (two new CHECK constraints —
+`chk_query_sets_plan_tier`, `chk_queries_source`).
+
+### Backend bug #1 — single-active-query-set enforcement
+
+`PATCH /:id/activate` flipped the target to `active` but never archived the
+brand's previously-active set, and nothing in the schema prevented two
+simultaneously-active sets for the same brand. Fixed: the route now
+archives every other `active` query_set for the same brand
+(`tx.query_sets.updateMany`, scoped by `brand_id`+`organization_id`+
+`status: 'active'`+`id: { not: querySet.id }`) in the same `withOrgContext`
+call that activates the target — `withOrgContext` already runs its
+callback inside one `db.$transaction`, so both writes are atomic; a
+concurrent request can't observe a moment where two sets are both
+`active`. `archived_at`/`activated_at` are set on the respective rows in
+the same pass.
+
+Added a composite index, `idx_query_sets_brand_status`
+(`[brand_id, status]`), matching the exact predicate this query now filters
+by.
+
+New test in `src/routes/query-sets.test.ts`: `'leaves exactly one active
+query_set per brand after two activations in sequence'` — proves the
+invariant against a genuinely mutable in-memory model (`findFirst`/
+`update`/`updateMany` all read from and write to the same backing array,
+not just asserting the mocks were called), activating `qs-1` then `qs-2`
+and asserting exactly one row is `active` afterward and `qs-1` is
+`archived`. A second, narrower test
+(`'archives the brand's other active set in the same transaction as
+activation'`) asserts the exact `updateMany` call shape.
+
+### Backend bug #2 — entitlement cap bypassable on manual add
+
+`POST /generate` correctly capped against `queries_per_query_set`, but
+`POST /:id/queries` (manual add) never called `checkUsageLimit`/
+`resolvePlanLimits` at all — a user could generate up to the plan's limit,
+then add unlimited queries manually. Fixed: the manual-add route now calls
+`checkUsageLimit(org.organizationId, 'queries_per_query_set', ...)`,
+reusing the exact pattern `routes/competitors.ts` already establishes for
+`competitors_tracked` (same `EntitlementLimitError` catch, same 402 shape
+with `error`/`message`/`metric`/`limit`/`current`/`plan`/`upgradeTo`). The
+count is scoped to the target query_set (`tx.queries.count({ where:
+{ query_set_id, ... } })`), not org-wide — `queries_per_query_set` is a
+per-generated-set limit per `lib/entitlements.ts`'s own doc comment, not a
+cumulative total.
+
+New tests in `src/routes/query-sets.test.ts`: `'402s once the query set has
+reached the free plan's 50-query cap, and never calls queries.create'`,
+plus `'allows the add when under the cap'` and `'does not cap on the
+growth plan at the same count'` (mirroring the three-test shape
+`competitors.test.ts` and the `generate` tests already use for their own
+entitlement checks).
+
+### Verification performed for this pass
+
+- `prisma validate`/`generate` — schema valid, client generates cleanly
+  (schema-only, dummy `DATABASE_URL`, no connection attempted).
+- `pnpm --filter @bebest/api test` — full suite: 283 passing / 38 todo / 0
+  failing (up from 255 passing/1 failing at the end of the original build;
+  the one pre-existing failure noted above was already fixed by the time
+  of this pass, not by this pass).
+- `pnpm --filter @bebest/api exec tsc --noEmit` and
+  `tsc -p tsconfig.build.json` — clean.
+- `eslint src/routes/query-sets.ts src/routes/query-sets.test.ts
+  src/lib/query-generator.ts src/lib/entitlements.ts` — clean.
+- `pnpm --filter @bebest/web typecheck`/`lint`/`build` — clean (the
+  frontend's own wiring change is documented in the frontend completion
+  doc, but the contract this backend now serves was verified end-to-end
+  against it).

@@ -6,8 +6,13 @@ import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog, writeManualAuditEvent } from '../middleware/audit-log.js';
 import { getBrandForOrg, NO_BRAND_ERROR } from '../lib/brand-context.js';
-import { resolvePlanLimits } from '../lib/entitlements.js';
-import { generateQueryUniverse, type QueryGeneratorBrandProfile } from '../lib/query-generator.js';
+import { checkUsageLimit, EntitlementLimitError, resolvePlanLimits } from '../lib/entitlements.js';
+import {
+  CATEGORY_META,
+  generateCandidateQueries,
+  type QueryGeneratorBrandProfile,
+  type QueryTemplateCategory,
+} from '../lib/query-generator.js';
 import type { AppEnv } from '../types/context.js';
 import type { query_sets, queries } from '@bebest/database';
 
@@ -23,6 +28,14 @@ const querySetsRoute = new Hono<AppEnv>();
 const VIEW = 'view_intelligence' as const;
 const MUTATE = 'create_brand_profile' as const;
 
+// Post-verification fix (Epic 5 QA pass — see DECISIONS.md §18):
+// `planTier`/`planLimit`/`potentialCount`/`activatedAt`/`archivedAt` are
+// genuinely read by the review UI (`QuerySetSummaryCard`'s plan/cap meter
+// and lifecycle timestamps, the version-history table) — checked against
+// the components before adding, not assumed. `brandId`/`organizationId`
+// were checked the same way and found unused by any component, so they are
+// deliberately NOT serialized here (the columns still exist on the row for
+// tenant scoping, just aren't sent to the client).
 function serializeQuerySet(row: query_sets) {
   return {
     id: row.id,
@@ -31,8 +44,13 @@ function serializeQuerySet(row: query_sets) {
     queryCount: row.query_count,
     version: row.version,
     status: row.status,
+    planTier: row.plan_tier,
+    planLimit: row.plan_limit,
+    potentialCount: row.potential_count,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    activatedAt: row.activated_at,
+    archivedAt: row.archived_at,
   };
 }
 
@@ -45,6 +63,9 @@ function serializeQuery(row: queries) {
     category: row.category,
     tags: row.tags,
     priority: row.priority,
+    // Post-verification fix: genuinely displayed (a "Manual" badge in the
+    // review UI) — see the `queries.source` column doc comment.
+    source: row.source,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -114,7 +135,7 @@ querySetsRoute.post('/generate', requireAuth, requireOrgFromToken('viewer'), req
   // candidate list is even sliced, so a capped generation never touches
   // the database for the queries it isn't going to keep (the epic's step
   // 2: "check the cap going in," not generate-then-truncate).
-  const [useCases, competitors, { limits }] = await Promise.all([
+  const [useCases, competitors, { plan, limits }] = await Promise.all([
     withOrgContext(org.organizationId, (tx) =>
       tx.use_cases.findMany({ where: { organization_id: org.organizationId, brand_id: brand.id, deleted_at: null } }),
     ),
@@ -139,7 +160,20 @@ querySetsRoute.post('/generate', requireAuth, requireOrgFromToken('viewer'), req
     competitors: competitors.map((comp) => ({ name: comp.name })),
   };
 
-  const generated = generateQueryUniverse(profile, limits.queries_per_query_set);
+  // Post-verification fix: computed from the uncapped candidate list once,
+  // then sliced here, rather than calling `generateQueryUniverse` (which
+  // discards the uncapped length) — the frontend's `QuerySet.potentialCount`
+  // needs that uncapped count preserved, not just the capped result. The
+  // cap is still applied BEFORE any row is written (the epic's step 2:
+  // "check the cap going in"), just via `slice` in the route instead of
+  // inside the generator function.
+  const allCandidates = generateCandidateQueries(profile);
+  const generated =
+    limits.queries_per_query_set === null ? allCandidates : allCandidates.slice(0, limits.queries_per_query_set);
+  // A plan with no configured cap has nothing to "explain" as a limit — the
+  // effective limit is simply how many were produced. See
+  // packages/database/DECISIONS.md §18.
+  const planLimit = limits.queries_per_query_set ?? allCandidates.length;
   const input = parsed.data;
 
   const created = await withOrgContext(org.organizationId, (tx) =>
@@ -152,6 +186,9 @@ querySetsRoute.post('/generate', requireAuth, requireOrgFromToken('viewer'), req
         query_count: generated.length,
         version: 1,
         status: 'draft',
+        plan_tier: plan,
+        plan_limit: planLimit,
+        potential_count: allCandidates.length,
         created_by: user.id,
         queries: {
           create: generated.map((q) => ({
@@ -161,6 +198,7 @@ querySetsRoute.post('/generate', requireAuth, requireOrgFromToken('viewer'), req
             category: q.category,
             tags: q.tags,
             priority: q.priority,
+            source: 'generated',
             created_by: user.id,
           })),
         },
@@ -205,12 +243,34 @@ querySetsRoute.patch(
     }
 
     const user = c.get('user');
-    const updated = await withOrgContext(org.organizationId, (tx) =>
-      tx.query_sets.update({
+    const now = new Date();
+
+    // Post-verification fix (backend bug #1): the frontend's original
+    // fixture layer (`client.ts`'s `activateQuerySet`, since replaced —
+    // see the frontend completion doc's "Post-verification fixes") always
+    // archived the brand's previously-active set on activation, but the
+    // real route never did, and nothing in the schema prevented two
+    // simultaneously-active sets for the same brand. Both writes happen in
+    // one `withOrgContext` call (already a single `db.$transaction`), so a
+    // concurrent activate on a second draft can't observe a moment where
+    // two sets are both `active`.
+    const updated = await withOrgContext(org.organizationId, async (tx) => {
+      await tx.query_sets.updateMany({
+        where: {
+          organization_id: org.organizationId,
+          brand_id: querySet.brand_id,
+          status: 'active',
+          id: { not: querySet.id },
+          deleted_at: null,
+        },
+        data: { status: 'archived', archived_at: now, updated_by: user.id, updated_at: now },
+      });
+
+      return tx.query_sets.update({
         where: { id: querySet.id },
-        data: { status: 'active', updated_by: user.id, updated_at: new Date() },
-      }),
-    );
+        data: { status: 'active', activated_at: now, updated_by: user.id, updated_at: now },
+      });
+    });
 
     return c.json(serializeQuerySet(updated));
   },
@@ -234,10 +294,11 @@ querySetsRoute.patch(
     }
 
     const user = c.get('user');
+    const now = new Date();
     const updated = await withOrgContext(org.organizationId, (tx) =>
       tx.query_sets.update({
         where: { id: querySet.id },
-        data: { status: 'archived', updated_by: user.id, updated_at: new Date() },
+        data: { status: 'archived', archived_at: now, updated_by: user.id, updated_at: now },
       }),
     );
 
@@ -276,13 +337,28 @@ querySetsRoute.get(
 );
 
 // ── POST /:id/queries — manual add (draft only) ─────────────────────────────
+// Post-verification fix (nullability reconciliation, DECISIONS.md §18):
+// `category` is now required, non-nullable — the manual-add dialog's
+// Category `<Select>` always has a value, there is no "no category" option,
+// so the API contract now matches what the only caller actually sends.
+// `intentType` stays optional (not nullable): when the caller omits it, it
+// is derived from the chosen category via `CATEGORY_META` below instead of
+// being persisted as null, reconciling the frontend's non-nullable
+// `Query.intentType` without forcing every caller to compute it themselves.
 const queryInputSchema = z.object({
   text: z.string().trim().min(1).max(2000),
-  intentType: z.enum(['informational', 'commercial', 'comparison', 'transactional']).nullable().optional(),
-  category: z.string().trim().min(1).max(100).nullable().optional(),
+  category: z.string().trim().min(1).max(100),
+  intentType: z.enum(['informational', 'commercial', 'comparison', 'transactional']).optional(),
   tags: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
   priority: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
 });
+
+/** Falls back to `informational` for a category outside the ten template
+ *  values (allowed — `queries.category` is deliberately open, see
+ *  DECISIONS.md §16) where `CATEGORY_META` has no mapping. */
+function defaultIntentTypeFor(category: string): 'informational' | 'commercial' | 'comparison' | 'transactional' {
+  return CATEGORY_META[category as QueryTemplateCategory]?.intentType ?? 'informational';
+}
 
 querySetsRoute.post(
   '/:id/queries',
@@ -300,6 +376,42 @@ querySetsRoute.post(
     if (!querySet) return c.json(NO_QUERY_SET_ERROR, 404);
     if (querySet.status !== 'draft') return c.json(NOT_DRAFT_ERROR, 409);
 
+    // Post-verification fix (backend bug #2): `POST /generate` correctly
+    // caps against `queries_per_query_set`, but this route never checked
+    // the cap at all — a user could generate up to the limit, then add
+    // unlimited queries manually. Reuses the exact `checkUsageLimit`/
+    // `EntitlementLimitError` pattern `routes/competitors.ts` establishes
+    // for `competitors_tracked`, scoped to THIS query_set (the entitlement
+    // is per generated set, not a cumulative org-wide total — see
+    // `lib/entitlements.ts`'s own doc comment on `queries_per_query_set`).
+    try {
+      await checkUsageLimit(org.organizationId, 'queries_per_query_set', () =>
+        withOrgContext(org.organizationId, (tx) =>
+          tx.queries.count({
+            where: { query_set_id: querySet.id, organization_id: org.organizationId, deleted_at: null },
+          }),
+        ),
+      );
+    } catch (err) {
+      if (err instanceof EntitlementLimitError) {
+        return c.json(
+          {
+            error: 'query_limit_reached',
+            message: `Your ${err.plan} plan allows up to ${err.limit.toLocaleString()} queries per query set (this set has ${err.current.toLocaleString()}).${
+              err.upgradeTo ? ` Upgrade to ${err.upgradeTo} to add more.` : ''
+            }`,
+            metric: err.metric,
+            limit: err.limit,
+            current: err.current,
+            plan: err.plan,
+            upgradeTo: err.upgradeTo,
+          },
+          402,
+        );
+      }
+      throw err;
+    }
+
     const input = parsed.data;
     // `withOrgContext` already runs its callback inside one
     // `db.$transaction`, so both writes here are already atomic — no
@@ -311,10 +423,11 @@ querySetsRoute.post(
           organization_id: org.organizationId,
           query_set_id: querySet.id,
           text: input.text,
-          intent_type: input.intentType ?? null,
-          category: input.category ?? null,
+          intent_type: input.intentType ?? defaultIntentTypeFor(input.category),
+          category: input.category,
           tags: input.tags ?? [],
           priority: input.priority ?? 2,
+          source: 'manual',
           created_by: user.id,
         },
       });

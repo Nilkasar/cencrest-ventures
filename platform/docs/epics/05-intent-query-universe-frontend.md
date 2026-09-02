@@ -52,3 +52,85 @@ This frontend was built against the spec (`types.ts` documents this explicitly),
 2. Port `generator.ts`'s template logic (or an equivalent) server-side for `POST /brands/:id/query-sets/generate`, with the same round-robin-then-cap ordering so the DoD's "not just one or two templates applied repeatedly" check holds.
 3. Wire `apps/web/src/data/query-universe/client.ts`'s five functions to real `apiClient` calls once the routes exist — every call site (`query-universe-view.tsx`) already goes through this seam, so no component changes should be needed.
 4. `EntitlementLimitError`-style 402 handling: `apps/api/src/lib/entitlements.ts`'s `PLAN_LIMITS` needs a `queries_generated` (or similar) key added, mirroring `competitors_tracked`, per that file's own doc comment ("the brief for this epic explicitly calls out that Epic 4/5... need the identical shape").
+
+---
+
+## Post-verification fixes (qa-flow-tester pass)
+
+The backend half above shipped (per its own completion doc) with all four
+"known gaps" listed just above resolved — but this frontend was never
+wired to it: `client.ts` was still the self-contained in-memory fixture
+store described throughout this doc, with zero calls to `apiClient`, even
+though `/brands/me/query-sets` was real, tested, and working. A
+qa-flow-tester-persona review caught this plus the contract mismatch this
+doc's own "Schema reconciliation" section had flagged as a risk. Fixed:
+
+### Wiring
+
+`client.ts` was rewritten to call the real routes (`apiClient.get/post/
+patch/delete` against `/brands/me/query-sets/...`), following the exact
+pattern `lib/onboarding-client.ts` already established for Epic 2's
+wiring: `ApiQuerySet`/`ApiQuery` wire-shape interfaces matching the
+backend's `serializeQuerySet`/`serializeQuery` exactly, `mapQuerySet`/
+`mapQuery` translating camelCase wire shapes to the frontend's domain
+types, and a `translateError` that turns a 402 into the same
+`QueryLimitError` class the UI already imports and handles (so
+`query-universe-view.tsx` needed zero changes — the whole point of the
+data-access seam). `fetchQueryUniverse`/`generateQuerySet` dropped their
+now-meaningless `brandId` parameter (the real API scopes to the caller's
+org's one brand implicitly; neither call site ever passed one).
+`seed.ts` and `generator.ts` (the in-memory fixture + its template
+generator) are now unused by anything and were deleted — the real
+generation logic lives server-side in `apps/api/src/lib/
+query-generator.ts`. The `?bbDemoError=1`/`?bbDemoPlan=` demo-only query
+params are gone too: errors and entitlement caps are now the real thing,
+not a client-side simulation.
+
+### Contract mismatch — resolved field by field, not by deleting
+
+This doc's own "Schema reconciliation" section warned that `types.ts`'s
+`QuerySet`/`Query` were built against the spec, not the ported schema.
+Each disputed field was checked against the actual review-UI components
+before deciding which side to fix:
+
+- **Kept, now backed by real columns** (genuinely rendered):
+  `planTier`/`planLimit`/`potentialCount` (the cap meter and "capped by
+  plan" copy in `QuerySetSummaryCard`), `activatedAt`/`archivedAt` (the
+  same card's lifecycle timestamps and the version-history table's
+  "Archived" column), `Query.source` (the "Manual" badge in
+  `CategorySection` and the "All queries" table).
+- **Removed from `types.ts`** (checked against every component in
+  `components/query-universe/` and found genuinely unused — no display, no
+  purpose once the real API scopes by org/brand implicitly):
+  `QuerySet.brandId`, `QuerySet.organizationId`.
+- **`intentType`/`category` nullability**: `types.ts`'s `Query` keeps both
+  non-nullable — that's what every component's lookup tables
+  (`QUERY_CATEGORY_META[query.category]`, `INTENT_TYPE_LABEL[
+  query.intentType]`) require, and it's also what the API now guarantees on
+  every row it creates (see the backend doc's matching section). `client.ts`'s
+  `mapQuery` still defends against a null wire value (falls back to
+  `"informational"`/`"category"`) rather than trusting the guarantee at the
+  type level.
+- **`version`'s doc comment corrected**: it previously claimed a new
+  generation starts the next draft at `currentActiveVersion + 1`. The real
+  backend always creates a fresh draft at `version: 1` (there's no
+  duplicate-into-a-new-draft-version flow — an intentional backend gap, not
+  a bug). The comment was corrected to describe actual behavior instead of
+  the old fixture layer's behavior.
+
+### Verification performed for this pass
+
+- `pnpm --filter @bebest/web typecheck` — clean.
+- `pnpm --filter @bebest/web lint` — clean.
+- `pnpm --filter @bebest/web build` — succeeds; `/query-universe` still
+  prerenders as a static route (the data fetch happens client-side via
+  `useAsyncData`, same as before).
+- Traced the full epic flow against the real backend's route/test
+  behavior (no live server was started; verification is against
+  `apps/api`'s own passing test suite plus this file's request/response
+  shapes matching `routes/query-sets.ts`'s Zod schemas and serializers
+  exactly): generate → review/curate (add one manual query, remove one
+  generated query — both hit real `POST`/`DELETE` endpoints) → activate →
+  a second generate+activate on the same fixture org proves (via the
+  backend's own new test, not just UI inspection) that the first set is
+  archived in the persisted data, not just hidden client-side.

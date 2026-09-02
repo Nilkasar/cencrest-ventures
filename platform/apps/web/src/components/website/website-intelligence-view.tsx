@@ -13,7 +13,8 @@ import { PageIssuesList } from "@/components/website/page-issues-list";
 import { useCrawlJob } from "@/hooks/use-crawl-job";
 import { useAsyncData } from "@/lib/use-async-data";
 import { listCrawlJobs } from "@/data/website/client";
-import { crawlBrand } from "@/data/website/fixtures";
+import { useBrandProfile } from "@/hooks/use-brand-profile";
+import { currentOrganization } from "@/data/fixtures";
 import { formatDateTime } from "@/lib/format";
 
 function OverviewSkeleton() {
@@ -35,32 +36,48 @@ function OverviewSkeleton() {
   );
 }
 
+/**
+ * Post-verification fix: this used to key everything off `crawlBrand` — a
+ * small, self-contained fixture with a hardcoded fake website URL, entirely
+ * disconnected from whatever the org actually onboarded in Epic 2 — because
+ * this epic had no live backend to read a real brand from yet (see the old
+ * `data/website/fixtures.ts`'s "Why not read the real brand profile"
+ * section). Epic 2's frontend is wired to the real `apps/api` brand routes
+ * now, and so is this epic's crawl data (`data/website/client.ts`), so this
+ * view reads the real website URL via `useBrandProfile` — the same hook
+ * `components/settings/brand-profile-panel.tsx` already uses — instead of a
+ * fixture that would show the wrong domain for every real organization.
+ */
 export function WebsiteIntelligenceView() {
-  const brandId = crawlBrand.id;
-  const { state, starting, start, reload } = useCrawlJob(brandId);
+  const organizationId = currentOrganization.id;
+  const { profile, loading: profileLoading } = useBrandProfile(organizationId);
+  const { state, starting, start, reload } = useCrawlJob(organizationId);
   const [viewingJobId, setViewingJobId] = useState<string | null>(null);
 
-  const historyDep = state.status === "ready" ? state.progress.job.status : state.status;
-  const history = useAsyncData(() => listCrawlJobs(brandId), [brandId, historyDep]);
+  const historyDep = state.status === "ready" ? state.job.status : state.status;
+  const history = useAsyncData(() => listCrawlJobs(organizationId), [organizationId, historyDep]);
 
   async function handleStart() {
     setViewingJobId(null);
     await start();
   }
 
-  const latestJob = state.status === "ready" ? state.progress.job : null;
-  const latestIsInFlight = latestJob !== null && (latestJob.status === "pending" || latestJob.status === "running");
+  const latestJob = state.status === "ready" ? state.job : null;
+  const latestIsInFlight = latestJob !== null && (latestJob.status === "queued" || latestJob.status === "running");
   const canRecrawl = latestJob !== null && !latestIsInFlight;
   const effectiveViewingJobId = viewingJobId ?? latestJob?.id ?? null;
   const viewingLatest = effectiveViewingJobId === latestJob?.id;
   const showIssuesList = effectiveViewingJobId !== null && (!latestIsInFlight || !viewingLatest);
+
+  const websiteUrl = profile?.brand.websiteUrl || "your website";
+  const websiteHost = websiteUrl.replace(/^https?:\/\//, "");
 
   return (
     <>
       <PageHeader
         eyebrow="Intelligence"
         title="Website Intelligence"
-        description={`Crawled technical health for ${crawlBrand.websiteUrl.replace(/^https?:\/\//, "")} — page-level issues an AI model or search crawler would trip over.`}
+        description={`Crawled technical health for ${websiteHost} — page-level issues an AI model or search crawler would trip over.`}
         actions={
           canRecrawl ? (
             <Button variant="outline" size="sm" loading={starting} onClick={handleStart}>
@@ -70,26 +87,24 @@ export function WebsiteIntelligenceView() {
         }
       />
 
-      {state.status === "loading" && <OverviewSkeleton />}
+      {(state.status === "loading" || (state.status === "empty" && profileLoading)) && <OverviewSkeleton />}
 
       {state.status === "error" && <ErrorPanel message={state.error.message} onRetry={reload} />}
 
-      {state.status === "empty" && <CrawlEmptyState websiteUrl={crawlBrand.websiteUrl} starting={starting} onStart={handleStart} />}
+      {state.status === "empty" && !profileLoading && (
+        <CrawlEmptyState websiteUrl={websiteUrl} starting={starting} onStart={handleStart} />
+      )}
 
       {state.status === "ready" && (
         <div className="flex flex-col gap-6">
-          {(state.progress.job.status === "pending" || state.progress.job.status === "running") && (
-            <CrawlProgressPanel progress={state.progress} />
-          )}
+          {(state.job.status === "queued" || state.job.status === "running") && <CrawlProgressPanel job={state.job} />}
 
-          {state.progress.job.status === "failed" && (
-            <CrawlFailedPanel job={state.progress.job} retrying={starting} onRetry={handleStart} />
-          )}
+          {state.job.status === "failed" && <CrawlFailedPanel job={state.job} retrying={starting} onRetry={handleStart} />}
 
-          {state.progress.job.status === "completed" && viewingLatest && (
+          {state.job.status === "completed" && viewingLatest && (
             <p className="text-[13px] text-muted-foreground">
-              Finished {state.progress.job.completedAt ? formatDateTime(state.progress.job.completedAt) : ""} —{" "}
-              {state.progress.job.pagesCrawled} pages crawled.
+              Finished {state.job.completedAt ? formatDateTime(state.job.completedAt) : ""} — {state.job.pagesCrawled} pages
+              crawled.
             </p>
           )}
 
@@ -106,7 +121,7 @@ export function WebsiteIntelligenceView() {
             </p>
           )}
 
-          {showIssuesList && effectiveViewingJobId && <PageIssuesList brandId={brandId} jobId={effectiveViewingJobId} />}
+          {showIssuesList && effectiveViewingJobId && <PageIssuesList jobId={effectiveViewingJobId} />}
 
           {history.status === "success" && history.data.length > 0 && (
             <Card>

@@ -116,8 +116,14 @@ export interface QueryGeneratorBrandProfile {
  * Geography (relevant only to brands that actually compete on location)
  * are ranked lowest. This mapping is this epic's own design decision, not
  * given verbatim anywhere in the source docs — see the completion doc.
+ *
+ * Exported (post-verification fix): `routes/query-sets.ts`'s manual-add
+ * endpoint reuses this exact mapping to derive a non-null `intentType` from
+ * a caller-supplied `category` when the request doesn't specify one —
+ * reconciling the frontend's non-nullable `Query.intentType` without
+ * duplicating this table a second time in the route file.
  */
-const CATEGORY_META: Record<QueryTemplateCategory, { intentType: QueryIntentType; priority: 1 | 2 | 3 }> = {
+export const CATEGORY_META: Record<QueryTemplateCategory, { intentType: QueryIntentType; priority: 1 | 2 | 3 }> = {
   category: { intentType: 'informational', priority: 3 },
   authority: { intentType: 'informational', priority: 3 },
   problem: { intentType: 'informational', priority: 3 },

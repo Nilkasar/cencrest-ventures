@@ -249,3 +249,198 @@ Edited:
   its `Globe` icon import — re-read immediately before editing since this
   is a shared file another epic's agent had already touched this session,
   adding "Query Universe"; merged alongside it rather than overwriting)
+
+---
+
+## Post-verification fixes
+
+A qa-flow-tester-persona review of this epic (after `03-website-intelligence-backend.md`
+landed) found this frontend was still exactly what it says above: a
+`localStorage` mock that never called `apps/api`, built against the ported
+schema's pre-backend field names, animating a fake 26-second clock instead
+of real crawl progress. This pass wires it to the real, tested backend and
+fixes every contract mismatch the backend doc's "Frontend contract
+reconciliation needed" table called out. Scope: `apps/web` only — no
+`apps/api` route was added, changed, or needed.
+
+### Fix 1 — real wiring (`data/website/client.ts` rewritten)
+
+Every exported function now calls `apiClient` against the real routes
+(`apps/api/src/routes/{crawl,crawl-jobs,pages}.ts`, read in full before
+writing a single line here — nothing here was guessed):
+
+- `startCrawl(organizationId)` → `POST /brands/me/crawl`.
+- `getCrawlJob(jobId)` → `GET /crawl-jobs/:id` — the poll target.
+- `getLatestCrawlJob(organizationId)` / `listCrawlJobs(organizationId)` —
+  see "known limitation" below; both ultimately resolve through
+  `getCrawlJob`, never fabricated data.
+- `getPageIssues(jobId, filters)` → `GET /brands/me/pages` — see "issue
+  aggregation" below.
+
+All three real routes resolve "the" brand from the caller's org
+server-side (the established `/brands/me/*` convention); none of them take
+a `brandId` on the wire, so it was dropped from every function signature
+that used to carry the old mock's fixture `brandId` — `useCrawlJob`,
+`PageIssuesList`, and `WebsiteIntelligenceView` now key off
+`organizationId` instead (`currentOrganization.id`, the same fixture every
+other real-wired screen in this app already uses as the stand-in for the
+authenticated org).
+
+**Known limitation, called out explicitly rather than papered over**: this
+epic's API surface (`docs/epics/03-website-intelligence.md`) has no "list
+crawl jobs for this brand" route — only `POST .../crawl` (create one) and
+`GET /crawl-jobs/:id` (look one up by its own id). So there is no
+server-side answer to "what job should the progress screen resume on page
+load?" or "what belongs in the history table?". `client.ts` keeps a small
+per-organization `localStorage` list of job ids the browser has actually
+seen (from a `startCrawl` response, or the `crawlJobId` a 409 names) — a
+*pointer list only*, never a data cache: every field ever rendered is a
+fresh `GET /crawl-jobs/:id` call, and an id that 404s is dropped. Concretely
+this means: a crawl triggered from a different browser/device, or after
+this browser's storage was cleared, won't appear in *this* browser's empty
+state or history table even though the real `crawl_jobs` row exists and is
+queryable directly by id — a real gap, not a cosmetic one, and the honest
+fix is a `GET /brands/me/crawl-jobs` list route in a future pass, not
+something `apps/web` can invent correctly on its own. One case *is*
+self-healing without that route: clicking "Start a crawl" when a job is
+already `queued`/`running` server-side (e.g. started elsewhere) gets a 409
+naming the real `crawlJobId`, which `startCrawl` catches and resolves via
+`getCrawlJob` instead of surfacing an error — so the in-progress case
+recovers even without local history, only the completed/failed-but-untracked
+case doesn't.
+
+**Issue aggregation**: `GET /brands/me/pages`'s `severity` filter matches a
+*page* with at least one matching issue, and its `pagination.total` counts
+pages, not issues — it has no issue-level aggregate. The severity stat
+tiles need real per-issue counts, so `getPageIssues` fetches every page for
+the job (`fetchAllPagesForJob`, paginating in 100-row batches — at most 5
+requests, since a crawl is capped at 500 pages) and does the counting,
+severity filtering, sorting, and "Load more" pagination client-side over
+the complete, real result set — the same reshaping the old mock did over
+its `localStorage` array, now done over live API responses instead.
+
+### Fix 2 — contract corrections (`data/website/types.ts` + every referencing component)
+
+Matched to the real backend exactly, per the backend doc's reconciliation
+table plus a few more divergences found by reading the actual serializers
+(not just the table, which covered naming but not full shape):
+
+- `CrawlJob.status`: `"pending"` → `"queued"`.
+- `PageIssue.severity`: `"critical" | "warning" | "info"` →
+  `"low" | "medium" | "high"`.
+- `CrawlJob.errorMessage` → `CrawlJob.error`.
+- `Page.canonical` → `Page.canonicalUrl`.
+- `CrawlJob.organizationId`, `Page.organizationId`, `Page.brandId`,
+  `PageIssue.pageId` / `.organizationId` / `.brandId` / `.createdAt` —
+  dropped. None of `serializeCrawlJob` (`routes/crawl.ts`,
+  `routes/crawl-jobs.ts`) or `serializePage` (`routes/pages.ts`) return
+  these fields; they were carried over from the old mock's schema-shaped
+  guesses, not from reading the actual response shape.
+- `Page.issues: PageIssue[]` and `Page.hasSchemaMarkup: boolean` added —
+  both real fields `serializePage` returns that the old `Page` type didn't
+  have a place for.
+- `CrawlJob.progressPct?: number` added — populated by `GET
+  /crawl-jobs/:id` (not the `POST /brands/me/crawl` response, hence
+  optional).
+- `CrawlStep` / `CrawlStepKey` / `CrawlStepState` / `CrawlProgress` and
+  `CrawlResultSummary` removed — see Fix 3 for the first four; the last was
+  unused anywhere in the app and typed against the old severity values.
+
+Every component referencing the old names/values was updated to match:
+`crawl-progress-panel.tsx`, `crawl-failed-panel.tsx` (`job.errorMessage` →
+`job.error`), `crawl-history.tsx` (status badge map's `pending` key →
+`queued`), `page-issues-list.tsx` (severity badge/label/stat-tile maps
+`critical|warning|info` → `high|medium|low`; the issues table's "Found"
+column, which read a `PageIssue.createdAt` that doesn't exist on the real
+API's nested issue shape, now reads the parent page's real `crawledAt`
+instead, relabeled "Crawled"), and `website-intelligence-view.tsx`.
+
+`data/website/fixtures.ts` (the fake brand, the 26-second step schedule,
+the deterministic page/issue generator) is deleted outright — none of it
+has a reason to exist once real data is live. The two label maps that
+survive it (`STATUS_LABEL`, `SEVERITY_LABEL`, plus `ISSUE_TYPE_LABEL`) moved
+to a new `data/website/labels.ts`, since "fixtures" no longer describes a
+file with nothing fake left in it.
+
+### Fix 3 — real progress, not a fake timer
+
+`use-crawl-job.ts` now polls `getCrawlJob` (`GET /crawl-jobs/:id`) directly
+once a second while `status` is `queued`/`running`, and its `ready` state
+holds the real `CrawlJob` — no more synthesized `CrawlProgress`/`CrawlStep[]`
+computed from `computeElapsedState`'s fixed-schedule elapsed-time math
+(deleted along with the rest of the old mock).
+
+`crawl-progress-panel.tsx` was rewritten to match what the real pipeline
+actually reports. The old six-step timeline (queued → validating →
+discovering → crawling → analyzing → finalizing) was never backed by six
+real signals — `apps/api/src/lib/crawler/engine.ts`'s `updateProgress`
+calls only ever write `status` plus the incrementally-updated
+`pages_crawled`/`pages_found`/`pages_failed` counters (confirmed by reading
+`engine.ts`, per the task brief). The panel now renders exactly that: a
+"Queued" phase, then a "Fetching pages" phase showing the live
+`pagesCrawled`/`pagesFound` counter, a `pagesFailed` count when nonzero, and
+a progress bar using the job's real `progressPct` (falling back to
+`pagesCrawled / pagesFound` client-side on the `POST` response, which
+doesn't carry `progressPct` yet). The "just fetched: `<url>`" live-status
+line is gone — no endpoint returns the URL a job most recently fetched, and
+inventing one would just be a smaller version of the same fake-signal
+problem this fix is removing. This is a deliberate reduction in displayed
+granularity versus the mock's UI, in exchange for every number on screen
+now being real; a future backend pass that adds phase telemetry to
+`crawl_jobs` would be a small, additive change to this panel, not a
+rewrite.
+
+### Why the site now reads the brand's real website URL
+
+`website-intelligence-view.tsx` used to read `crawlBrand.websiteUrl` — a
+hardcoded fake domain, since this epic had no live backend to read a real
+brand from at the time. Epic 2's frontend is wired to the real brand API
+now (`02-brand-intelligence-frontend.md`'s own "Post-verification fixes"),
+so this view reads the actual website via `useBrandProfile` (the same hook
+`components/settings/brand-profile-panel.tsx` uses) instead of a fixture
+that would show the wrong domain for every real organization — the old
+fixtures file's own "Why not read the real brand profile" section named
+this as "a small change once both this epic's and Epic 2's backends are
+live at the same time," which is exactly the state this pass found.
+
+### Verification performed
+
+- `pnpm --filter @bebest/web typecheck` — clean.
+- `pnpm --filter @bebest/web lint` — clean.
+- `pnpm --filter @bebest/web build` — succeeds; all 26 routes prerender,
+  including `/website-intelligence` (static).
+- `next start` + `curl` smoke test — `/website-intelligence`, `/overview`,
+  and `/settings` all return 200 (no live `apps/api` running in this
+  environment; the client-side fetch failures that implies surface as this
+  screen's real `error` state, not a crash — the same honesty standard
+  `use-brand-profile.ts`'s error path already established for Epic 2).
+- Full flow traced by reading the code, end to end: `CrawlEmptyState`'s
+  button → `startCrawl` → real `POST` → `crawl_jobs` id tracked locally →
+  `useCrawlJob`'s poll loop → real `GET /crawl-jobs/:id` → `CrawlProgressPanel`
+  rendering the real counters → on `completed`, `PageIssuesList` → real
+  paginated `GET /brands/me/pages` calls → flattened, severity-grouped,
+  client-paginated issue list → `CrawlHistoryTable` reading every
+  locally-tracked job id back through the same real `GET /crawl-jobs/:id`
+  call.
+- Not done (no browser tooling / no live `apps/api` in this session, same
+  gap every prior epic's frontend doc flagged): an actual click-through
+  against a running backend, and a dark-mode spot check of the rewritten
+  `crawl-progress-panel.tsx`.
+
+### Files touched
+
+New:
+- `apps/web/src/data/website/labels.ts`
+
+Deleted:
+- `apps/web/src/data/website/fixtures.ts`
+
+Edited:
+- `apps/web/src/data/website/types.ts`
+- `apps/web/src/data/website/client.ts`
+- `apps/web/src/hooks/use-crawl-job.ts`
+- `apps/web/src/components/website/crawl-progress-panel.tsx`
+- `apps/web/src/components/website/crawl-failed-panel.tsx`
+- `apps/web/src/components/website/crawl-history.tsx`
+- `apps/web/src/components/website/page-issues-list.tsx`
+- `apps/web/src/components/website/website-intelligence-view.tsx`

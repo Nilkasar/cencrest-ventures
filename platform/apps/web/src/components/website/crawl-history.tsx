@@ -2,11 +2,11 @@
 
 import { Badge, Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@bebest/ui";
 import type { CrawlJob } from "@/data/website/types";
-import { STATUS_LABEL } from "@/data/website/fixtures";
+import { STATUS_LABEL } from "@/data/website/labels";
 import { formatDateTime } from "@/lib/format";
 
 const STATUS_BADGE_VARIANT: Record<CrawlJob["status"], "neutral" | "accent" | "success" | "warning" | "danger"> = {
-  pending: "neutral",
+  queued: "neutral",
   running: "accent",
   completed: "success",
   failed: "danger",

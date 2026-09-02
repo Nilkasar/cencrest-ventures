@@ -15,12 +15,14 @@ const db = {
     findMany: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   queries: {
     findFirst: vi.fn(),
     findMany: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
   },
   subscriptions: { findUnique: vi.fn() },
   audit_events: { create: vi.fn().mockResolvedValue({}) },
@@ -104,6 +106,11 @@ function draftQuerySet(overrides: Record<string, unknown> = {}) {
     query_count: 10,
     version: 1,
     status: 'draft',
+    plan_tier: 'free',
+    plan_limit: 50,
+    potential_count: 10,
+    activated_at: null,
+    archived_at: null,
     created_at: new Date(),
     updated_at: new Date(),
     ...overrides,
@@ -114,6 +121,8 @@ beforeEach(async () => {
   vi.clearAllMocks();
   db.audit_events.create.mockResolvedValue({});
   db.organization_rate_limits.upsert.mockResolvedValue({ count: 1 });
+  db.query_sets.updateMany.mockResolvedValue({ count: 0 });
+  db.queries.count.mockResolvedValue(0);
   const { __setKeysForTesting } = await import('../lib/jwt.js');
   const { privateKey, publicKey } = await generateKeyPair('RS256');
   __setKeysForTesting(privateKey, publicKey);
@@ -286,6 +295,78 @@ describe('PATCH /query-sets/:id/activate', () => {
       expect.objectContaining({ data: expect.objectContaining({ status: 'active' }) }),
     );
   });
+
+  it('archives the brand\'s other active set in the same transaction as activation', async () => {
+    db.query_sets.findFirst.mockResolvedValue(draftQuerySet({ id: 'qs-2', status: 'draft' }));
+    db.query_sets.update.mockResolvedValue(draftQuerySet({ id: 'qs-2', status: 'active' }));
+    const app = await buildApp();
+    const res = await app.request('/query-sets/qs-2/activate', {
+      method: 'PATCH',
+      headers: await authHeader('user-1', 'org-1'),
+    });
+    expect(res.status).toBe(200);
+    expect(db.query_sets.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ brand_id: 'brand-1', status: 'active', id: { not: 'qs-2' } }),
+        data: expect.objectContaining({ status: 'archived' }),
+      }),
+    );
+  });
+
+  // Post-verification fix (backend bug #1): proves the single-active
+  // invariant across two SEQUENTIAL activations, against a genuinely
+  // mutable in-memory model (not just asserting the mocks were called) —
+  // `findFirst`/`update`/`updateMany` all read from and write to the same
+  // `store` array, so this test would fail if the route ever left two rows
+  // `active` at once.
+  it('leaves exactly one active query_set per brand after two activations in sequence', async () => {
+    let store: Array<Record<string, unknown>> = [
+      draftQuerySet({ id: 'qs-1', status: 'draft' }),
+      draftQuerySet({ id: 'qs-2', status: 'draft' }),
+    ];
+
+    db.query_sets.findFirst.mockImplementation(
+      async ({ where }: { where: { id: string; organization_id: string } }) =>
+        store.find((s) => s.id === where.id && s.organization_id === where.organization_id) ?? null,
+    );
+    db.query_sets.updateMany.mockImplementation(
+      async ({ where, data }: { where: { brand_id: string; organization_id: string; status: string; id: { not: string } }; data: Record<string, unknown> }) => {
+        let count = 0;
+        store = store.map((s) => {
+          if (
+            s.brand_id === where.brand_id &&
+            s.organization_id === where.organization_id &&
+            s.status === where.status &&
+            s.id !== where.id.not
+          ) {
+            count += 1;
+            return { ...s, ...data };
+          }
+          return s;
+        });
+        return { count };
+      },
+    );
+    db.query_sets.update.mockImplementation(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+      store = store.map((s) => (s.id === where.id ? { ...s, ...data } : s));
+      return store.find((s) => s.id === where.id)!;
+    });
+
+    const app = await buildApp();
+    const headers = await authHeader('user-1', 'org-1');
+
+    const res1 = await app.request('/query-sets/qs-1/activate', { method: 'PATCH', headers });
+    expect(res1.status).toBe(200);
+    expect(store.find((s) => s.id === 'qs-1')?.status).toBe('active');
+
+    const res2 = await app.request('/query-sets/qs-2/activate', { method: 'PATCH', headers });
+    expect(res2.status).toBe(200);
+
+    const activeSets = store.filter((s) => s.status === 'active');
+    expect(activeSets).toHaveLength(1);
+    expect(activeSets[0]?.id).toBe('qs-2');
+    expect(store.find((s) => s.id === 'qs-1')?.status).toBe('archived');
+  });
 });
 
 describe('PATCH /query-sets/:id/archive', () => {
@@ -345,7 +426,11 @@ describe('manual curation — POST/PATCH/DELETE /query-sets/:id/queries', () => 
     const res = await app.request('/query-sets/qs-1/queries', {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(await authHeader('user-1', 'org-1')) },
-      body: JSON.stringify({ text: 'a new query' }),
+      // Post-verification fix: `category` is now required by
+      // `queryInputSchema` (see routes/query-sets.ts's nullability
+      // reconciliation) — included here so this test still exercises the
+      // draft-only guard, not a validation 422.
+      body: JSON.stringify({ text: 'a new query', category: 'category' }),
     });
     expect(res.status).toBe(409);
     expect(db.queries.create).not.toHaveBeenCalled();
@@ -431,5 +516,84 @@ describe('manual curation — POST/PATCH/DELETE /query-sets/:id/queries', () => 
     expect(db.queries.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ category: 'category' }) }),
     );
+  });
+});
+
+// Post-verification fix (backend bug #2): `POST /generate` correctly capped
+// against `queries_per_query_set`, but manual add never checked the cap at
+// all — a user could generate up to the limit, then add unlimited queries
+// manually. These tests prove the entitlement check added to this route.
+describe('entitlement cap on manual add — POST /query-sets/:id/queries', () => {
+  it('402s once the query set has reached the free plan\'s 50-query cap, and never calls queries.create', async () => {
+    db.subscriptions.findUnique.mockResolvedValue({ plan: 'free' });
+    db.query_sets.findFirst.mockResolvedValue(draftQuerySet({ query_count: 50 }));
+    db.queries.count.mockResolvedValue(50);
+
+    const app = await buildApp();
+    const res = await app.request('/query-sets/qs-1/queries', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(await authHeader('user-1', 'org-1')) },
+      body: JSON.stringify({ text: 'one query too many', category: 'category' }),
+    });
+
+    expect(res.status).toBe(402);
+    expect(db.queries.create).not.toHaveBeenCalled();
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ error: 'query_limit_reached', metric: 'queries_per_query_set', limit: 50, current: 50, plan: 'free' });
+  });
+
+  it('allows the add when under the cap', async () => {
+    db.subscriptions.findUnique.mockResolvedValue({ plan: 'free' });
+    db.query_sets.findFirst.mockResolvedValue(draftQuerySet({ query_count: 49 }));
+    db.queries.count.mockResolvedValue(49);
+    db.queries.create.mockResolvedValue({
+      id: 'q-new',
+      query_set_id: 'qs-1',
+      text: 'the 50th query',
+      intent_type: 'commercial',
+      category: 'size',
+      tags: [],
+      priority: 2,
+      source: 'manual',
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    const app = await buildApp();
+    const res = await app.request('/query-sets/qs-1/queries', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(await authHeader('user-1', 'org-1')) },
+      body: JSON.stringify({ text: 'the 50th query', category: 'size' }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(db.queries.create).toHaveBeenCalled();
+  });
+
+  it('does not cap on the growth plan at the same count (limit is 500, not 50)', async () => {
+    db.subscriptions.findUnique.mockResolvedValue({ plan: 'growth' });
+    db.query_sets.findFirst.mockResolvedValue(draftQuerySet({ query_count: 50, plan_tier: 'growth', plan_limit: 500 }));
+    db.queries.count.mockResolvedValue(50);
+    db.queries.create.mockResolvedValue({
+      id: 'q-new',
+      query_set_id: 'qs-1',
+      text: 'past the free cap, under the growth cap',
+      intent_type: 'informational',
+      category: 'category',
+      tags: [],
+      priority: 3,
+      source: 'manual',
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    const app = await buildApp();
+    const res = await app.request('/query-sets/qs-1/queries', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(await authHeader('user-1', 'org-1')) },
+      body: JSON.stringify({ text: 'past the free cap, under the growth cap', category: 'category' }),
+    });
+
+    expect(res.status).toBe(201);
   });
 });

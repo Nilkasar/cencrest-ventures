@@ -20,7 +20,7 @@ export function CrawlFailedPanel({ job, retrying, onRetry }: { job: CrawlJob; re
         <AlertTriangle className="size-5 text-danger shrink-0 mt-0.5" aria-hidden="true" />
         <div className="flex-1 min-w-0">
           <p className="font-display text-[15px] font-semibold text-foreground">Crawl stopped before finishing</p>
-          <p className="text-[13px] text-muted-foreground mt-1 max-w-[64ch]">{job.errorMessage}</p>
+          <p className="text-[13px] text-muted-foreground mt-1 max-w-[64ch]">{job.error}</p>
           {job.completedAt && (
             <p className="text-[12px] text-subtle-foreground mt-1.5">Stopped {formatDateTime(job.completedAt)}</p>
           )}

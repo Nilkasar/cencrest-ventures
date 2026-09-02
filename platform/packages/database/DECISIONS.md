@@ -764,3 +764,80 @@ SSRF-safe crawler, the trigger/status/pages routes) is documented in
 "Frontend contract reconciliation needed" section for the enum/field-name
 mismatches this fix-forward pass creates against the Epic 3 frontend,
 which was built earlier against the pre-fix-forward ported schema.
+
+## 18. Epic 5 (Intent & Query Universe) post-verification fixes
+
+A qa-flow-tester-persona review of Epic 5's completed backend+frontend
+halves (§16 above) found the frontend never wired to the real API, a
+frontend/backend contract mismatch, and two real backend bugs. The schema
+side of that fix:
+
+**`query_sets` gains five columns** the frontend's
+`apps/web/src/data/query-universe/types.ts` `QuerySet` interface required
+but the backend never persisted: `plan_tier`, `plan_limit`,
+`potential_count`, `activated_at`, `archived_at`. Each was checked against
+the review UI (`query-set-summary-card.tsx`, the empty-state's version
+history table) before being added — every one of them is genuinely
+rendered (the plan/cap meter, the "capped by plan — N possible" copy, the
+"Activated"/"Archived" timestamps), not speculative. The other two fields
+the frontend type had (`brandId`, `organizationId`) were checked the same
+way and found NOT displayed anywhere — those were removed from the
+frontend type instead of added here (see
+`docs/epics/05-intent-query-universe-frontend.md`'s "Post-verification
+fixes" section); `query_sets.brand_id`/`organization_id` themselves are
+untouched, still required for tenant scoping, just no longer serialized to
+the client.
+
+`plan_tier`/`plan_limit`/`potential_count` are frozen at `generate` time
+(read from `resolvePlanLimits` once, written onto the row), not re-resolved
+from `subscriptions` on every read — the frontend type's own doc comment
+explains why: "so the review screen can always explain 'why 500 and not
+more' even after the org's plan changes later." For a plan with no
+configured cap (`queries_per_query_set: null` — agency/managed),
+`plan_limit` is set to `potential_count` rather than some unlimited
+sentinel: the frontend type has no "unlimited" case, and semantically
+correct behavior for "no cap applied" is "the limit equals what was
+actually produced," not infinity.
+
+**`queries` gains one column**: `source` (`generated`/`manual`). Checked
+the same way — `category-section.tsx` and the "All queries" table both
+render a "Manual" badge off `query.source === "manual"`, so this is real
+UI, not the frontend's speculative addition it was flagged as in §16/the
+frontend completion doc. Added as a real, CHECK-constrained column instead
+of dropping it from the frontend type.
+
+**`intent_type`/`category` reconciliation**: the frontend's `Query` type
+has both as non-nullable; the ported columns are nullable. Left NULLABLE at
+the schema layer (open for a hypothetical future direct-write path), but
+`apps/api/src/routes/query-sets.ts`'s write routes now guarantee a non-null
+value on every row this epic's own API creates — `generate` always sets
+both from the template category mapping; manual add now requires
+`category` in its Zod schema and derives `intentType` from
+`query-generator.ts`'s exported `CATEGORY_META` when the caller omits it.
+Nullability is reconciled at the API boundary, not by adding a NOT NULL
+constraint the legacy-shaped nullable columns don't otherwise need.
+
+**CHECK constraints** — `prisma/migrations/0006_epic5_postverification_
+fixes/checks.sql`: `chk_query_sets_plan_tier` (all 7 `PlanTier` values —
+deliberately the full list, not the 4-value list
+`chk_subscriptions_plan` allows; `plan_tier` is a snapshot copy, not FK-tied
+to `subscriptions.plan`, so it isn't limited by that column's own
+pre-existing, unrelated gap) and `chk_queries_source`
+(`generated`/`manual`). `plan_limit`/`potential_count` get no CHECK — plain
+non-negative counts, same precedent as `query_count`.
+
+**Indexing**: added `idx_query_sets_brand_status` (composite
+`[brand_id, status]`) — the single-active-query-set fix (below) queries
+"every other active query_set for this brand" on exactly that predicate;
+the two existing single-column indexes on `brand_id` and `status`
+separately don't serve a combined-predicate query as well as one composite
+index does.
+
+**The two backend bugs themselves are `apps/api` route logic, not schema**
+(single-active-set enforcement on `PATCH /:id/activate`; the entitlement
+check missing from manual `POST /:id/queries`) — see
+`docs/epics/05-intent-query-universe-backend.md`'s "Post-verification
+fixes" section for both.
+
+As with every other section: `prisma validate`/`generate` only — nothing
+applied to a database.
