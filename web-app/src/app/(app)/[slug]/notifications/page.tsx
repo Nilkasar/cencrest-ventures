@@ -16,6 +16,7 @@ import { cn, relativeTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
+import { PageHeader } from '@/components/layout/page-header'
 import { spring, fastTransition } from '@/design-system/motion'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -82,10 +83,10 @@ const SAMPLE_NOTIFICATIONS: Notification[] = [
 
 function typeDotColor(type: NotifType): string {
   switch (type) {
-    case 'mention': return 'bg-[var(--ember)]'
-    case 'alert':   return 'bg-[var(--danger)]'
-    case 'report':  return 'bg-[var(--info)]'
-    case 'system':  return 'bg-[var(--dim)]'
+    case 'mention': return 'bg-ember'
+    case 'alert':   return 'bg-danger'
+    case 'report':  return 'bg-info'
+    case 'system':  return 'bg-dim'
   }
 }
 
@@ -119,11 +120,11 @@ function NotifCard({
       exit={{ opacity: 0, x: 24, height: 0, marginBottom: 0 }}
       transition={spring}
       className={cn(
-        'relative flex gap-3 px-4 py-3.5 rounded-lg border cursor-pointer select-none group',
+        'relative flex gap-3 px-5 py-4 rounded-lg border cursor-pointer select-none group',
         'transition-colors duration-200',
         notif.read
           ? 'bg-paper border-transparent'
-          : 'bg-white/50 border-[var(--border)]'
+          : 'bg-surface-raised border-border'
       )}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -254,49 +255,49 @@ export default function NotificationsPage() {
   return (
     <div className="max-w-2xl mx-auto">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={spring}
-        className="flex items-center justify-between gap-4 mb-6"
-      >
-        <div className="flex items-center gap-3">
-          <h1 className="font-display text-2xl font-semibold text-[var(--ink)]">Notifications</h1>
-          {unreadCount > 0 && (
-            <Badge variant="ember" size="sm">{unreadCount}</Badge>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => markAllReadMutation.mutate()}
-            loading={markAllReadMutation.isPending}
-          >
-            <CheckCheck className="h-4 w-4" />
-            Mark all read
-          </Button>
-          {notifications.length > 0 && (
+      <PageHeader
+        title={
+          <span className="flex items-center gap-3">
+            Notifications
+            {unreadCount > 0 && (
+              <Badge variant="ember" size="sm">{unreadCount}</Badge>
+            )}
+          </span>
+        }
+        actions={
+          <>
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
-              className="text-danger hover:text-danger hover:bg-danger-muted"
-              onClick={() => clearAllMutation.mutate()}
-              loading={clearAllMutation.isPending}
+              onClick={() => markAllReadMutation.mutate()}
+              loading={markAllReadMutation.isPending}
             >
-              <Trash2 className="h-4 w-4" />
-              Clear all
+              <CheckCheck className="h-4 w-4" />
+              Mark all read
             </Button>
-          )}
-        </div>
-      </motion.div>
+            {notifications.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-danger hover:text-danger hover:bg-danger-muted"
+                onClick={() => clearAllMutation.mutate()}
+                loading={clearAllMutation.isPending}
+              >
+                <Trash2 className="h-4 w-4" />
+                Clear all
+              </Button>
+            )}
+          </>
+        }
+        className="mb-8"
+      />
 
       {/* Filter pills */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ ...spring, delay: 0.05 }}
-        className="relative flex items-center gap-1 mb-6 p-1 bg-surface border border-border rounded-lg w-fit"
+        className="relative flex items-center gap-1 mb-8 p-1 bg-surface border border-border rounded-lg w-fit"
       >
         {FILTERS.map((f) => (
           <button
@@ -330,11 +331,11 @@ export default function NotificationsPage() {
       ) : visible.length === 0 ? (
         filter === 'unread' ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-14 h-14 rounded-full bg-[var(--success)]/10 flex items-center justify-center mb-4">
-              <CheckCircle2 className="h-7 w-7 text-[var(--success)]" />
+            <div className="w-14 h-14 rounded-full bg-success/10 flex items-center justify-center mb-4">
+              <CheckCircle2 className="h-7 w-7 text-success" />
             </div>
-            <h3 className="font-display text-base font-semibold text-[var(--ink)] mb-1">You&apos;re all caught up!</h3>
-            <p className="text-sm text-[var(--dim)]">No new notifications</p>
+            <h3 className="font-display text-base font-semibold text-ink mb-1">You&apos;re all caught up!</h3>
+            <p className="text-sm text-dim">No new notifications</p>
           </div>
         ) : (
           <EmptyState

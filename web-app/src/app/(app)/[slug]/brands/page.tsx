@@ -14,6 +14,8 @@ import { SkeletonCard } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Progress } from '@/components/ui/progress'
 import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter } from '@/components/ui/modal'
+import { PageHeader } from '@/components/layout/page-header'
+import { listItem, cardHover } from '@/lib/motion'
 
 interface Brand {
   id: string
@@ -40,8 +42,6 @@ function scoreVariant(score: number): 'success' | 'warning' | 'danger' | 'defaul
   if (score >= 40) return 'warning'
   return 'danger'
 }
-
-const SPRING = [0.16, 1, 0.3, 1] as [number, number, number, number]
 
 function AddBrandModal({ onClose, slug }: { onClose: () => void; slug: string }) {
   const qc = useQueryClient()
@@ -86,7 +86,7 @@ function AddBrandModal({ onClose, slug }: { onClose: () => void; slug: string })
               onChange={(e) => setWebsite(e.target.value)}
             />
             {mutation.isError && (
-              <p className="text-sm text-[var(--danger)] font-sans">
+              <p className="text-sm text-danger font-sans">
                 {(mutation.error as Error).message}
               </p>
             )}
@@ -126,22 +126,21 @@ export default function BrandsPage() {
       </AnimatePresence>
 
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: SPRING }}
-        className="flex items-center justify-between mb-8"
-      >
-        <h1 className="font-display text-2xl font-semibold text-[var(--ink)]">Your Brands</h1>
-        <Button onClick={() => setShowModal(true)}>
-          <Plus className="h-4 w-4" />
-          Add Brand
-        </Button>
-      </motion.div>
+      <PageHeader
+        title="Your Brands"
+        subtitle="Monitor AI visibility and competitive presence for each brand."
+        actions={
+          <Button onClick={() => setShowModal(true)}>
+            <Plus className="h-4 w-4" />
+            Add Brand
+          </Button>
+        }
+        className="mb-8"
+      />
 
       {/* Content */}
       {isLoading ? (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
       ) : brands.length === 0 ? (
@@ -155,33 +154,25 @@ export default function BrandsPage() {
           }
         />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {brands.map((brand, i) => {
             const score = brand.visibility_score ?? 0
             const variant = scoreVariant(score)
-            const scoreColorMap: Record<string, string> = {
-              success: 'var(--success)',
-              warning: 'var(--warning)',
-              danger: 'var(--danger)',
-            }
-            const scoreColor = scoreColorMap[variant] ?? 'var(--dim)'
 
             return (
               <motion.div
                 key={brand.id}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.06, duration: 0.35, ease: SPRING }}
-                className="rounded-2xl border border-[var(--border)] bg-white/70 p-6 hover:shadow-md transition-shadow cursor-pointer group"
+                {...listItem(i)}
+                className={`rounded-2xl border border-border bg-surface-raised p-6 cursor-pointer group ${cardHover}`}
               >
                 {/* Brand name */}
-                <h2 className="font-display text-xl text-[var(--ink)] leading-tight group-hover:text-[var(--ember)] transition-colors">
+                <h2 className="font-display text-xl font-semibold text-ink leading-tight group-hover:text-ember transition-colors">
                   {brand.name}
                 </h2>
 
                 {/* Domain */}
                 {brand.website && (
-                  <p className="font-mono text-xs text-[var(--dim)] mt-0.5 truncate">
+                  <p className="font-mono text-xs text-dim mt-0.5 truncate">
                     {brand.website.replace(/^https?:\/\//, '')}
                   </p>
                 )}
@@ -189,8 +180,8 @@ export default function BrandsPage() {
                 {/* Visibility score bar */}
                 <div className="mt-3">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-sans text-[var(--dim)]">AI Visibility</span>
-                    <span className="text-xs font-sans font-semibold" style={{ color: scoreColor }}>
+                    <span className="text-xs font-sans text-dim">AI Visibility</span>
+                    <span className={`text-xs font-sans font-semibold text-${variant === 'success' ? 'success' : variant === 'warning' ? 'warning' : variant === 'danger' ? 'danger' : 'dim'}`}>
                       {score}
                     </span>
                   </div>
@@ -198,7 +189,7 @@ export default function BrandsPage() {
                 </div>
 
                 {/* Last run */}
-                <div className="text-xs text-[var(--dim)] mt-3 flex items-center gap-1.5">
+                <div className="text-xs text-dim mt-3 flex items-center gap-1.5">
                   <Clock className="h-3 w-3 shrink-0" />
                   {brand.last_crawled_at
                     ? `Last run: ${relativeTime(brand.last_crawled_at)}`

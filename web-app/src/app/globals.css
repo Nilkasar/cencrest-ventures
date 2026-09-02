@@ -1,23 +1,77 @@
 @import "tailwindcss";
 
-:root {
-  --paper: #F7F3EC;
-  --ink: #16140F;
-  --ember: #C2410C;
-  --ember-light: #EA580C;
-  --dim: #6B6760;
-  --slate: #3D3B36;
-  --surface: #EFEBE3;
-  --surface-raised: #F3EFE8;
-  --border: #DDD9D1;
-  --border-strong: #C4BFB6;
-  --success: #16A34A;
-  --warning: #D97706;
-  --danger: #DC2626;
-  --info: #2563EB;
+/* ── Tailwind v4 theme tokens ────────────────────────────────────────────────
+   Source of truth. No :root block — @theme owns all design tokens.
+   -------------------------------------------------------------------------- */
+@theme {
+  /* Surface palette */
+  --color-paper:          #EFE9D8;
+  --color-ink:            #16140F;
+  --color-ember:          #C2410C;
+  --color-ember-light:    #EA580C;
+  --color-ember-dark:     #9A3412;
+  --color-dim:            #6B6760;
+  --color-slate:          #3D3B36;
+  --color-surface:        #E7E1CE;
+  --color-surface-raised: #FFFFFF;
+  --color-border:         #D8D3C9;
+  --color-border-strong:  #B8B3AA;
+
+  /* Semantic status */
+  --color-success:        #16A34A;
+  --color-success-muted:  #DCFCE7;
+  --color-warning:        #D97706;
+  --color-warning-muted:  #FEF3C7;
+  --color-danger:         #DC2626;
+  --color-danger-muted:   #FEE2E2;
+  --color-info:           #2563EB;
+  --color-info-muted:     #DBEAFE;
+
+  /* Typography */
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-sans:    var(--font-inter), system-ui, sans-serif;
+  --font-serif:   var(--font-spectral), Georgia, serif;
+  --font-mono:    var(--font-jetbrains), "Courier New", monospace;
+
+  /* Radius */
+  --radius-sm:  4px;
+  --radius-md:  6px;
+  --radius-lg:  12px;
+  --radius-xl:  16px;
+  --radius-2xl: 24px;
+
+  /* Shadows — warm-tinted, not grey */
+  --shadow-xs:    0 1px 2px rgba(22,20,15,0.05);
+  --shadow-sm:    0 1px 3px rgba(22,20,15,0.08), 0 1px 2px rgba(22,20,15,0.04);
+  --shadow-md:    0 4px 16px rgba(22,20,15,0.09), 0 2px 4px rgba(22,20,15,0.05);
+  --shadow-lg:    0 16px 48px rgba(22,20,15,0.12), 0 4px 12px rgba(22,20,15,0.07);
+  --shadow-ember: 0 4px 16px rgba(194,65,12,0.28);
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+/* ── Legacy var aliases ─────────────────────────────────────────────────────
+   Inline styles across the app use short names (var(--ink), var(--paper), etc).
+   Map them to the @theme tokens so nothing breaks.
+   -------------------------------------------------------------------------- */
+:root {
+  --paper:          var(--color-paper);
+  --ink:            var(--color-ink);
+  --ember:          var(--color-ember);
+  --ember-light:    var(--color-ember-light);
+  --ember-dark:     var(--color-ember-dark);
+  --dim:            var(--color-dim);
+  --slate:          var(--color-slate);
+  --surface:        var(--color-surface);
+  --surface-raised: var(--color-surface-raised);
+  --border:         var(--color-border);
+  --border-strong:  var(--color-border-strong);
+  --success:        var(--color-success);
+  --warning:        var(--color-warning);
+  --danger:         var(--color-danger);
+  --info:           var(--color-info);
+}
+
+/* ── Reset ──────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html {
   font-size: 16px;
@@ -27,30 +81,44 @@ html {
 }
 
 body {
-  background-color: var(--paper);
-  color: var(--ink);
-  font-family: var(--font-inter, system-ui, sans-serif);
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
   line-height: 1.5;
 }
 
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* ── Scrollbars ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-dim); }
 
+/* ── Focus ──────────────────────────────────────────────────────────────── */
 :focus-visible {
-  outline: 2px solid var(--ember);
+  outline: 2px solid var(--color-ember);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
+/* ── Selection ──────────────────────────────────────────────────────────── */
 ::selection {
-  background-color: rgba(194,65,12,0.15);
-  color: var(--ink);
+  background-color: rgba(194,65,12,0.14);
+  color: var(--color-ink);
 }
 
+/* ── Font utility classes ───────────────────────────────────────────────── */
+.font-display { font-family: var(--font-display); }
+.font-serif   { font-family: var(--font-serif); }
+.font-mono    { font-family: var(--font-mono); }
+
+/* ── App shell ──────────────────────────────────────────────────────────── */
+/* 260px sidebar on ≥lg. app-main is the content column. */
+.app-main { margin-left: 0; }
+@media (min-width: 1024px) { .app-main { margin-left: 260px; } }
+
+/* ── Keyframes ──────────────────────────────────────────────────────────── */
 @keyframes fadeUp {
-  from { opacity: 0; transform: translateY(16px); }
+  from { opacity: 0; transform: translateY(14px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes fadeIn {
@@ -61,25 +129,37 @@ body {
   0%   { background-position: -200% 0; }
   100% { background-position:  200% 0; }
 }
-@keyframes spinAnim {
+@keyframes spin {
   to { transform: rotate(360deg); }
 }
-@keyframes pulse-dot {
+@keyframes pulse-ring {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50%       { opacity: 0.5; transform: scale(0.85); }
+  50%       { opacity: 0.4; transform: scale(0.8); }
+}
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
+/* ── Skeleton shimmer ───────────────────────────────────────────────────── */
 .skeleton {
-  background: linear-gradient(90deg, var(--surface) 25%, var(--paper) 50%, var(--surface) 75%);
+  background: linear-gradient(
+    90deg,
+    var(--color-surface) 25%,
+    var(--color-paper)   50%,
+    var(--color-surface) 75%
+  );
   background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+  animation: shimmer 1.6s ease-in-out infinite;
   border-radius: 6px;
 }
 
-.font-display { font-family: var(--font-fraunces, Georgia, serif); }
-.font-serif   { font-family: var(--font-spectral, Georgia, serif); }
-.font-mono    { font-family: var(--font-jetbrains, monospace); }
-
-/* App shell: push content past the fixed 240px sidebar on desktop */
-.app-main { margin-left: 0; }
-@media (min-width: 1024px) { .app-main { margin-left: 240px; } }
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

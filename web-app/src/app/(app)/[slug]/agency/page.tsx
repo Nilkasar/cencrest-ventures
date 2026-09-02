@@ -23,6 +23,8 @@ import {
   ModalFooter,
 } from '@/components/ui/modal'
 import { spring } from '@/design-system/motion'
+import { SPRING_CURVE } from '@/lib/motion'
+import { PageHeader } from '@/components/layout/page-header'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,12 +59,11 @@ interface AgencyStats {
 
 // ─── Animations ───────────────────────────────────────────────────────────────
 
-const SPRING = [0.16, 1, 0.3, 1] as [number, number, number, number]
 
 const stagger = (i: number) => ({
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.4, ease: SPRING, delay: i * 0.07 },
+  transition: { duration: 0.4, ease: SPRING_CURVE, delay: i * 0.07 },
 })
 
 // ─── Client Card ──────────────────────────────────────────────────────────────
@@ -89,23 +90,23 @@ function ClientCard({
       {...stagger(index)}
       whileHover={{ y: -3 }}
       transition={{ duration: 0.2, ease: 'easeOut' }}
-      className="rounded-xl border border-[var(--border)] bg-white/70 p-5 hover:shadow-sm transition-shadow"
+      className="rounded-xl border border-border bg-surface-raised p-5 hover:shadow-[0_4px_16px_rgba(22,20,15,0.08)] hover:border-border-strong transition-all duration-200"
     >
       {/* Initials avatar */}
-      <div className="w-10 h-10 rounded-xl bg-[var(--ember)] flex items-center justify-center text-white text-sm font-bold font-sans">
+      <div className="w-10 h-10 rounded-xl bg-ember flex items-center justify-center text-white text-sm font-bold font-sans">
         {initials}
       </div>
 
       {/* Name */}
-      <h3 className="font-display text-lg text-[var(--ink)] mt-3 leading-tight truncate">
+      <h3 className="font-display text-lg text-ink mt-3 leading-tight truncate">
         {client.org_name}
       </h3>
 
       {/* Slug */}
-      <p className="font-mono text-xs text-[var(--dim)] mt-0.5">{client.org_slug}</p>
+      <p className="font-mono text-xs text-dim mt-0.5">{client.org_slug}</p>
 
       {/* Brands count */}
-      <p className="text-sm text-[var(--dim)] mt-2">{client.brand_count} brand{client.brand_count !== 1 ? 's' : ''}</p>
+      <p className="text-sm text-dim mt-2">{client.brand_count} brand{client.brand_count !== 1 ? 's' : ''}</p>
 
       {/* View + Remove */}
       <div className="flex gap-2 mt-4">
@@ -298,7 +299,7 @@ function ClientSummary({
             initial={{ x: '100%', opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: '100%', opacity: 0 }}
-            transition={{ duration: 0.35, ease: SPRING }}
+            transition={{ duration: 0.35, ease: SPRING_CURVE }}
             className="fixed right-0 top-0 bottom-0 z-[201] w-[480px] max-w-full bg-paper border-l border-border shadow-2xl flex flex-col"
           >
             {/* Header */}
@@ -329,7 +330,7 @@ function ClientSummary({
               ) : summary ? (
                 <>
                   {/* Health Score */}
-                  <div className="flex items-center gap-6 bg-surface rounded-xl p-5 border border-border">
+                  <div className="flex items-center gap-6 bg-surface-raised rounded-xl p-5 border border-border">
                     <ScoreRing score={summary.health_score} size={72} strokeWidth={6} label="Health" />
                     <div>
                       <p className="text-sm text-dim font-sans mb-1">Overall health score</p>
@@ -362,7 +363,7 @@ function ClientSummary({
                         {summary.brands.map((brand) => (
                           <div
                             key={brand.id}
-                            className="flex items-center justify-between bg-surface rounded-lg px-4 py-3 border border-border"
+                            className="flex items-center justify-between bg-surface-raised rounded-lg px-4 py-3 border border-border"
                           >
                             <span className="text-sm font-sans text-ink">{brand.name}</span>
                             <ScoreRing score={brand.health_score} size={36} strokeWidth={4} />
@@ -443,24 +444,20 @@ export default function AgencyPage() {
   return (
     <div className="max-w-7xl mx-auto">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: SPRING }}
-        className="flex items-center justify-between mb-8"
-      >
-        <div>
-          <h1 className="font-display text-3xl font-semibold text-ink">Agency Dashboard</h1>
-          <p className="text-sm text-dim font-sans mt-1">Manage client organizations</p>
-        </div>
-        <Button
-          onClick={() => setAddOpen(true)}
-          className="bg-[var(--ember)] text-white hover:bg-[var(--ember)]/90"
-        >
-          <Plus className="h-4 w-4" />
-          Add Client
-        </Button>
-      </motion.div>
+      <PageHeader
+        title="Agency Dashboard"
+        subtitle="Manage client organizations"
+        actions={
+          <Button
+            onClick={() => setAddOpen(true)}
+            className="bg-ember text-white hover:bg-ember/90"
+          >
+            <Plus className="h-4 w-4" />
+            Add Client
+          </Button>
+        }
+        className="mb-8"
+      />
 
       {/* Stats row — 3 cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">

@@ -1,27 +1,27 @@
-import { tokens } from './tokens'
+/* Kept for backwards-compat import path.
+   New code should import from `@/lib/motion`. */
 
-const { animation } = tokens
+const springEase = [0.16, 1, 0.3, 1] as [number, number, number, number]
+const softEase = [0.4, 0, 0.2, 1] as [number, number, number, number]
 
-// Framer Motion transition presets
 export const spring = {
   type: 'tween' as const,
-  ease: animation.easing.spring,
-  duration: animation.duration.normal / 1000,
+  ease: springEase,
+  duration: 0.25,
 }
 
 export const softTransition = {
   type: 'tween' as const,
-  ease: animation.easing.soft,
-  duration: animation.duration.normal / 1000,
+  ease: softEase,
+  duration: 0.25,
 }
 
 export const fastTransition = {
   type: 'tween' as const,
-  ease: animation.easing.spring,
-  duration: animation.duration.fast / 1000,
+  ease: springEase,
+  duration: 0.15,
 }
 
-// Variant presets
 export const fadeUp = {
   initial: { opacity: 0, y: 16 },
   animate: { opacity: 1, y: 0 },
@@ -57,11 +57,10 @@ export const slideInLeft = {
   transition: spring,
 }
 
-// Stagger helpers
 export const staggerContainer = {
   animate: {
     transition: {
-      staggerChildren: animation.stagger / 1000,
+      staggerChildren: 0.04,
       delayChildren: 0.05,
     },
   },
@@ -73,19 +72,17 @@ export const staggerItem = {
   transition: spring,
 }
 
-// Page transition (full page)
 export const pageTransition = {
   initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0 },
   exit: { opacity: 0, y: -8 },
   transition: {
     type: 'tween' as const,
-    ease: animation.easing.spring,
-    duration: animation.duration.slow / 1000,
+    ease: springEase,
+    duration: 0.45,
   },
 }
 
-// GSAP easing strings (for GSAP usage)
 export const gsapEase = {
   spring: 'power3.out',
   soft: 'power2.inOut',
@@ -93,8 +90,7 @@ export const gsapEase = {
   sharp: 'power4.out',
 }
 
-// Counter animation settings
 export const counterConfig = {
-  duration: animation.duration.crawl / 1000,
+  duration: 0.9,
   ease: 'power2.out',
 }

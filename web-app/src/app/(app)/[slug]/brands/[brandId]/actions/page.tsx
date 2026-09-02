@@ -25,7 +25,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody } from '@/components/ui/modal'
-import { tokens } from '@/design-system/tokens'
+import { PageHeader } from '@/components/layout/page-header'
+import { SPRING_CURVE } from '@/lib/motion'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -60,7 +61,7 @@ interface ActionsSummary {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const SPRING = tokens.animation.easing.spring as [number, number, number, number]
+const SPRING = SPRING_CURVE
 
 const FILTER_TABS: Array<{ value: FilterTab; label: string }> = [
   { value: 'all', label: 'All' },
@@ -139,7 +140,7 @@ function StatusDot({ status }: { status: ActionStatus }) {
 
 function SourceTag({ source }: { source: ActionSource }) {
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-mono text-[var(--dim)]">
+    <span className="inline-flex items-center gap-1 text-xs font-mono text-dim">
       {source === 'geo_gap' ? (
         <MapPin className="h-3 w-3" />
       ) : (
@@ -154,23 +155,23 @@ function SourceTag({ source }: { source: ActionSource }) {
 
 function StatsRow({ summary }: { summary: ActionsSummary }) {
   const stats = [
-    { label: 'Pending', value: summary.pending, color: 'text-[var(--warning)]', bg: 'bg-[var(--warning)]/5 border-[var(--warning)]/30' },
-    { label: 'In Progress', value: summary.in_progress, color: 'text-[var(--info)]', bg: 'bg-[var(--info)]/5 border-[var(--info)]/30' },
-    { label: 'Completed', value: summary.completed, color: 'text-[var(--success)]', bg: 'bg-[var(--success)]/5 border-[var(--success)]/30' },
-    { label: 'Failed', value: summary.failed, color: 'text-[var(--danger)]', bg: 'bg-[var(--danger)]/5 border-[var(--danger)]/30' },
+    { label: 'Pending', value: summary.pending, color: 'text-warning', bg: 'bg-warning/5 border-[var(--warning)]/30' },
+    { label: 'In Progress', value: summary.in_progress, color: 'text-info', bg: 'bg-info/5 border-[var(--info)]/30' },
+    { label: 'Completed', value: summary.completed, color: 'text-success', bg: 'bg-success/5 border-[var(--success)]/30' },
+    { label: 'Failed', value: summary.failed, color: 'text-danger', bg: 'bg-danger/5 border-[var(--danger)]/30' },
   ]
 
   return (
-    <div className="grid grid-cols-4 gap-3">
+    <div className="grid grid-cols-4 gap-6">
       {stats.map((s) => (
         <motion.div
           key={s.label}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className={cn('rounded-xl border px-4 py-3', s.bg)}
+          className={cn('rounded-xl border px-6 py-6', s.bg)}
         >
-          <p className={cn('text-2xl font-bold font-display', s.color)}>{s.value}</p>
-          <p className="text-xs text-[var(--dim)] uppercase tracking-wide mt-0.5">{s.label}</p>
+          <p className={cn('text-3xl font-bold font-display', s.color)}>{s.value}</p>
+          <p className="text-[11px] text-dim uppercase tracking-wider mt-0.5">{s.label}</p>
         </motion.div>
       ))}
     </div>
@@ -188,7 +189,7 @@ function CounterBadge({ count }: { count: number }) {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.8, y: 6 }}
         transition={{ type: 'tween', ease: SPRING, duration: 0.2 }}
-        className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-[var(--ember)] text-[var(--paper)] text-xs font-mono font-bold leading-none"
+        className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-ember text-[var(--paper)] text-xs font-mono font-bold leading-none"
       >
         {count}
       </motion.span>
@@ -219,13 +220,13 @@ function FilterPills({
               className={cn(
                 'relative px-3 py-1.5 rounded-full text-sm font-sans font-medium transition-colors duration-150',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ember)] focus-visible:ring-offset-2',
-                isActive ? 'text-[var(--paper)]' : 'text-[var(--dim)] hover:text-[var(--ink)]',
+                isActive ? 'text-[var(--paper)]' : 'text-dim hover:text-ink',
               )}
             >
               {isActive && (
                 <motion.span
                   layoutId="action-filter-pill"
-                  className="absolute inset-0 bg-[var(--ember)] rounded-full"
+                  className="absolute inset-0 bg-ember rounded-full"
                   transition={{ type: 'tween', ease: SPRING, duration: 0.25 }}
                 />
               )}
@@ -235,7 +236,7 @@ function FilterPills({
                   <span
                     className={cn(
                       'text-xs rounded-full px-1.5 py-px font-mono font-semibold leading-none',
-                      isActive ? 'bg-white/20 text-[var(--paper)]' : 'bg-[var(--border)] text-[var(--dim)]',
+                      isActive ? 'bg-white/20 text-[var(--paper)]' : 'bg-[var(--border)] text-dim',
                     )}
                   >
                     {counts[tab.value]}
@@ -286,7 +287,7 @@ function ActionCard({
       exit={{ opacity: 0, x: -32, scale: 0.97 }}
       transition={{ duration: 0.35, ease: SPRING, delay: index * 0.05 }}
       className={cn(
-        'group relative border-l-4 bg-white/70 px-5 py-4 mb-2 rounded-r-xl rounded-l-sm',
+        'group relative border-l-4 bg-surface-raised px-5 py-4 mb-2 rounded-r-xl rounded-l-sm',
         'transition-[border-color,box-shadow] duration-200',
         borderColorClass(action.status),
         action.status === 'completed' && 'opacity-60',
@@ -302,19 +303,19 @@ function ActionCard({
         {/* Content */}
         <div className="flex-1 min-w-0">
           <p className={cn(
-            'font-display text-base font-semibold text-[var(--ink)] leading-snug',
-            action.status === 'completed' && 'line-through text-[var(--dim)]',
+            'font-display text-base font-semibold text-ink leading-snug',
+            action.status === 'completed' && 'line-through text-dim',
           )}>
             {action.title}
           </p>
 
           {action.description && (
-            <p className="text-sm text-[var(--dim)] mt-0.5 line-clamp-2">{action.description}</p>
+            <p className="text-sm text-dim mt-0.5 line-clamp-2">{action.description}</p>
           )}
 
           {/* Footer row */}
           <div className="flex items-center gap-3 mt-2 flex-wrap">
-            <span className="text-xs text-[var(--dim)]">{formattedDate}</span>
+            <span className="text-xs text-dim">{formattedDate}</span>
             <SourceTag source={action.source} />
             <div className="flex items-center gap-1.5">
               <Badge variant={priorityBadgeVariant(action.priority)} size="sm">
@@ -333,7 +334,7 @@ function ActionCard({
                   size="sm"
                   onClick={() => onComplete(action.id)}
                   disabled={isCompleting || isDismissing}
-                  className="text-[var(--success)] border-[var(--success)]/30 hover:bg-[var(--success)]/5"
+                  className="text-success border-[var(--success)]/30 hover:bg-success/5"
                 >
                   {isCompleting ? (
                     <svg className="animate-spin h-3.5 w-3.5 mr-1" viewBox="0 0 24 24" fill="none">
@@ -365,7 +366,7 @@ function ActionCard({
                   size="sm"
                   onClick={() => onDismiss(action.id)}
                   disabled={isCompleting || isDismissing}
-                  className="text-[var(--dim)] hover:text-[var(--ink)]"
+                  className="text-dim hover:text-ink"
                 >
                   Archive
                 </Button>
@@ -375,13 +376,13 @@ function ActionCard({
         </div>
 
         {action.status === 'completed' && (
-          <CheckCircle2 className="h-5 w-5 text-[var(--success)] flex-shrink-0" />
+          <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0" />
         )}
         {action.status === 'failed' && (
-          <AlertCircle className="h-5 w-5 text-[var(--danger)] flex-shrink-0" />
+          <AlertCircle className="h-5 w-5 text-danger flex-shrink-0" />
         )}
         {action.status === 'dismissed' && (
-          <MinusCircle className="h-5 w-5 text-[var(--dim)] flex-shrink-0" />
+          <MinusCircle className="h-5 w-5 text-dim flex-shrink-0" />
         )}
       </div>
     </motion.div>
@@ -392,7 +393,7 @@ function ActionCard({
 
 function PageSkeleton() {
   return (
-    <div className="max-w-4xl mx-auto space-y-6 p-6">
+    <div className="max-w-4xl mx-auto space-y-8">
       <div className="flex items-center justify-between">
         <div className="space-y-2">
           <Skeleton className="h-9 w-56" />
@@ -400,9 +401,9 @@ function PageSkeleton() {
         </div>
         <Skeleton className="h-10 w-28 rounded-md" />
       </div>
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-6">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-16 rounded-xl" />
+          <Skeleton key={i} className="h-20 rounded-xl" />
         ))}
       </div>
       <div className="flex gap-2">
@@ -412,7 +413,7 @@ function PageSkeleton() {
       </div>
       <div className="space-y-3">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="bg-[var(--surface)] border-l-4 border-[var(--border)] rounded-r-xl px-5 py-4 flex gap-3">
+          <div key={i} className="bg-surface-raised border-l-4 border-border rounded-r-xl px-5 py-4 flex gap-3">
             <div className="flex-1 space-y-2">
               <Skeleton className="h-4 w-3/4" />
               <Skeleton className="h-3 w-1/2" />
@@ -460,7 +461,7 @@ function NewActionModal({
         <ModalBody>
           <div className="flex flex-col gap-4">
             <div>
-              <label className="text-xs text-[var(--dim)] font-sans mb-1 block">Title</label>
+              <label className="text-[11px] text-dim font-sans mb-1 block uppercase tracking-wider">Title</label>
               <Input
                 placeholder="Action title…"
                 value={title}
@@ -469,13 +470,13 @@ function NewActionModal({
               />
             </div>
             <div>
-              <label className="text-xs text-[var(--dim)] font-sans mb-1 block">Description</label>
+              <label className="text-[11px] text-dim font-sans mb-1 block uppercase tracking-wider">Description</label>
               <textarea
                 placeholder="What needs to be done…"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
-                className="w-full px-3 py-2 text-sm font-sans text-[var(--ink)] bg-[var(--paper)] border border-[var(--border)] rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--ember)] resize-none"
+                className="w-full px-3 py-2 text-sm font-sans text-ink bg-paper border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-[var(--ember)] resize-none"
               />
             </div>
             <div className="flex justify-end gap-2">
@@ -649,43 +650,39 @@ export default function ActionsPage() {
   if (isLoading) return <PageSkeleton />
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-12 p-6">
+    <div className="max-w-4xl mx-auto space-y-8 pb-16">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: SPRING }}
-        className="flex items-start justify-between gap-4"
-      >
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="font-display text-2xl font-semibold text-[var(--ink)]">Action Plan</h1>
+      <PageHeader
+        title={
+          <span className="flex items-center gap-3">
+            Action Plan
             {pendingCount > 0 && <CounterBadge count={pendingCount} />}
-          </div>
-          <p className="text-sm text-[var(--dim)] mt-1">Prioritized actions derived from AI recommendation gaps</p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-          >
-            <motion.span
-              animate={syncMutation.isPending ? { rotate: 360 } : { rotate: 0 }}
-              transition={syncMutation.isPending ? { duration: 1, repeat: Infinity, ease: 'linear' } : {}}
-              style={{ display: 'inline-flex' }}
+          </span>
+        }
+        subtitle="Prioritized actions derived from AI recommendation gaps"
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
             >
-              <RefreshCw className="h-4 w-4" />
-            </motion.span>
-            {syncMutation.isPending ? 'Syncing…' : 'Sync'}
-          </Button>
-          <Button size="sm" onClick={() => setShowNewAction(true)}>
-            <Plus className="h-4 w-4 mr-1.5" /> New Action
-          </Button>
-        </div>
-      </motion.div>
+              <motion.span
+                animate={syncMutation.isPending ? { rotate: 360 } : { rotate: 0 }}
+                transition={syncMutation.isPending ? { duration: 1, repeat: Infinity, ease: 'linear' } : {}}
+                style={{ display: 'inline-flex' }}
+              >
+                <RefreshCw className="h-4 w-4" />
+              </motion.span>
+              {syncMutation.isPending ? 'Syncing…' : 'Sync'}
+            </Button>
+            <Button size="sm" onClick={() => setShowNewAction(true)}>
+              <Plus className="h-4 w-4 mr-1.5" /> New Action
+            </Button>
+          </>
+        }
+      />
 
       {/* Stats row */}
       <motion.div

@@ -1,34 +1,48 @@
 'use client'
 
+import { useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import {
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from 'recharts'
 import Link from 'next/link'
-import { Zap, ArrowRight, Clock } from 'lucide-react'
+import {
+  Zap,
+  ArrowRight,
+  Clock,
+  TrendingUp,
+  TrendingDown,
+  Search,
+  AlertTriangle,
+  CheckCircle2,
+  Sparkles,
+  ArrowUpRight,
+  Activity,
+} from 'lucide-react'
 import { api, routes } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { SkeletonCard } from '@/components/ui/skeleton'
+
 import { ScoreRing } from '@/components/ui/score-ring'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Progress } from '@/components/ui/progress'
+import { SPRING_CURVE, fadeUp } from '@/lib/motion'
 
+/* ── Constants ──────────────────────────────────────────────────────────── */
 const PROVIDERS = {
-  chatgpt:    { color: '#2563EB', label: 'ChatGPT' },
-  gemini:     { color: '#16A34A', label: 'Gemini' },
-  claude:     { color: '#7C3AED', label: 'Claude' },
-  perplexity: { color: '#EA580C', label: 'Perplexity' },
+  chatgpt:    { color: '#2563EB', label: 'ChatGPT',    abbr: 'GPT' },
+  gemini:     { color: '#16A34A', label: 'Gemini',     abbr: 'GEM' },
+  claude:     { color: '#7C3AED', label: 'Claude',     abbr: 'CLD' },
+  perplexity: { color: '#EA580C', label: 'Perplexity', abbr: 'PPX' },
 } as const
 
 type ProviderKey = keyof typeof PROVIDERS
@@ -49,6 +63,7 @@ interface BrandData {
   actions_pending?: number
   visibility_trend?: Array<Record<string, number | string>>
   provider_scores?: ProviderScores
+  last_analyzed_at?: string
   org?: { owner_name?: string }
 }
 
@@ -66,6 +81,13 @@ interface Action {
   created_at: string
 }
 
+const TIME_RANGES = [
+  { label: '7D',  value: '7d'  },
+  { label: '30D', value: '30d' },
+  { label: '90D', value: '90d' },
+] as const
+
+/* ── Helpers ─────────────────────────────────────────────────────────────── */
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
   const mins = Math.floor(diff / 60000)
@@ -83,21 +105,8 @@ function greeting(): string {
   return 'Good evening'
 }
 
-const today = new Intl.DateTimeFormat('en-US', {
-  weekday: 'long',
-  month: 'long',
-  day: 'numeric',
-}).format(new Date())
-
-const SPRING = [0.16, 1, 0.3, 1] as [number, number, number, number]
-
-const fadeUp = (i: number) => ({
-  initial: { opacity: 0, y: 16 },
-  animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.35, ease: SPRING, delay: i * 0.08 },
-})
-
-const CustomTooltip = ({
+/* ── Chart tooltip ───────────────────────────────────────────────────────── */
+function ChartTooltip({
   active,
   payload,
   label,
@@ -105,36 +114,48 @@ const CustomTooltip = ({
   active?: boolean
   payload?: Array<{ name: string; value: number; color: string }>
   label?: string
-}) => {
+}) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-[var(--paper)] border border-[var(--border)] rounded-xl shadow-lg px-4 py-3 text-sm font-sans min-w-[160px]">
-      <p className="text-[var(--dim)] mb-2 text-xs">{label}</p>
-      {payload.map((p) => (
-        <div key={p.name} className="flex items-center gap-2 py-0.5">
-          <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: p.color }} />
-          <span className="text-[var(--ink)] font-medium capitalize flex-1">{p.name}</span>
-          <span className="font-semibold text-[var(--ink)]">{p.value}</span>
-        </div>
-      ))}
+    <div className="bg-surface-raised border border-border rounded-xl shadow-md px-4 py-3 min-w-[160px]">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-dim mb-2">{label}</p>
+      <div className="space-y-1.5">
+        {payload.map((p) => (
+          <div key={p.name} className="flex items-center gap-2.5">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: p.color }} />
+            <span className="text-xs font-medium text-ink capitalize flex-1">{p.name}</span>
+            <span className="font-bold text-xs text-ink tabular-nums">{p.value}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
 
-function ActionDot({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    completed: 'bg-[var(--success)]',
-    in_progress: 'bg-[var(--info)]',
-    failed: 'bg-[var(--danger)]',
-  }
-  return (
-    <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${colors[status] ?? 'bg-[var(--border)]'}`} />
-  )
+/* ── Action status icon ──────────────────────────────────────────────────── */
+function ActionStatusDot({ status }: { status: string }) {
+  if (status === 'completed') return <span className="w-1.5 h-1.5 rounded-full bg-success shrink-0" aria-hidden />
+  if (status === 'in_progress') return <span className="w-1.5 h-1.5 rounded-full bg-info shrink-0 animate-pulse" aria-hidden />
+  if (status === 'failed') return <span className="w-1.5 h-1.5 rounded-full bg-danger shrink-0" aria-hidden />
+  return <span className="w-1.5 h-1.5 rounded-full bg-border-strong shrink-0" aria-hidden />
 }
 
+/* ── Main page ───────────────────────────────────────────────────────────── */
 export default function DashboardPage() {
   const { slug } = useParams<{ slug: string }>()
+  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('90d')
 
+  const today = useMemo(
+    () =>
+      new Intl.DateTimeFormat('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      }).format(new Date()),
+    []
+  )
+
+  /* ── Data queries (all business logic preserved) ──────────────────── */
   const { data: brands } = useQuery({
     queryKey: ['brands', slug],
     queryFn: () => api.get<{ brands: Array<{ id: string }> }>(routes.brands(slug)),
@@ -162,235 +183,391 @@ export default function DashboardPage() {
     enabled: !!brandId,
   })
 
-  const brandRecord = brand as BrandData | undefined
-  const opportunities = (
-    oppsData as { opportunities?: Opportunity[] } | undefined
-  )?.opportunities?.filter((o) => o.priority === 'P1').slice(0, 5) ?? []
-  const actions = (actionsData as { actions?: Action[] } | undefined)?.actions?.slice(0, 5) ?? []
-  const ownerName = brandRecord?.org?.owner_name ?? 'there'
-
+  /* ── Derived state ────────────────────────────────────────────────── */
+  const brandRecord     = brand as BrandData | undefined
+  const opportunities   = (oppsData as { opportunities?: Opportunity[] } | undefined)
+    ?.opportunities?.filter((o) => o.priority === 'P1').slice(0, 6) ?? []
+  const actions         = (actionsData as { actions?: Action[] } | undefined)?.actions?.slice(0, 6) ?? []
+  const ownerName       = brandRecord?.org?.owner_name ?? 'there'
   const visibilityScore = brandRecord?.visibility_score ?? 0
-  const queriesTracked = brandRecord?.queries_tracked ?? 0
-  const gapsIdentified = brandRecord?.gaps_identified ?? 0
-  const actionsPending = brandRecord?.actions_pending ?? 0
-  const trendData = brandRecord?.visibility_trend ?? []
-  const providerScores = brandRecord?.provider_scores
-
-  const isRunning = false
+  const queriesTracked  = brandRecord?.queries_tracked ?? 0
+  const gapsIdentified  = brandRecord?.gaps_identified ?? 0
+  const actionsPending  = brandRecord?.actions_pending ?? 0
+  const trendData       = brandRecord?.visibility_trend ?? []
+  const providerScores  = brandRecord?.provider_scores
+  const lastAnalyzed    = brandRecord?.last_analyzed_at
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 pb-12">
-      {/* ── Section 1: Header ─────────────────────────────────── */}
+    <div className="max-w-[1360px] mx-auto space-y-8 pb-16">
+
+      {/* ── Row 1: Page title + primary CTA ─────────────────────────── */}
       <motion.div
         {...fadeUp(0)}
-        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+        className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4"
       >
         <div>
-          <h1 className="font-display text-3xl font-semibold text-[var(--ink)] leading-tight">
+          <p className="text-[11px] font-mono font-semibold text-dim uppercase tracking-[0.1em] mb-1.5">
+            {today}
+          </p>
+          <h1 className="font-display text-[32px] font-semibold text-ink leading-[1.1] tracking-[-0.02em]">
             {greeting()}, {ownerName}
           </h1>
-          <p className="text-sm text-[var(--dim)] mt-1 font-sans">{today}</p>
+          <p className="text-sm text-dim mt-1.5 leading-relaxed">
+            Here&rsquo;s how your brand is showing up across AI models today.
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Status pill */}
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--surface)] border border-[var(--border)] text-xs font-sans font-medium text-[var(--ink)]">
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                isRunning ? 'bg-[var(--warning)] animate-pulse' : 'bg-[var(--success)] animate-pulse'
-              }`}
-            />
-            {isRunning ? 'Running…' : 'Ready'}
-          </div>
-          <Button size="lg">
-            <Zap className="h-4 w-4" />
-            Run AI Analysis
-          </Button>
-        </div>
+        <Button size="lg" className="shrink-0 gap-2 shadow-[0_4px_16px_rgba(194,65,12,0.24)]">
+          <Zap className="h-4 w-4" />
+          Run AI Analysis
+        </Button>
       </motion.div>
 
-      {/* ── Section 2: 4 stat cards ─────────────────────────────── */}
-      <motion.div {...fadeUp(1)} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {brandLoading ? (
-          Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
-        ) : (
-          <>
-            {/* AI Visibility */}
-            <div className="rounded-xl border border-[var(--border)] bg-white/60 backdrop-blur-sm px-5 py-5 flex flex-col gap-3">
-              <p className="text-xs font-sans font-medium text-[var(--dim)] uppercase tracking-wider">AI Visibility</p>
-              <div className="flex items-center justify-center">
-                <ScoreRing score={visibilityScore} size={80} />
+      {/* ── Row 2: Command strip — visibility ring + 3 KPI tiles + dark callout ── */}
+      <motion.div {...fadeUp(1)} className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+        {/* Visibility hero: 5/12 */}
+        <div className="lg:col-span-5 bg-surface-raised border border-border rounded-xl p-6 shadow-[0_1px_3px_rgba(22,20,15,0.05)]">
+          {brandLoading ? (
+            <div className="flex items-center gap-6 h-36">
+              <div className="w-28 h-28 rounded-full bg-surface animate-pulse shrink-0" />
+              <div className="flex-1 space-y-3">
+                <div className="h-3 w-24 bg-surface animate-pulse rounded" />
+                <div className="h-8 w-40 bg-surface animate-pulse rounded" />
+                <div className="h-3 w-32 bg-surface animate-pulse rounded" />
               </div>
             </div>
-
-            {/* Queries Tracked */}
-            <div className="rounded-xl border border-[var(--border)] bg-white/60 backdrop-blur-sm px-5 py-5 flex flex-col gap-2">
-              <p className="text-xs font-sans font-medium text-[var(--dim)] uppercase tracking-wider">Queries Tracked</p>
-              <p className="font-display text-3xl font-semibold text-[var(--ink)]">{queriesTracked}</p>
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-[var(--dim)] font-sans">active queries</p>
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-[var(--success)] bg-[var(--success)]/10 px-2 py-0.5 rounded-full">
-                  +12% this week
-                </span>
+          ) : (
+            <div className="flex items-center gap-6">
+              <div className="shrink-0">
+                <ScoreRing score={visibilityScore} size={128} />
               </div>
-            </div>
-
-            {/* Gaps Identified */}
-            <div className="rounded-xl border border-[var(--border)] bg-white/60 backdrop-blur-sm px-5 py-5 flex flex-col gap-2">
-              <p className="text-xs font-sans font-medium text-[var(--dim)] uppercase tracking-wider">Gaps Identified</p>
-              <p className="font-display text-3xl font-semibold text-[var(--ink)]">{gapsIdentified}</p>
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-[var(--dim)] font-sans">detected</p>
-                {gapsIdentified > 0 && (
-                  <span className="inline-flex items-center gap-1 text-xs font-medium text-[var(--warning)] bg-[var(--warning)]/10 px-2 py-0.5 rounded-full">
-                    review needed
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[10px] font-bold font-sans uppercase tracking-[0.1em] text-dim">
+                    AI Visibility Score
                   </span>
+                  {visibilityScore > 0 && (
+                    <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-success bg-success/10 px-1.5 py-0.5 rounded-full">
+                      <TrendingUp className="w-2.5 h-2.5" />
+                      +4
+                    </span>
+                  )}
+                </div>
+                <h2 className="font-display text-[20px] font-semibold text-ink leading-tight tracking-tight mb-2">
+                  {visibilityScore >= 80 ? 'Excellent presence'
+                    : visibilityScore >= 60 ? 'Good foundation'
+                    : visibilityScore >= 40 ? 'Mixed results'
+                    : visibilityScore > 0   ? 'Gaps detected'
+                    : 'Analysis pending'}
+                </h2>
+                <p className="text-[13px] text-dim leading-relaxed">
+                  {visibilityScore > 0
+                    ? `Recognized ${visibilityScore}% of the time across ${queriesTracked} queries.`
+                    : 'Run your first analysis to baseline AI visibility.'}
+                </p>
+                {lastAnalyzed && (
+                  <p className="text-[11px] text-dim mt-3 flex items-center gap-1.5">
+                    <Clock className="w-3 h-3" />
+                    Updated {relativeTime(lastAnalyzed)}
+                  </p>
                 )}
               </div>
             </div>
+          )}
+        </div>
 
-            {/* Actions Pending */}
-            <div className="rounded-xl border border-[var(--border)] bg-white/60 backdrop-blur-sm px-5 py-5 flex flex-col gap-2">
-              <p className="text-xs font-sans font-medium text-[var(--dim)] uppercase tracking-wider">Actions Pending</p>
-              <p className="font-display text-3xl font-semibold text-[var(--ink)]">{actionsPending}</p>
-              <p className="text-xs text-[var(--dim)] font-sans">pending review</p>
-            </div>
-          </>
-        )}
-      </motion.div>
-
-      {/* ── Section 3: Provider scores ──────────────────────────── */}
-      <motion.div {...fadeUp(2)} className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {(Object.keys(PROVIDERS) as ProviderKey[]).map((key) => {
-          const p = PROVIDERS[key]
-          const score = providerScores?.[key] ?? 0
-          return (
-            <div key={key} className="rounded-xl border border-[var(--border)] bg-white/60 px-4 py-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-sans text-sm font-medium text-[var(--ink)]">{p.label}</span>
-                <span className="font-sans text-2xl font-semibold" style={{ color: p.color }}>
-                  {score}
-                  <span className="text-sm font-normal text-[var(--dim)]">/100</span>
-                </span>
-              </div>
-              <Progress
-                value={score}
-                className="h-1.5"
-                style={
-                  {
-                    '--progress-color': p.color,
-                  } as React.CSSProperties
-                }
+        {/* 3 KPI tiles: 4/12 (each 4/3 = ~ 1.33 cols; use a sub-grid) */}
+        <div className="lg:col-span-4 grid grid-rows-3 gap-3">
+          {brandLoading ? (
+            Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="bg-surface-raised border border-border rounded-xl p-4 animate-pulse h-[72px]" />
+            ))
+          ) : (
+            <>
+              <KpiTile
+                label="Queries Tracked"
+                value={queriesTracked}
+                icon={<Search className="w-4 h-4" />}
+                accent="info"
+                trend="+12%"
+                trendUp
               />
+              <KpiTile
+                label="Gaps Identified"
+                value={gapsIdentified}
+                icon={<AlertTriangle className="w-4 h-4" />}
+                accent={gapsIdentified > 0 ? 'warning' : 'default'}
+              />
+              <KpiTile
+                label="Actions Pending"
+                value={actionsPending}
+                icon={<Zap className="w-4 h-4" />}
+                accent="ember"
+              />
+            </>
+          )}
+        </div>
+
+        {/* Dark callout: 3/12 */}
+        <div className="lg:col-span-3 bg-ink text-paper rounded-xl p-6 flex flex-col relative overflow-hidden">
+          {/* Subtle dot-grid texture */}
+          <div
+            className="absolute inset-0 opacity-[0.05] pointer-events-none"
+            style={{
+              backgroundImage: 'radial-gradient(circle, rgba(247,243,236,1) 1px, transparent 1px)',
+              backgroundSize: '18px 18px',
+            }}
+          />
+          <div className="relative flex flex-col flex-1">
+            <div className="w-8 h-8 rounded-lg bg-ember flex items-center justify-center mb-4">
+              <Sparkles className="w-3.5 h-3.5 text-paper" />
             </div>
-          )
-        })}
+            <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-paper/50 mb-2">
+              Next best action
+            </span>
+            <h3 className="font-display text-[17px] font-semibold leading-tight tracking-tight mb-2 flex-1">
+              {gapsIdentified > 0
+                ? `${gapsIdentified} citation gaps need attention`
+                : opportunities.length > 0
+                ? 'Publish content for high-priority topics'
+                : 'Kick off your first AI analysis'}
+            </h3>
+            <p className="text-xs text-paper/55 leading-relaxed mb-5">
+              {gapsIdentified > 0
+                ? 'Address these to move your score in the next run.'
+                : opportunities.length > 0
+                ? `${opportunities.length} opportunities surfaced from your last run.`
+                : 'Get baseline metrics across all four major AI models.'}
+            </p>
+            <Link
+              href={
+                gapsIdentified > 0
+                  ? `/${slug}/brands/${brandId}/geo`
+                  : opportunities.length > 0
+                  ? `/${slug}/brands/${brandId}/opportunities`
+                  : '#'
+              }
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-paper/80 hover:text-ember transition-colors"
+            >
+              View details <ArrowUpRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        </div>
       </motion.div>
 
-      {/* ── Section 4: Trend chart ─────────────────────────────── */}
-      <motion.div {...fadeUp(3)}>
-        <Card className="rounded-xl border border-[var(--border)]">
+      {/* ── Row 3: Provider performance + Trend chart ────────────────── */}
+      <motion.div {...fadeUp(2)} className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+        {/* Provider breakdown: 4/12 */}
+        <Card className="lg:col-span-4">
           <CardHeader>
-            <div>
-              <CardTitle className="font-display">Visibility Trend</CardTitle>
-              <p className="text-xs text-[var(--dim)] font-sans mt-0.5">90-day AI model performance</p>
+            <CardTitle>Provider Performance</CardTitle>
+            <p className="text-xs text-dim mt-0.5">AI visibility by model</p>
+          </CardHeader>
+          <CardContent className="pt-5">
+            <div className="space-y-5">
+              {(Object.keys(PROVIDERS) as ProviderKey[]).map((key) => {
+                const p     = PROVIDERS[key]
+                const score = providerScores?.[key] ?? 0
+                return (
+                  <div key={key}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ background: p.color }}
+                        />
+                        <span className="text-[13px] font-medium text-ink">{p.label}</span>
+                      </div>
+                      <div className="flex items-baseline gap-0.5">
+                        <span
+                          className="font-display text-lg font-bold tabular-nums"
+                          style={{ color: p.color }}
+                        >
+                          {score}
+                        </span>
+                        <span className="text-[11px] text-dim">/100</span>
+                      </div>
+                    </div>
+                    <div className="h-1 bg-surface rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full rounded-full"
+                        style={{ background: p.color }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${score}%` }}
+                        transition={{ duration: 0.9, ease: SPRING_CURVE, delay: 0.3 }}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Trend chart: 8/12 */}
+        <Card className="lg:col-span-8">
+          <CardHeader>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle>Visibility Trend</CardTitle>
+                <p className="text-xs text-dim mt-0.5">Score across providers over time</p>
+              </div>
+              {/* Time range toggle */}
+              <div className="flex items-center gap-0.5 bg-surface border border-border rounded-lg p-1 shrink-0">
+                {TIME_RANGES.map((r) => (
+                  <button
+                    key={r.value}
+                    onClick={() => setTimeRange(r.value)}
+                    className={[
+                      'px-2.5 py-1 text-[11px] font-bold tracking-wide rounded-md transition-all duration-150 cursor-pointer',
+                      timeRange === r.value
+                        ? 'bg-surface-raised text-ink shadow-[0_1px_3px_rgba(22,20,15,0.08)]'
+                        : 'text-dim hover:text-ink',
+                    ].join(' ')}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-4">
             {brandLoading ? (
-              <div className="h-56 w-full rounded-md bg-[var(--surface)] animate-pulse" />
+              <div className="h-52 w-full rounded-lg bg-surface animate-pulse" />
             ) : trendData.length === 0 ? (
               <EmptyState
+                icon={<Activity className="w-5 h-5" />}
                 title="No trend data yet"
                 description="Run an AI analysis to start tracking visibility over time."
+                compact
               />
             ) : (
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={trendData} margin={{ top: 8, right: 16, left: -16, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fontSize: 11, fill: 'var(--dim)', fontFamily: 'var(--font-inter)' }}
-                    axisLine={{ stroke: 'var(--border)' }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    domain={[0, 100]}
-                    tick={{ fontSize: 11, fill: 'var(--dim)', fontFamily: 'var(--font-inter)' }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend
-                    wrapperStyle={{ fontSize: 12, fontFamily: 'var(--font-inter)', color: 'var(--dim)' }}
-                  />
-                  {(Object.keys(PROVIDERS) as ProviderKey[]).map((key) => (
-                    <Line
-                      key={key}
-                      type="monotone"
-                      dataKey={key}
-                      name={PROVIDERS[key].label}
-                      stroke={PROVIDERS[key].color}
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 4, strokeWidth: 0 }}
-                      isAnimationActive
-                      animationDuration={900}
-                      animationEasing="ease-out"
+              <>
+                <ResponsiveContainer width="100%" height={220}>
+                  <AreaChart data={trendData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                    <defs>
+                      {(Object.keys(PROVIDERS) as ProviderKey[]).map((key) => (
+                        <linearGradient key={key} id={`g-${key}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%"   stopColor={PROVIDERS[key].color} stopOpacity={0.12} />
+                          <stop offset="100%" stopColor={PROVIDERS[key].color} stopOpacity={0}    />
+                        </linearGradient>
+                      ))}
+                    </defs>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="var(--color-border)"
+                      vertical={false}
                     />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 10, fill: 'var(--color-dim)', fontFamily: 'var(--font-sans)' }}
+                      axisLine={{ stroke: 'var(--color-border)' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      domain={[0, 100]}
+                      tick={{ fontSize: 10, fill: 'var(--color-dim)', fontFamily: 'var(--font-sans)' }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip content={<ChartTooltip />} />
+                    {(Object.keys(PROVIDERS) as ProviderKey[]).map((key) => (
+                      <Area
+                        key={key}
+                        type="monotone"
+                        dataKey={key}
+                        stroke={PROVIDERS[key].color}
+                        strokeWidth={2}
+                        fill={`url(#g-${key})`}
+                        isAnimationActive
+                        animationDuration={900}
+                      />
+                    ))}
+                  </AreaChart>
+                </ResponsiveContainer>
+                {/* Legend */}
+                <div className="flex items-center justify-center gap-5 mt-4 pt-4 border-t border-border">
+                  {(Object.keys(PROVIDERS) as ProviderKey[]).map((key) => (
+                    <div key={key} className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full" style={{ background: PROVIDERS[key].color }} />
+                      <span className="text-[11px] font-medium text-dim">{PROVIDERS[key].label}</span>
+                    </div>
                   ))}
-                </LineChart>
-              </ResponsiveContainer>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
       </motion.div>
 
-      {/* ── Section 5: Two-col layout ──────────────────────────── */}
-      <motion.div {...fadeUp(4)} className="flex flex-col lg:flex-row gap-6">
-        {/* Top Opportunities (60%) */}
-        <Card className="flex-[3] rounded-xl border border-[var(--border)]">
+      {/* ── Row 4: Opportunities + Activity ──────────────────────────── */}
+      <motion.div {...fadeUp(3)} className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+        {/* Opportunities: 7/12 */}
+        <Card className="lg:col-span-7">
           <CardHeader>
-            <CardTitle className="font-display">Top Opportunities</CardTitle>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle>Top Opportunities</CardTitle>
+                <p className="text-xs text-dim mt-0.5">Highest-impact P1 gaps from your last run</p>
+              </div>
+              <Link
+                href={brandId ? `/${slug}/brands/${brandId}/opportunities` : '#'}
+                className="shrink-0 text-xs font-semibold text-dim hover:text-ink transition-colors inline-flex items-center gap-1"
+              >
+                View all <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-4">
             {oppsLoading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="h-10 rounded-md bg-[var(--surface)] animate-pulse" />
+              <div className="space-y-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="h-12 rounded-lg bg-surface animate-pulse" />
                 ))}
               </div>
             ) : opportunities.length === 0 ? (
               <EmptyState
-                title="No P1 opportunities found"
-                description="Opportunities will appear after your first AI analysis run."
+                icon={<Sparkles className="w-5 h-5" />}
+                title="No P1 opportunities yet"
+                description="Run an AI analysis to surface high-impact growth opportunities."
+                compact
               />
             ) : (
-              <div>
+              <div className="space-y-1 -mx-2">
                 {opportunities.map((opp, i) => (
                   <motion.div
                     key={opp.id}
-                    initial={{ opacity: 0, y: 10 }}
+                    initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.06, duration: 0.3, ease: SPRING }}
-                    className="flex items-center gap-3 py-2.5 border-b border-[var(--border)] last:border-0"
+                    transition={{ delay: i * 0.04, duration: 0.28, ease: SPRING_CURVE }}
+                    className="group flex items-center gap-4 px-3 py-3 rounded-lg hover:bg-surface transition-colors"
                   >
                     <Badge variant="danger" size="sm">P1</Badge>
-                    <span className="flex-1 text-sm text-[var(--ink)] font-sans truncate">{opp.title}</span>
+                    <span className="flex-1 text-[13px] text-ink font-medium truncate">
+                      {opp.title}
+                    </span>
                     {opp.unified_score != null && (
-                      <div className="w-20 h-1.5 bg-[var(--border)] rounded-full overflow-hidden shrink-0">
-                        <motion.div
-                          className="h-full bg-[var(--ember)] rounded-full"
-                          initial={{ width: 0 }}
-                          animate={{ width: `${opp.unified_score}%` }}
-                          transition={{ delay: i * 0.06 + 0.2, duration: 0.5 }}
+                      <div className="hidden sm:flex items-center gap-2 shrink-0">
+                        <Progress
+                          value={opp.unified_score}
+                          size="sm"
+                          className="w-16"
                         />
+                        <span className="text-[11px] font-bold text-dim tabular-nums w-6 text-right">
+                          {opp.unified_score}
+                        </span>
                       </div>
                     )}
-                    <Link
-                      href={`/${slug}/brands/${brandId}/opportunities`}
-                      className="shrink-0"
-                    >
-                      <Button variant="outline" size="sm">Act →</Button>
+                    <Link href={`/${slug}/brands/${brandId}/opportunities`} className="shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity gap-1"
+                      >
+                        Act <ArrowRight className="w-3 h-3" />
+                      </Button>
                     </Link>
                   </motion.div>
                 ))}
@@ -399,40 +576,109 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Recent Actions (40%) */}
-        <Card className="flex-[2] rounded-xl border border-[var(--border)]">
+        {/* Recent Activity: 5/12 */}
+        <Card className="lg:col-span-5">
           <CardHeader>
-            <CardTitle className="font-display">Recent Actions</CardTitle>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle>Recent Activity</CardTitle>
+                <p className="text-xs text-dim mt-0.5">Latest agent actions</p>
+              </div>
+              <Link
+                href={brandId ? `/${slug}/brands/${brandId}/actions` : '#'}
+                className="shrink-0 text-xs font-semibold text-dim hover:text-ink transition-colors inline-flex items-center gap-1"
+              >
+                View all <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-4">
             {actionsLoading ? (
-              <div className="space-y-4">
+              <div className="space-y-2">
                 {Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="h-9 rounded-md bg-[var(--surface)] animate-pulse" />
+                  <div key={i} className="h-10 rounded-lg bg-surface animate-pulse" />
                 ))}
               </div>
             ) : actions.length === 0 ? (
-              <EmptyState title="No actions yet" description="Actions generated from analysis will appear here." />
+              <EmptyState
+                icon={<Zap className="w-5 h-5" />}
+                title="No actions yet"
+                description="Actions from your analysis runs will appear here."
+                compact
+              />
             ) : (
-              <div>
-                {actions.map((action) => (
-                  <div
+              <div className="space-y-px -mx-2">
+                {actions.map((action, i) => (
+                  <motion.div
                     key={action.id}
-                    className="flex items-center gap-3 py-3 border-b border-[var(--border)] last:border-0"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.04, duration: 0.28, ease: SPRING_CURVE }}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface transition-colors"
                   >
-                    <ActionDot status={action.status} />
-                    <p className="flex-1 text-sm text-[var(--ink)] font-sans truncate">{action.title}</p>
-                    <span className="text-xs text-[var(--dim)] font-sans shrink-0 flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
+                    <ActionStatusDot status={action.status} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] text-ink font-medium truncate leading-tight">
+                        {action.title}
+                      </p>
+                    </div>
+                    <span className="text-[11px] text-dim shrink-0 tabular-nums">
                       {relativeTime(action.created_at)}
                     </span>
-                  </div>
+                  </motion.div>
                 ))}
               </div>
             )}
           </CardContent>
         </Card>
       </motion.div>
+    </div>
+  )
+}
+
+/* ── KPI Tile ────────────────────────────────────────────────────────────── */
+const ACCENT_MAP = {
+  ember:   { icon: 'text-ember',   num: 'text-ember' },
+  info:    { icon: 'text-info',    num: 'text-info' },
+  success: { icon: 'text-success', num: 'text-success' },
+  warning: { icon: 'text-warning', num: 'text-warning' },
+  danger:  { icon: 'text-danger',  num: 'text-danger' },
+  default: { icon: 'text-dim',     num: 'text-ink' },
+} as const
+
+interface KpiTileProps {
+  label: string
+  value: number
+  icon: React.ReactNode
+  accent?: keyof typeof ACCENT_MAP
+  trend?: string
+  trendUp?: boolean
+}
+
+function KpiTile({ label, value, icon, accent = 'default', trend, trendUp }: KpiTileProps) {
+  const a = ACCENT_MAP[accent]
+  return (
+    <div className="bg-surface-raised border border-border rounded-xl px-4 py-3 flex items-center gap-4 shadow-[0_1px_3px_rgba(22,20,15,0.05)]">
+      <span className={a.icon}>{icon}</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] font-bold uppercase tracking-[0.09em] text-dim">{label}</p>
+        <div className="flex items-baseline gap-2 mt-0.5">
+          <span className={['font-display text-2xl font-bold leading-none tabular-nums', a.num].join(' ')}>
+            {value}
+          </span>
+          {trend && (
+            <span
+              className={[
+                'inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full',
+                trendUp ? 'text-success bg-success/10' : 'text-danger bg-danger/10',
+              ].join(' ')}
+            >
+              {trendUp ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
+              {trend}
+            </span>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

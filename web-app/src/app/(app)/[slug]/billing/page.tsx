@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { DataTable, type Column } from '@/components/ui/data-table'
+import { PageHeader } from '@/components/layout/page-header'
 import { spring } from '@/design-system/motion'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -88,7 +89,7 @@ const PLANS = [
       'API access',
     ],
     cta: 'Upgrade to Growth',
-    ctaVariant: 'default' as const,
+    ctaVariant: 'primary' as const,
   },
   {
     key: 'enterprise',
@@ -174,7 +175,7 @@ const invoiceColumns: Column<InvoiceRow>[] = [
         href={v as string}
         target="_blank"
         rel="noreferrer"
-        className="inline-flex items-center gap-1.5 text-xs text-[var(--dim)] hover:text-[var(--ember)] transition-colors font-sans"
+        className="inline-flex items-center gap-1.5 text-xs text-dim hover:text-ember transition-colors font-sans"
         onClick={(e) => e.stopPropagation()}
       >
         <Download className="h-3.5 w-3.5" />
@@ -211,9 +212,7 @@ export default function BillingPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-12">
       {/* Header */}
-      <motion.div {...fadeUp(0)} className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-semibold text-[var(--ink)]">Billing &amp; Plan</h1>
-      </motion.div>
+      <PageHeader title="Billing & Plan" />
 
       {/* Usage alert banner */}
       {usageWarning && (
@@ -221,10 +220,10 @@ export default function BillingPage() {
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={spring}
-          className="flex items-start gap-3 px-4 py-3 rounded-lg bg-[var(--warning)]/10 border border-[var(--warning)]/30"
+          className="flex items-start gap-3 px-4 py-3 rounded-lg bg-warning/10 border border-warning/30"
         >
-          <AlertTriangle className="h-4 w-4 text-[var(--warning)] shrink-0 mt-0.5" />
-          <p className="text-sm text-[var(--ink)] font-sans">
+          <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+          <p className="text-sm text-ink font-sans">
             You&apos;re approaching your plan limits. Upgrade to avoid service interruption.
           </p>
           <Button size="sm" className="ml-auto shrink-0">Upgrade</Button>
@@ -234,22 +233,22 @@ export default function BillingPage() {
       {/* Current plan card */}
       <motion.div {...fadeUp(1)}>
         {isLoading ? (
-          <div className="h-48 rounded-2xl bg-[var(--surface)] border border-[var(--border)] animate-pulse" />
+          <div className="h-48 rounded-2xl bg-surface border border-border animate-pulse" />
         ) : billing ? (
-          <div className="rounded-2xl border border-[var(--border)] bg-white/70 p-8 mb-6 flex flex-col md:flex-row gap-8">
+          <div className="rounded-2xl border border-border bg-surface-raised p-8 mb-6 flex flex-col md:flex-row gap-8">
             {/* Left */}
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
-                <span className="font-display text-2xl font-semibold text-[var(--ink)]">{billing.plan.name}</span>
+                <span className="font-display text-2xl font-semibold text-ink">{billing.plan.name}</span>
                 <Badge variant="ember" size="sm" className="capitalize">{billing.plan.tier}</Badge>
               </div>
-              <p className="text-xs text-[var(--dim)] font-sans mb-4">
+              <p className="text-xs text-dim font-sans mb-6">
                 Renews on {fmtDate(billing.plan.renewal_date)} · {billing.plan.billing_period}
               </p>
               <ul className="space-y-2 mt-4">
                 {currentFeatures.map((f) => (
-                  <li key={f} className="flex items-center gap-2 text-sm text-[var(--ink)] font-sans">
-                    <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: 'var(--success)' }} />
+                  <li key={f} className="flex items-center gap-2 text-sm text-ink font-sans">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
                     {f}
                   </li>
                 ))}
@@ -270,11 +269,11 @@ export default function BillingPage() {
 
       {/* Usage section */}
       <motion.div {...fadeUp(2)}>
-        <h2 className="font-display text-xl font-semibold text-[var(--ink)] mb-4">Usage this month</h2>
+        <h2 className="font-display text-xl font-semibold text-ink mb-6">Usage this month</h2>
         {isLoading ? (
-          <div className="space-y-4">
+          <div className="space-y-6">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="h-10 rounded-md bg-[var(--surface)] animate-pulse" />
+              <div key={i} className="h-10 rounded-md bg-surface animate-pulse" />
             ))}
           </div>
         ) : billing ? (
@@ -290,8 +289,8 @@ export default function BillingPage() {
               return (
                 <div key={label}>
                   <div className="flex justify-between text-sm mb-1.5">
-                    <span className="text-[var(--ink)] font-sans">{label}</span>
-                    <span className="text-[var(--dim)] font-sans font-mono text-xs">
+                    <span className="text-ink font-sans">{label}</span>
+                    <span className="text-dim font-sans font-mono text-xs">
                       {resource.used.toLocaleString()} of {resource.limit.toLocaleString()}
                     </span>
                   </div>
@@ -311,18 +310,18 @@ export default function BillingPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="h-12 rounded-md bg-[var(--surface)] animate-pulse" />
+              <div className="h-12 rounded-md bg-surface animate-pulse" />
             ) : billing?.payment_method ? (
               <div className="flex items-center gap-4">
-                <div className="w-12 h-8 rounded bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center">
-                  <CreditCard className="h-4 w-4 text-[var(--dim)]" />
+                <div className="w-12 h-8 rounded bg-surface border border-border flex items-center justify-center">
+                  <CreditCard className="h-4 w-4 text-dim" />
                 </div>
                 <div>
-                  <p className="text-sm font-sans font-medium text-[var(--ink)]">
+                  <p className="text-sm font-sans font-medium text-ink">
                     {billing.payment_method.brand}&ensp;
-                    <span className="font-mono text-[var(--dim)]">•••• {billing.payment_method.last4}</span>
+                    <span className="font-mono text-dim">•••• {billing.payment_method.last4}</span>
                   </p>
-                  <p className="text-xs text-[var(--dim)] mt-0.5">
+                  <p className="text-xs text-dim mt-0.5">
                     Expires {billing.payment_method.expiry}
                   </p>
                 </div>
@@ -331,7 +330,7 @@ export default function BillingPage() {
                 </Button>
               </div>
             ) : (
-              <p className="text-sm text-[var(--dim)]">No payment method on file.</p>
+              <p className="text-sm text-dim">No payment method on file.</p>
             )}
           </CardContent>
         </Card>
@@ -358,8 +357,8 @@ export default function BillingPage() {
 
       {/* Plan comparison */}
       <motion.div {...fadeUp(5)}>
-        <h2 className="font-display text-xl font-semibold text-[var(--ink)] mb-4">Plans</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <h2 className="font-display text-xl font-semibold text-ink mb-6">Plans</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {PLANS.map((plan, i) => {
             const isCurrent = billing?.plan.tier === plan.key
             return (
@@ -369,8 +368,8 @@ export default function BillingPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ ...spring, delay: 0.28 + i * 0.08 }}
                 className={cn(
-                  'relative flex flex-col rounded-xl border p-5 gap-4 bg-[var(--paper)]',
-                  isCurrent ? 'border-[var(--ember)] shadow-md' : 'border-[var(--border)]'
+                  'relative flex flex-col rounded-xl border p-6 gap-6 bg-paper',
+                  isCurrent ? 'border-ember shadow-md' : 'border-border'
                 )}
               >
                 {isCurrent && (
@@ -381,20 +380,20 @@ export default function BillingPage() {
                 <div className="flex items-center gap-2">
                   <div className={cn(
                     'w-8 h-8 rounded-lg flex items-center justify-center',
-                    isCurrent ? 'bg-[var(--ember)] text-[var(--paper)]' : 'bg-[var(--surface)] text-[var(--dim)]'
+                    isCurrent ? 'bg-ember text-paper' : 'bg-surface text-dim'
                   )}>
                     {plan.icon}
                   </div>
-                  <span className="font-display font-semibold text-[var(--ink)]">{plan.name}</span>
+                  <span className="font-display font-semibold text-ink">{plan.name}</span>
                 </div>
                 <div className="flex items-baseline gap-0.5">
-                  <span className="font-display text-3xl font-semibold text-[var(--ink)]">{plan.price}</span>
-                  {plan.period && <span className="text-sm text-[var(--dim)] font-sans">{plan.period}</span>}
+                  <span className="font-display text-3xl font-semibold text-ink">{plan.price}</span>
+                  {plan.period && <span className="text-sm text-dim font-sans">{plan.period}</span>}
                 </div>
                 <ul className="space-y-2 flex-1">
                   {plan.features.map((f) => (
-                    <li key={f} className="flex items-center gap-2 text-sm text-[var(--ink)] font-sans">
-                      <CheckCircle className="h-3.5 w-3.5 text-[var(--success)] shrink-0" />
+                    <li key={f} className="flex items-center gap-2 text-sm text-ink font-sans">
+                      <CheckCircle className="h-3.5 w-3.5 text-success shrink-0" />
                       {f}
                     </li>
                   ))}

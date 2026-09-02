@@ -8,21 +8,21 @@ const avatarVariants = cva(
   {
     variants: {
       size: {
+        xs: 'h-6 w-6',
         sm: 'h-8 w-8',
-        md: 'h-10 w-10',
-        lg: 'h-14 w-14',
+        md: 'h-9 w-9',
+        lg: 'h-11 w-11',
       },
     },
-    defaultVariants: {
-      size: 'md',
-    },
+    defaultVariants: { size: 'md' },
   }
 )
 
 const fallbackTextSize: Record<string, string> = {
-  sm: 'text-xs',
-  md: 'text-sm',
-  lg: 'text-base',
+  xs: 'text-[9px]',
+  sm: 'text-[11px]',
+  md: 'text-[12px]',
+  lg: 'text-[14px]',
 }
 
 function getInitials(name: string): string {
@@ -39,12 +39,17 @@ interface AvatarProps
   src?: string
   alt?: string
   name?: string
+  bordered?: boolean
 }
 
-export function Avatar({ className, size, src, alt, name, ...props }: AvatarProps) {
+export function Avatar({ className, size, src, alt, name, bordered, ...props }: AvatarProps) {
   return (
     <AvatarPrimitive.Root
-      className={cn(avatarVariants({ size, className }))}
+      className={cn(
+        avatarVariants({ size }),
+        bordered && 'ring-2 ring-paper ring-offset-1 ring-offset-ink',
+        className
+      )}
       {...props}
     >
       <AvatarPrimitive.Image
@@ -54,7 +59,8 @@ export function Avatar({ className, size, src, alt, name, ...props }: AvatarProp
       />
       <AvatarPrimitive.Fallback
         className={cn(
-          'flex h-full w-full items-center justify-center rounded-full bg-slate text-paper font-sans font-medium',
+          'flex h-full w-full items-center justify-center rounded-full',
+          'bg-ember text-paper font-semibold font-sans',
           fallbackTextSize[size ?? 'md']
         )}
       >

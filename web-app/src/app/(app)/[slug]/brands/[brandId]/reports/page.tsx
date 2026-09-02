@@ -22,6 +22,7 @@ import {
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
+import { PageHeader } from '@/components/layout/page-header'
 import { cn, relativeTime } from '@/lib/utils'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -70,16 +71,16 @@ const REPORT_TYPE_DEFS: ReportTypeDef[] = [
     title: 'Visibility Report',
     description: 'Track how your brand appears across AI models and generative search surfaces.',
     icon: Eye,
-    iconBg: 'bg-[var(--info)]/10',
-    iconColor: 'text-[var(--info)]',
+    iconBg: 'bg-info/10',
+    iconColor: 'text-info',
   },
   {
     type: 'geo',
     title: 'GEO Performance',
     description: 'Measure your generative engine optimization score across query categories.',
     icon: Globe,
-    iconBg: 'bg-[var(--ember)]/10',
-    iconColor: 'text-[var(--ember)]',
+    iconBg: 'bg-ember/10',
+    iconColor: 'text-ember',
   },
   {
     type: 'competitive',
@@ -94,8 +95,8 @@ const REPORT_TYPE_DEFS: ReportTypeDef[] = [
     title: 'SEO Analysis',
     description: 'Keyword ranking trends and content gap opportunities in organic search.',
     icon: Search,
-    iconBg: 'bg-[var(--success)]/10',
-    iconColor: 'text-[var(--success)]',
+    iconBg: 'bg-success/10',
+    iconColor: 'text-success',
   },
 ]
 
@@ -166,7 +167,7 @@ function ReportPreviewModal({
           {isLoading ? (
             <div className="flex justify-center py-10"><Spinner /></div>
           ) : sections.length === 0 ? (
-            <p className="text-sm text-[var(--dim)] text-center py-8">No sections available for preview.</p>
+            <p className="text-sm text-dim text-center py-8">No sections available for preview.</p>
           ) : (
             <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
               {sections.map((s, i) => (
@@ -175,10 +176,10 @@ function ReportPreviewModal({
                   initial={{ opacity: 0, x: -8 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.05 }}
-                  className="border border-[var(--border)] rounded-lg p-4"
+                  className="border border-border rounded-lg p-4"
                 >
-                  <h4 className="text-sm font-semibold text-[var(--ink)] mb-1">{s.title}</h4>
-                  <p className="text-xs text-[var(--dim)] leading-relaxed">{s.summary}</p>
+                  <h4 className="text-sm font-semibold text-ink mb-1">{s.title}</h4>
+                  <p className="text-xs text-dim leading-relaxed">{s.summary}</p>
                 </motion.div>
               ))}
             </div>
@@ -239,7 +240,7 @@ function GenerateReportModal({
             placeholder="e.g. Q3 Visibility Brief"
           />
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-[var(--ink)] font-sans">Type</label>
+            <label className="text-sm font-medium text-ink font-sans">Type</label>
             <Select value={form.type} onValueChange={(v) => setForm((f) => ({ ...f, type: v as ReportType }))}>
               <SelectTrigger>
                 <SelectValue />
@@ -254,7 +255,7 @@ function GenerateReportModal({
             </Select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-[var(--ink)] font-sans">Format</label>
+            <label className="text-sm font-medium text-ink font-sans">Format</label>
             <div className="flex gap-2">
               {(['PDF', 'HTML', 'JSON'] as ReportFormat[]).map((fmt) => (
                 <button
@@ -263,8 +264,8 @@ function GenerateReportModal({
                   className={cn(
                     'flex-1 h-10 rounded-md border text-sm font-mono font-medium transition-all',
                     form.format === fmt
-                      ? 'border-[var(--ember)] bg-[var(--ember)]/5 text-[var(--ember)]'
-                      : 'border-[var(--border)] text-[var(--dim)] hover:text-[var(--ink)]',
+                      ? 'border-[var(--ember)] bg-ember/5 text-ember'
+                      : 'border-border text-dim hover:text-ink',
                   )}
                 >
                   {fmt}
@@ -325,21 +326,18 @@ export default function ReportsPage() {
   return (
     <div className="max-w-5xl mx-auto">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={SPRING}
-        className="flex items-start justify-between mb-8"
-      >
-        <div>
-          <h1 className="font-display text-3xl font-semibold text-[var(--ink)]">Reports</h1>
-          <p className="text-sm text-[var(--dim)] mt-1">Intelligence briefs &amp; exports</p>
-        </div>
-        <Button onClick={() => openGenerate()} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Generate Report
-        </Button>
-      </motion.div>
+      <div className="mb-8">
+        <PageHeader
+          title="Reports"
+          subtitle="Intelligence briefs & exports"
+          actions={
+            <Button onClick={() => openGenerate()} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Generate Report
+            </Button>
+          }
+        />
+      </div>
 
       {/* Report type cards 2×2 grid */}
       <motion.div
@@ -353,14 +351,14 @@ export default function ReportsPage() {
           return (
             <div
               key={def.type}
-              className="rounded-xl border border-[var(--border)] bg-white/70 p-6 flex gap-4"
+              className="rounded-xl border border-border bg-surface-raised p-6 flex gap-4"
             >
-              <div className={cn('w-12 h-12 rounded-full flex items-center justify-center shrink-0', def.iconBg)}>
+              <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center shrink-0', def.iconBg)}>
                 <Icon className={cn('h-5 w-5', def.iconColor)} />
               </div>
               <div className="flex flex-col min-w-0">
-                <h3 className="font-display text-lg text-[var(--ink)]">{def.title}</h3>
-                <p className="text-sm text-[var(--dim)] mt-1 leading-relaxed flex-1">{def.description}</p>
+                <h3 className="font-display text-lg text-ink">{def.title}</h3>
+                <p className="text-sm text-dim mt-1 leading-relaxed flex-1">{def.description}</p>
                 <Button
                   variant="outline"
                   size="sm"
@@ -381,7 +379,7 @@ export default function ReportsPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ ...SPRING, delay: 0.1 }}
       >
-        <h2 className="font-display text-xl text-[var(--ink)] mb-4">Generated Reports</h2>
+        <h2 className="font-display text-xl text-ink mb-4">Generated Reports</h2>
 
         {isLoading ? (
           <div className="space-y-2">
@@ -395,11 +393,11 @@ export default function ReportsPage() {
             action={<Button onClick={() => openGenerate()} className="gap-2"><Plus className="h-4 w-4" />Generate Report</Button>}
           />
         ) : (
-          <div className="rounded-xl border border-[var(--border)] overflow-hidden">
+          <div className="rounded-xl border border-border overflow-hidden">
             {/* Table head */}
-            <div className="grid grid-cols-[1fr_120px_140px_120px_120px] gap-3 px-4 py-2.5 bg-[var(--surface)] border-b border-[var(--border)]">
+            <div className="grid grid-cols-[1fr_120px_140px_120px_120px] gap-3 px-4 py-2.5 bg-surface border-b border-border">
               {['Name', 'Type', 'Date', 'Status', ''].map((h, i) => (
-                <span key={i} className="text-xs font-semibold text-[var(--dim)] uppercase tracking-wide">{h}</span>
+                <span key={i} className="text-xs font-semibold text-dim uppercase tracking-wide">{h}</span>
               ))}
             </div>
             <AnimatePresence initial={false}>
@@ -409,27 +407,27 @@ export default function ReportsPage() {
                   initial={{ opacity: 0, x: -8 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.04, ...SPRING }}
-                  className="grid grid-cols-[1fr_120px_140px_120px_120px] gap-3 px-4 py-3 items-center border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface)]/50 transition-colors"
+                  className="grid grid-cols-[1fr_120px_140px_120px_120px] gap-3 px-4 py-3 items-center border-b border-border last:border-0 hover:bg-surface/50 transition-colors"
                 >
-                  <span className="text-sm font-medium text-[var(--ink)] truncate">{r.name}</span>
+                  <span className="text-sm font-medium text-ink truncate">{r.name}</span>
                   <Badge variant="outline" size="sm">{reportTypeLabel(r.type)}</Badge>
-                  <span className="text-xs text-[var(--dim)] flex items-center gap-1">
+                  <span className="text-xs text-dim flex items-center gap-1">
                     <Clock className="h-3 w-3" />
                     {r.completed_at ? relativeTime(r.completed_at) : '—'}
                   </span>
                   <div>
                     {r.status === 'pending' ? (
-                      <span className="inline-flex items-center gap-1.5 text-xs text-[var(--warning)]">
+                      <span className="inline-flex items-center gap-1.5 text-xs text-warning">
                         <Spinner className="h-3 w-3" />
                         Generating
                       </span>
                     ) : r.status === 'failed' ? (
-                      <span className="inline-flex items-center gap-1.5 text-xs text-[var(--danger)]">
+                      <span className="inline-flex items-center gap-1.5 text-xs text-danger">
                         <AlertCircle className="h-3 w-3" />
                         Failed
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5 text-xs text-[var(--success)]">
+                      <span className="inline-flex items-center gap-1.5 text-xs text-success">
                         <CheckCircle2 className="h-3 w-3" />
                         Ready
                       </span>

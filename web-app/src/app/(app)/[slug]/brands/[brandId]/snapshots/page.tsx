@@ -19,6 +19,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
+import { PageHeader } from '@/components/layout/page-header'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -96,9 +97,9 @@ function ScoreCard({
   const down = delta !== null && delta < 0
 
   return (
-    <div className="flex flex-col gap-1 p-3 rounded-lg border border-[var(--border)] bg-[var(--surface)]">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--dim)]">{label}</p>
-      <p className="text-2xl font-bold text-[var(--ink)]">{formatNumber(value)}</p>
+    <div className="flex flex-col gap-1 p-3 rounded-lg border border-border bg-surface-raised">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-dim">{label}</p>
+      <p className="text-2xl font-bold text-ink">{formatNumber(value)}</p>
       {delta !== null && delta !== 0 && (
         <p className={cn('flex items-center gap-0.5 text-xs font-medium', up ? 'text-green-600' : 'text-red-500')}>
           {up ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
@@ -106,7 +107,7 @@ function ScoreCard({
         </p>
       )}
       {delta === 0 && (
-        <p className="flex items-center gap-0.5 text-xs font-medium text-[var(--dim)]">
+        <p className="flex items-center gap-0.5 text-xs font-medium text-dim">
           <Minus size={12} /> No change
         </p>
       )}
@@ -141,27 +142,27 @@ function SnapshotRow({
     <div className="flex gap-4 mb-4">
       {/* Date col + vertical line */}
       <div className="flex flex-col items-center w-24 shrink-0">
-        <p className="font-mono text-xs text-[var(--dim)] pt-1 text-right w-full">
+        <p className="font-mono text-xs text-dim pt-1 text-right w-full">
           {new Date(snapshot.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
         </p>
         {!isLast && <div className="w-px flex-1 bg-[var(--border)] mt-2" />}
       </div>
 
       {/* Card */}
-      <div className="flex-1 rounded-xl border border-[var(--border)] bg-white/70 p-4 mb-2">
+      <div className="flex-1 rounded-xl border border-border bg-surface-raised p-5 mb-2">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1">
             {/* Visibility score */}
             <div className="flex items-baseline gap-1 mb-2">
-              <span className="text-2xl font-bold text-[var(--ember)]">{Math.round(visibilityScore)}</span>
-              <span className="text-sm text-[var(--dim)]">/100</span>
+              <span className="text-2xl font-bold text-ember">{Math.round(visibilityScore)}</span>
+              <span className="text-sm text-dim">/100</span>
               {isLatest && (
-                <span className="ml-2 text-[10px] font-bold uppercase tracking-widest text-[var(--ember)] bg-[var(--ember)]/10 px-2 py-0.5 rounded-full">
+                <span className="ml-2 text-[10px] font-bold uppercase tracking-widest text-ember bg-ember/10 px-2 py-0.5 rounded-full">
                   Latest
                 </span>
               )}
             </div>
-            <p className="text-sm font-medium text-[var(--ink)] mb-2">{snapshot.label}</p>
+            <p className="text-sm font-medium text-ink mb-2">{snapshot.label}</p>
             {/* Chips row */}
             <div className="flex flex-wrap gap-1.5">
               {snapshot.modules.map((m) => <ModuleBadge key={m} module={m} />)}
@@ -199,7 +200,7 @@ function SnapshotRow({
                 'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer',
                 confirmDelete
                   ? 'bg-red-100 text-red-600 border border-red-300'
-                  : 'text-[var(--dim)] hover:text-red-500 hover:bg-red-50 border border-transparent'
+                  : 'text-dim hover:text-red-500 hover:bg-red-50 border border-transparent'
               )}
             >
               <Trash2 size={12} />
@@ -218,7 +219,7 @@ function SnapshotRow({
               transition={{ duration: 0.25, ease: 'easeInOut' }}
               className="overflow-hidden"
             >
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 mt-4">
                 {scoreEntries.map(([key, val]) => (
                   <ScoreCard
                     key={key}
@@ -257,31 +258,31 @@ function ComparisonView({ snapshots }: { snapshots: Snapshot[] }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
       transition={{ duration: 0.3 }}
-      className="rounded-xl border border-[var(--border)] bg-[var(--paper)] overflow-hidden mb-8"
+      className="rounded-xl border border-border bg-surface-raised overflow-hidden mb-8"
     >
       {/* Selectors */}
       <div className="grid grid-cols-3 gap-px bg-[var(--border)]">
-        <div className="bg-[var(--paper)] p-4">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--dim)] mb-2">Snapshot A</p>
+        <div className="bg-paper p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-dim mb-2">Snapshot A</p>
           <select
             value={idA}
             onChange={(e) => setIdA(e.target.value)}
-            className="w-full text-sm border border-[var(--border)] rounded-md px-2 py-1.5 bg-[var(--surface)] text-[var(--ink)] cursor-pointer"
+            className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-ink cursor-pointer"
           >
             {snapshots.map((s) => (
               <option key={s.id} value={s.id}>{s.label} — {relativeTime(s.created_at)}</option>
             ))}
           </select>
         </div>
-        <div className="bg-[var(--paper)] p-4 flex items-end justify-center">
-          <GitCompare size={18} className="text-[var(--dim)] mb-1.5" />
+        <div className="bg-paper p-4 flex items-end justify-center">
+          <GitCompare size={18} className="text-dim mb-1.5" />
         </div>
-        <div className="bg-[var(--paper)] p-4">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--dim)] mb-2">Snapshot B</p>
+        <div className="bg-paper p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-dim mb-2">Snapshot B</p>
           <select
             value={idB}
             onChange={(e) => setIdB(e.target.value)}
-            className="w-full text-sm border border-[var(--border)] rounded-md px-2 py-1.5 bg-[var(--surface)] text-[var(--ink)] cursor-pointer"
+            className="w-full text-sm border border-border rounded-md px-2 py-1.5 bg-surface text-ink cursor-pointer"
           >
             {snapshots.map((s) => (
               <option key={s.id} value={s.id}>{s.label} — {relativeTime(s.created_at)}</option>
@@ -294,11 +295,11 @@ function ComparisonView({ snapshots }: { snapshots: Snapshot[] }) {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-[var(--border)] bg-[var(--surface)]">
-              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--dim)]">Metric</th>
-              <th className="text-right px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--dim)]">A</th>
-              <th className="text-right px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--dim)]">B</th>
-              <th className="text-right px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--dim)]">Delta</th>
+            <tr className="border-b border-border bg-surface">
+              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-dim">Metric</th>
+              <th className="text-right px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-dim">A</th>
+              <th className="text-right px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-dim">B</th>
+              <th className="text-right px-4 py-2.5 text-[10px] font-semibold uppercase tracking-widest text-dim">Delta</th>
             </tr>
           </thead>
           <tbody>
@@ -311,16 +312,16 @@ function ComparisonView({ snapshots }: { snapshots: Snapshot[] }) {
               return (
                 <tr
                   key={key}
-                  className={cn('border-b border-[var(--border)]', i % 2 === 0 ? 'bg-[var(--paper)]' : 'bg-[var(--surface)]')}
+                  className={cn('border-b border-border', i % 2 === 0 ? 'bg-paper' : 'bg-surface')}
                 >
-                  <td className="px-4 py-2.5 font-medium text-[var(--ink)] capitalize">{key}</td>
-                  <td className="px-4 py-2.5 text-right text-[var(--dim)]">{fmt(va)}</td>
-                  <td className="px-4 py-2.5 text-right text-[var(--dim)]">{fmt(vb)}</td>
+                  <td className="px-4 py-2.5 font-medium text-ink capitalize">{key}</td>
+                  <td className="px-4 py-2.5 text-right text-dim">{fmt(va)}</td>
+                  <td className="px-4 py-2.5 text-right text-dim">{fmt(vb)}</td>
                   <td className="px-4 py-2.5 text-right">
                     {delta === null ? (
-                      <span className="text-[var(--dim)]">—</span>
+                      <span className="text-dim">—</span>
                     ) : (
-                      <span className={cn('inline-flex items-center gap-0.5 font-semibold', up ? 'text-green-600' : down ? 'text-red-500' : 'text-[var(--dim)]')}>
+                      <span className={cn('inline-flex items-center gap-0.5 font-semibold', up ? 'text-green-600' : down ? 'text-red-500' : 'text-dim')}>
                         {up ? <TrendingUp size={11} /> : down ? <TrendingDown size={11} /> : <Minus size={11} />}
                         {up ? '+' : ''}{formatNumber(delta)}
                       </span>
@@ -375,36 +376,40 @@ export default function SnapshotsPage() {
     <>
       <ShutterOverlay active={shutter} />
 
-      <div className="max-w-3xl mx-auto px-6 py-10">
+      <div className="max-w-3xl mx-auto pb-16">
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 mb-6">
-          <h1 className="font-display text-2xl font-bold text-[var(--ink)]">Brand Snapshots</h1>
-          <div className="flex items-center gap-3 shrink-0">
-            {snapshots.length >= 2 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCompareMode((v) => !v)}
-              >
-                <GitCompare size={14} className="mr-1.5" />
-                Compare
-              </Button>
-            )}
-            <Button
-              onClick={() => takeMutation.mutate()}
-              disabled={takeMutation.isPending}
-              className="bg-[var(--ember)] text-white hover:bg-[var(--ember)]/90"
-            >
-              <Camera size={14} className="mr-1.5" />
-              {takeMutation.isPending ? 'Capturing…' : 'Capture Now'}
-            </Button>
-          </div>
+        <div className="mb-6">
+          <PageHeader
+            title="Brand Snapshots"
+            actions={
+              <>
+                {snapshots.length >= 2 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCompareMode((v) => !v)}
+                  >
+                    <GitCompare size={14} className="mr-1.5" />
+                    Compare
+                  </Button>
+                )}
+                <Button
+                  onClick={() => takeMutation.mutate()}
+                  disabled={takeMutation.isPending}
+                  className="bg-ember text-white hover:bg-ember/90"
+                >
+                  <Camera size={14} className="mr-1.5" />
+                  {takeMutation.isPending ? 'Capturing…' : 'Capture Now'}
+                </Button>
+              </>
+            }
+          />
         </div>
 
         {/* Info banner */}
-        <div className="rounded-xl bg-[var(--info)]/8 border border-[var(--info)]/20 px-4 py-3 flex items-center gap-3 mb-6">
-          <Camera size={16} className="text-[var(--info)] shrink-0" />
-          <p className="text-sm text-[var(--ink)]">
+        <div className="rounded-xl bg-info/8 border border-[var(--info)]/20 px-4 py-3 flex items-center gap-3 mb-6">
+          <Camera size={16} className="text-info shrink-0" />
+          <p className="text-sm text-ink">
             Snapshots capture your brand&apos;s AI visibility at a point in time. Compare snapshots to track progress.
           </p>
         </div>
@@ -426,11 +431,11 @@ export default function SnapshotsPage() {
 
         {/* Timeline */}
         {isLoading ? (
-          <div className="space-y-4">
+          <div className="space-y-6">
             {[1, 2, 3].map((i) => (
               <div key={i} className="flex gap-4 animate-pulse">
                 <div className="w-24 shrink-0 h-4 bg-[var(--border)] rounded" />
-                <div className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] h-24" />
+                <div className="flex-1 rounded-xl border border-border bg-surface h-24" />
               </div>
             ))}
           </div>
@@ -443,7 +448,7 @@ export default function SnapshotsPage() {
               <Button
                 onClick={() => takeMutation.mutate()}
                 disabled={takeMutation.isPending}
-                className="bg-[var(--ember)] text-white"
+                className="bg-ember text-white"
               >
                 <Camera size={14} className="mr-1.5" />
                 Capture Now

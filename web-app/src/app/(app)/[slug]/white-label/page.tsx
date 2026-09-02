@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { PageHeader } from '@/components/layout/page-header'
 import { spring } from '@/design-system/motion'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -250,7 +251,7 @@ function ConfigForm({
         {/* Actions */}
         <div className="flex gap-3 pt-2">
           <Button
-            className="flex-1 bg-[var(--ember)] text-white hover:bg-[var(--ember)]/90"
+            className="flex-1 bg-ember text-white hover:bg-ember/90"
             onClick={() => saveMutation.mutate()}
             loading={saveMutation.isPending}
           >
@@ -293,14 +294,14 @@ function LivePreview({
   })
 
   return (
-    <div className="rounded-2xl border-2 border-dashed border-[var(--border)] p-5 sticky top-24">
+    <div className="rounded-2xl border-2 border-dashed border-border p-5 sticky top-24">
       {/* Preview label */}
-      <p className="text-xs text-[var(--dim)] uppercase tracking-wider mb-3">Preview</p>
+      <p className="text-xs text-dim uppercase tracking-wider mb-3">Preview</p>
 
       {/* Mock mini sidebar */}
-      <div className="rounded-xl border border-[var(--border)] overflow-hidden bg-[var(--paper)]">
+      <div className="rounded-xl border border-border overflow-hidden bg-paper">
         {/* Sidebar header */}
-        <div className="px-4 py-3 border-b border-[var(--border)]" style={{ backgroundColor: color }}>
+        <div className="px-4 py-3 border-b border-border" style={{ backgroundColor: color }}>
           <p className="font-display text-sm font-semibold text-white">
             {config.company_name || 'Your Company'}
           </p>
@@ -318,7 +319,7 @@ function LivePreview({
               key={item}
               className={cn(
                 'px-3 py-2 rounded-md text-xs font-sans',
-                i === 0 ? 'text-white' : 'text-[var(--dim)]'
+                i === 0 ? 'text-white' : 'text-dim'
               )}
               style={i === 0 ? { backgroundColor: color } : {}}
             >
@@ -330,8 +331,8 @@ function LivePreview({
         {/* Mini stats */}
         <div className="grid grid-cols-3 gap-1.5 px-3 pb-3">
           {['Score', 'Brands', 'Runs'].map((label, i) => (
-            <div key={label} className="bg-[var(--surface)] rounded-lg p-2 border border-[var(--border)]">
-              <p className="text-[9px] text-[var(--dim)]">{label}</p>
+            <div key={label} className="bg-surface-raised rounded-lg p-2 border border-border">
+              <p className="text-[9px] text-dim">{label}</p>
               <p className="font-display text-sm font-semibold mt-0.5" style={{ color }}>
                 {[74, 6, 23][i]}
               </p>
@@ -340,7 +341,7 @@ function LivePreview({
         </div>
       </div>
 
-      <p className="text-xs text-[var(--dim)] mt-4 text-center">Your clients see this branding</p>
+      <p className="text-xs text-dim mt-4 text-center">Your clients see this branding</p>
 
       <Button
         variant="outline"
@@ -366,8 +367,8 @@ function DisabledView({ onEnable }: { onEnable: () => void }) {
       transition={spring}
       className="flex justify-center"
     >
-      <div className="max-w-md w-full bg-surface border border-border rounded-2xl p-10 text-center shadow-sm">
-        <div className="w-16 h-16 rounded-full bg-ember/10 flex items-center justify-center mx-auto mb-5">
+      <div className="max-w-md w-full bg-surface-raised border border-border rounded-2xl p-10 text-center shadow-sm">
+        <div className="w-16 h-16 rounded-xl bg-ember/10 flex items-center justify-center mx-auto mb-5">
           <Sparkles className="h-8 w-8 text-ember" />
         </div>
         <h2 className="font-display text-2xl font-semibold text-ink mb-3">
@@ -441,27 +442,23 @@ export default function WhiteLabelPage() {
   return (
     <div className="max-w-7xl mx-auto">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-        className="flex items-center justify-between mb-6"
-      >
-        <div>
-          <h1 className="font-display text-3xl font-semibold text-ink">White Label</h1>
-          <p className="text-sm text-dim font-sans mt-1">Customize BeBest for your agency clients</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-sans text-dim">
-            {enabled ? 'Enabled' : 'Disabled'}
-          </span>
-          <ToggleSwitch
-            checked={enabled}
-            onChange={() => toggleMutation.mutate()}
-            label="Toggle white label"
-          />
-        </div>
-      </motion.div>
+      <PageHeader
+        title="White Label"
+        subtitle="Customize BeBest for your agency clients"
+        actions={
+          <>
+            <span className="text-sm font-sans text-dim">
+              {enabled ? 'Enabled' : 'Disabled'}
+            </span>
+            <ToggleSwitch
+              checked={enabled}
+              onChange={() => toggleMutation.mutate()}
+              label="Toggle white label"
+            />
+          </>
+        }
+        className="mb-6"
+      />
 
       {/* Status Banner */}
       <div className="mb-8">

@@ -31,8 +31,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton, SkeletonCard } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { PageHeader } from '@/components/layout/page-header'
 import { spring, staggerContainer } from '@/design-system/motion'
-import { tokens } from '@/design-system/tokens'
+import { SPRING_CURVE } from '@/lib/motion'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,7 +69,7 @@ interface CompetitiveData {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const SPRING = tokens.animation.easing.spring as [number, number, number, number]
+const SPRING = SPRING_CURVE
 
 const CHART_COLORS = [
   '#C2410C', // ember — your brand
@@ -82,9 +83,9 @@ const CHART_COLORS = [
 
 function StatsSkeleton() {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
       {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6 space-y-3">
+        <div key={i} className="bg-surface border border-border rounded-lg p-6 space-y-3">
           <Skeleton className="h-4 w-24" />
           <Skeleton className="h-9 w-16" />
           <Skeleton className="h-3 w-20" />
@@ -96,7 +97,7 @@ function StatsSkeleton() {
 
 function ChartSkeleton({ height = 320 }: { height?: number }) {
   return (
-    <div className="w-full rounded-lg bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center" style={{ height }}>
+    <div className="w-full rounded-lg bg-surface border border-border flex items-center justify-center" style={{ height }}>
       <div className="space-y-3 w-full px-8">
         {Array.from({ length: 5 }).map((_, i) => (
           <Skeleton key={i} className="h-3 rounded-full" style={{ width: `${65 + (i * 7) % 35}%` }} />
@@ -111,13 +112,13 @@ function ChartSkeleton({ height = 320 }: { height?: number }) {
 function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-[var(--paper)] border border-[var(--border)] rounded-lg shadow-md px-3 py-2 text-xs font-sans">
-      {label && <p className="text-[var(--dim)] mb-1.5 font-medium">{label}</p>}
+    <div className="bg-surface-raised border border-border rounded-xl shadow-lg px-4 py-3 text-xs font-sans min-w-[140px]">
+      {label && <p className="text-dim mb-1.5 font-medium">{label}</p>}
       {payload.map((p) => (
         <div key={p.name} className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color }} />
-          <span className="text-[var(--dim)]">{p.name}:</span>
-          <span className="text-[var(--ink)] font-semibold">{p.value}</span>
+          <span className="text-dim">{p.name}:</span>
+          <span className="text-ink font-semibold">{p.value}</span>
         </div>
       ))}
     </div>
@@ -137,10 +138,10 @@ function SOVBar({ data, yourBrand, yourSov }: { data: CompetitiveData; yourBrand
   }
 
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-white/60 p-6 mb-6">
-      <p className="font-display text-lg font-semibold text-[var(--ink)] mb-4">Share of Voice</p>
+    <div className="rounded-xl border border-border bg-surface-raised px-6 py-8 mb-8">
+      <p className="font-display text-lg font-semibold text-ink mb-5">Share of Voice</p>
       {/* Segmented bar */}
-      <div className="w-full h-5 rounded-full overflow-hidden flex mb-4">
+      <div className="w-full h-5 rounded-full overflow-hidden flex mb-5">
         {segments.map((seg) => (
           <motion.div
             key={seg.name}
@@ -153,15 +154,15 @@ function SOVBar({ data, yourBrand, yourSov }: { data: CompetitiveData; yourBrand
         ))}
       </div>
       {/* Legend */}
-      <div className="flex flex-wrap gap-4">
+      <div className="flex flex-wrap gap-6">
         {segments.map((seg) => (
           <div key={seg.name} className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: seg.color }} />
-            <span className={cn('text-xs font-sans', seg.isYou ? 'font-semibold text-[var(--ink)]' : 'text-[var(--dim)]')}>
+            <span className={cn('text-xs font-sans', seg.isYou ? 'font-semibold text-ink' : 'text-dim')}>
               {seg.name}
-              {seg.isYou && <span className="ml-1 text-[var(--ember)]">(you)</span>}
+              {seg.isYou && <span className="ml-1 text-ember">(you)</span>}
             </span>
-            <span className="text-xs font-mono text-[var(--dim)]">{seg.value.toFixed(1)}%</span>
+            <span className="text-xs font-mono text-dim">{seg.value.toFixed(1)}%</span>
           </div>
         ))}
       </div>
@@ -173,47 +174,30 @@ function SOVBar({ data, yourBrand, yourSov }: { data: CompetitiveData; yourBrand
 
 function CompetitorCards({ data }: { data: CompetitiveData }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       {data.competitors.map((c, i) => (
         <motion.div
           key={c.id}
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: SPRING, delay: i * 0.07 }}
-          className="rounded-xl border border-[var(--border)] bg-white/60 p-5"
+          className="rounded-xl border border-border bg-surface-raised p-6"
         >
           <div className="flex items-start justify-between mb-3">
             <div className="flex-1 min-w-0">
-              <h3 className="font-display text-lg font-semibold text-[var(--ink)] leading-snug">{c.name}</h3>
+              <h3 className="font-display text-lg font-semibold text-ink leading-snug">{c.name}</h3>
               <div className="flex items-center gap-1 mt-0.5">
-                <Globe className="h-3.5 w-3.5 text-[var(--dim)] shrink-0" />
-                <span className="text-xs text-[var(--dim)] font-mono truncate">{c.domain}</span>
+                <Globe className="h-3.5 w-3.5 text-dim shrink-0" />
+                <span className="text-xs text-dim font-mono truncate">{c.domain}</span>
               </div>
             </div>
             <div className="w-2.5 h-2.5 rounded-full shrink-0 mt-1 ml-2" style={{ background: CHART_COLORS[i + 1] ?? '#C4BFB6' }} />
           </div>
 
-          <p className="text-3xl font-bold text-[var(--ember)] font-display">{c.sov_percent.toFixed(1)}%</p>
-          <p className="text-sm text-[var(--dim)] mt-0.5">{formatNumber(c.mentions)} mentions</p>
+          <p className="text-3xl font-bold text-ember font-display">{c.sov_percent.toFixed(1)}%</p>
+          <p className="text-sm text-dim mt-0.5">{formatNumber(c.mentions)} mentions</p>
 
-          {/* 4 provider mini-bars placeholder */}
-          <div className="mt-3 space-y-1">
-            {['ChatGPT', 'Gemini', 'Claude', 'Perplexity'].map((provider, pi) => {
-              const fakeVal = Math.max(0, c.sov_percent - pi * 3)
-              return (
-                <div key={provider} className="flex items-center gap-2">
-                  <span className="text-xs text-[var(--dim)] w-16 shrink-0">{provider}</span>
-                  <div className="flex-1 h-1 bg-[var(--border)] rounded-full overflow-hidden">
-                    <div
-                      className="h-1 rounded-full"
-                      style={{ width: `${Math.min(fakeVal, 100)}%`, backgroundColor: CHART_COLORS[i + 1] ?? '#C4BFB6', opacity: 0.7 }}
-                    />
-                  </div>
-                  <span className="text-xs font-mono text-[var(--dim)] w-8 text-right">{fakeVal.toFixed(0)}%</span>
-                </div>
-              )
-            })}
-          </div>
+          {/* provider breakdown: coming soon */}
         </motion.div>
       ))}
     </div>
@@ -239,20 +223,20 @@ function OverviewTab({ data, yourBrand }: { data: CompetitiveData; yourBrand: st
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.4, ease: SPRING }}
-      className="space-y-6"
+      className="space-y-8"
     >
       <Card className="overflow-hidden">
         <CardHeader>
           <CardTitle>Competitive Radar</CardTitle>
-          <p className="text-sm text-[var(--dim)]">Multi-axis comparison across the top 3 competitors</p>
+          <p className="text-sm text-dim">Multi-axis comparison across the top 3 competitors</p>
         </CardHeader>
         <CardContent className="pt-4">
           <ResponsiveContainer width="100%" height={380}>
             <RadarChart data={radarFormatted} margin={{ top: 20, right: 30, bottom: 20, left: 30 }}>
-              <PolarGrid stroke={tokens.colors.border} strokeDasharray="3 3" />
+              <PolarGrid stroke={'var(--color-border)'} strokeDasharray="3 3" />
               <PolarAngleAxis
                 dataKey="axis"
-                tick={{ fill: tokens.colors.dim, fontSize: 12, fontFamily: 'var(--font-inter)' }}
+                tick={{ fill: 'var(--color-dim)', fontSize: 12, fontFamily: 'var(--font-inter)' }}
               />
               {participants.map((name, idx) => (
                 <Radar
@@ -280,33 +264,33 @@ function OverviewTab({ data, yourBrand }: { data: CompetitiveData; yourBrand: st
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {data.competitors.slice(0, 3).map((c, i) => (
           <motion.div
             key={c.id}
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, ease: SPRING, delay: i * 0.07 }}
-            className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 space-y-3"
+            className="bg-surface-raised border border-border rounded-xl p-6 space-y-4"
           >
             <div className="flex items-start justify-between">
               <div>
-                <p className="font-display font-semibold text-[var(--ink)] text-sm">{c.name}</p>
-                <p className="text-xs text-[var(--dim)] font-mono mt-0.5">{c.domain}</p>
+                <p className="font-display font-semibold text-ink text-sm">{c.name}</p>
+                <p className="text-xs text-dim font-mono mt-0.5">{c.domain}</p>
               </div>
               <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: CHART_COLORS[i + 1] }} />
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <p className="text-xs text-[var(--dim)]">SOV</p>
-                <p className="font-display font-semibold text-[var(--ink)]">{c.sov_percent.toFixed(1)}%</p>
+                <p className="text-[11px] text-dim">SOV</p>
+                <p className="font-display font-semibold text-ink">{c.sov_percent.toFixed(1)}%</p>
               </div>
               <div>
-                <p className="text-xs text-[var(--dim)]">Mentions</p>
-                <p className="font-display font-semibold text-[var(--ink)]">{formatNumber(c.mentions)}</p>
+                <p className="text-[11px] text-dim">Mentions</p>
+                <p className="font-display font-semibold text-ink">{formatNumber(c.mentions)}</p>
               </div>
               <div>
-                <p className="text-xs text-[var(--dim)]">Sentiment</p>
+                <p className="text-[11px] text-dim">Sentiment</p>
                 <span className={cn('text-xs font-semibold px-1.5 py-0.5 rounded', scoreBg(c.sentiment_score))}>
                   {c.sentiment_score}
                 </span>
@@ -341,7 +325,7 @@ function SOVTab({ data, yourBrand, yourSov }: { data: CompetitiveData; yourBrand
       <Card>
         <CardHeader>
           <CardTitle>Share of Voice</CardTitle>
-          <p className="text-sm text-[var(--dim)]">Distribution of AI-generated mentions across competitors</p>
+          <p className="text-sm text-dim">Distribution of AI-generated mentions across competitors</p>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col lg:flex-row items-center gap-8">
@@ -373,8 +357,8 @@ function SOVTab({ data, yourBrand, yourSov }: { data: CompetitiveData; yourBrand
                     formatter={(val) => [`${Number(val).toFixed(1)}%`, 'SOV']}
                     contentStyle={{
                       borderRadius: 8,
-                      border: `1px solid ${tokens.colors.border}`,
-                      background: tokens.colors.paper,
+                      border: `1px solid ${'var(--color-border)'}`,
+                      background: 'var(--color-paper)',
                       fontSize: 12,
                       fontFamily: 'var(--font-inter)',
                     }}
@@ -396,11 +380,11 @@ function SOVTab({ data, yourBrand, yourSov }: { data: CompetitiveData; yourBrand
                     className="w-3 h-3 rounded-full flex-shrink-0"
                     style={{ background: idx === 0 ? CHART_COLORS[0] : idx < CHART_COLORS.length ? CHART_COLORS[idx] : '#C4BFB6' }}
                   />
-                  <span className={cn('text-sm flex-1', entry.isYou ? 'font-semibold text-[var(--ink)]' : 'text-[var(--ink)]')}>
+                  <span className={cn('text-sm flex-1', entry.isYou ? 'font-semibold text-ink' : 'text-ink')}>
                     {entry.name}
-                    {entry.isYou && <span className="ml-1.5 text-xs font-normal text-[var(--ember)] font-sans">(you)</span>}
+                    {entry.isYou && <span className="ml-1.5 text-xs font-normal text-ember font-sans">(you)</span>}
                   </span>
-                  <span className="font-mono text-sm font-semibold text-[var(--ink)]">{entry.value.toFixed(1)}%</span>
+                  <span className="font-mono text-sm font-semibold text-ink">{entry.value.toFixed(1)}%</span>
                   <div className="w-24 bg-[var(--border)]/40 rounded-full h-1.5">
                     <motion.div
                       className="h-1.5 rounded-full"
@@ -443,24 +427,24 @@ function TimelineTab({ data, yourBrand }: { data: CompetitiveData; yourBrand: st
       <Card>
         <CardHeader>
           <CardTitle>Mention Timeline</CardTitle>
-          <p className="text-sm text-[var(--dim)]">30-day mention volume trend across all tracked brands</p>
+          <p className="text-sm text-dim">30-day mention volume trend across all tracked brands</p>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={380}>
             <LineChart data={lineData} margin={{ top: 8, right: 24, bottom: 8, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={tokens.colors.border} vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke={'var(--color-border)'} vertical={false} />
               <XAxis
                 dataKey="date"
-                tick={{ fill: tokens.colors.dim, fontSize: 11, fontFamily: 'var(--font-inter)' }}
+                tick={{ fill: 'var(--color-dim)', fontSize: 11, fontFamily: 'var(--font-inter)' }}
                 tickLine={false}
-                axisLine={{ stroke: tokens.colors.border }}
+                axisLine={{ stroke: 'var(--color-border)' }}
                 tickFormatter={(v) => {
                   const d = new Date(v)
                   return `${d.getMonth() + 1}/${d.getDate()}`
                 }}
               />
               <YAxis
-                tick={{ fill: tokens.colors.dim, fontSize: 11, fontFamily: 'var(--font-inter)' }}
+                tick={{ fill: 'var(--color-dim)', fontSize: 11, fontFamily: 'var(--font-inter)' }}
                 tickLine={false}
                 axisLine={false}
                 width={36}
@@ -469,7 +453,7 @@ function TimelineTab({ data, yourBrand }: { data: CompetitiveData; yourBrand: st
               <Legend
                 wrapperStyle={{ fontSize: 12, fontFamily: 'var(--font-inter)', paddingTop: 16 }}
                 formatter={(value) => (
-                  <span style={{ color: value === yourBrand ? CHART_COLORS[0] : tokens.colors.dim, fontWeight: value === yourBrand ? 600 : 400 }}>
+                  <span style={{ color: value === yourBrand ? CHART_COLORS[0] : 'var(--color-dim)', fontWeight: value === yourBrand ? 600 : 400 }}>
                     {value}
                   </span>
                 )}
@@ -514,7 +498,7 @@ function ProfilesTab({ data }: { data: CompetitiveData }) {
       variants={staggerContainer}
       initial="initial"
       animate="animate"
-      className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"
+      className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6"
     >
       <AnimatePresence>
         {data.competitors.map((c, i) => (
@@ -524,16 +508,16 @@ function ProfilesTab({ data }: { data: CompetitiveData }) {
             variants={cardVariants}
             initial="hidden"
             animate="visible"
-            whileHover={{ scale: 1.01, borderColor: tokens.colors.ember }}
-            className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5 flex flex-col gap-4 transition-shadow hover:shadow-md cursor-default"
+            whileHover={{ scale: 1.01, borderColor: 'var(--color-ember)' }}
+            className="bg-surface-raised border border-border rounded-xl p-6 flex flex-col gap-5 hover:shadow-[0_4px_16px_rgba(22,20,15,0.08),0_2px_4px_rgba(22,20,15,0.04)] hover:border-border-strong transition-all duration-200 cursor-default"
             style={{ transition: 'box-shadow 200ms, border-color 200ms' }}
           >
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
-                <h3 className="font-display font-semibold text-[var(--ink)] leading-snug">{c.name}</h3>
+                <h3 className="font-display font-semibold text-ink leading-snug">{c.name}</h3>
                 <div className="flex items-center gap-1.5 mt-1">
-                  <Globe className="h-3.5 w-3.5 text-[var(--dim)] flex-shrink-0" />
-                  <span className="text-xs text-[var(--dim)] font-mono truncate">{c.domain}</span>
+                  <Globe className="h-3.5 w-3.5 text-dim flex-shrink-0" />
+                  <span className="text-xs text-dim font-mono truncate">{c.domain}</span>
                 </div>
               </div>
               <div
@@ -543,16 +527,16 @@ function ProfilesTab({ data }: { data: CompetitiveData }) {
             </div>
 
             <div className="grid grid-cols-3 gap-3">
-              <div className="bg-[var(--paper)] border border-[var(--border)] rounded-md px-2.5 py-2 text-center">
-                <p className="text-xs text-[var(--dim)] mb-0.5">Mentions</p>
-                <p className="font-display font-bold text-[var(--ink)] text-base leading-none">{formatNumber(c.mentions)}</p>
+              <div className="bg-paper border border-border rounded-md px-3 py-4 text-center">
+                <p className="text-[11px] text-dim uppercase tracking-wider font-medium mb-1">Mentions</p>
+                <p className="font-display font-bold text-ink text-base leading-none">{formatNumber(c.mentions)}</p>
               </div>
-              <div className="bg-[var(--paper)] border border-[var(--border)] rounded-md px-2.5 py-2 text-center">
-                <p className="text-xs text-[var(--dim)] mb-0.5">SOV</p>
-                <p className="font-display font-bold text-[var(--ink)] text-base leading-none">{formatPercent(c.sov_percent, 1)}</p>
+              <div className="bg-paper border border-border rounded-md px-3 py-4 text-center">
+                <p className="text-[11px] text-dim uppercase tracking-wider font-medium mb-1">SOV</p>
+                <p className="font-display font-bold text-ink text-base leading-none">{formatPercent(c.sov_percent, 1)}</p>
               </div>
-              <div className="bg-[var(--paper)] border border-[var(--border)] rounded-md px-2.5 py-2 text-center">
-                <p className="text-xs text-[var(--dim)] mb-1">Sentiment</p>
+              <div className="bg-paper border border-border rounded-md px-3 py-4 text-center">
+                <p className="text-[11px] text-dim uppercase tracking-wider font-medium mb-1">Sentiment</p>
                 <span className={cn('text-xs font-semibold px-1.5 py-0.5 rounded leading-none', scoreBg(c.sentiment_score))}>
                   {c.sentiment_score}
                 </span>
@@ -574,7 +558,7 @@ function ProfilesTab({ data }: { data: CompetitiveData }) {
                 rel="noopener noreferrer"
                 whileHover={{ x: 2, y: -2 }}
                 transition={{ type: 'tween', ease: SPRING, duration: 0.15 }}
-                className="inline-flex items-center gap-1 text-xs font-sans font-medium text-[var(--dim)] hover:text-[var(--ember)] transition-colors"
+                className="inline-flex items-center gap-1 text-xs font-sans font-medium text-dim hover:text-ember transition-colors"
               >
                 View site
                 <ArrowUpRight className="h-3.5 w-3.5" />
@@ -601,14 +585,14 @@ function ProfilesTab({ data }: { data: CompetitiveData }) {
 
 function PageSkeleton() {
   return (
-    <div className="max-w-5xl mx-auto space-y-6 p-6">
+    <div className="max-w-5xl mx-auto space-y-8 pb-16">
       <div className="space-y-2">
         <Skeleton className="h-9 w-64" />
         <Skeleton className="h-4 w-48" />
       </div>
       <StatsSkeleton />
-      <div className="space-y-4">
-        <div className="flex gap-6 border-b border-[var(--border)]">
+      <div className="space-y-8">
+        <div className="flex gap-6 border-b border-border">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-8 w-24 mb-2" />
           ))}
@@ -636,7 +620,7 @@ export default function CompetitivePage() {
 
   if (isError || !data) {
     return (
-      <div className="max-w-5xl mx-auto p-6">
+      <div className="max-w-5xl mx-auto">
         <EmptyState
           icon={<TrendingUp className="h-6 w-6" />}
           title="Competitive data unavailable"
@@ -649,19 +633,15 @@ export default function CompetitivePage() {
   const summary = data.summary ?? { your_sov: 0, total_mentions: 0, avg_sentiment: 0 }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-12 p-6">
+    <div className="max-w-5xl mx-auto space-y-8 pb-12">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: SPRING }}
-      >
-        <h1 className="font-display text-2xl font-semibold text-[var(--ink)]">Competitive Intelligence</h1>
-        <p className="text-sm text-[var(--dim)] mt-1">Share of AI voice vs competitors</p>
-      </motion.div>
+      <PageHeader
+        title="Competitive Intelligence"
+        subtitle="Share of AI voice — how models describe you vs. competitors."
+      />
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
         <StatCard label="Competitors Tracked" value={data.competitors.length} />
         <StatCard label="Your SOV" value={summary.your_sov} suffix="%" decimals={1} />
         <StatCard label="Total Mentions" value={summary.total_mentions} />

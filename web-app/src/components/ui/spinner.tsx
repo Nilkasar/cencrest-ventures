@@ -3,10 +3,10 @@ import { cn } from '@/lib/utils'
 
 type SpinnerSize = 'sm' | 'md' | 'lg'
 
-const sizeMap: Record<SpinnerSize, number> = {
-  sm: 16,
-  md: 24,
-  lg: 40,
+const sizeMap: Record<SpinnerSize, string> = {
+  sm: 'w-3.5 h-3.5 border-[1.5px]',
+  md: 'w-5 h-5 border-2',
+  lg: 'w-7 h-7 border-2',
 }
 
 interface SpinnerProps {
@@ -15,25 +15,15 @@ interface SpinnerProps {
 }
 
 export function Spinner({ size = 'md', className }: SpinnerProps) {
-  const px = sizeMap[size]
-
   return (
-    <svg
-      width={px}
-      height={px}
-      viewBox="0 0 24 24"
-      fill="none"
-      className={cn('animate-spin text-ember', className)}
+    <div
       role="status"
       aria-label="Loading"
-    >
-      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.2" strokeWidth="3" />
-      <path
-        d="M12 2a10 10 0 0 1 10 10"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-    </svg>
+      className={cn(
+        'animate-[spin_0.7s_linear_infinite] rounded-full border-ember border-t-transparent',
+        sizeMap[size],
+        className
+      )}
+    />
   )
 }

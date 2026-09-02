@@ -20,6 +20,7 @@ import { Skeleton, SkeletonCard } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody } from '@/components/ui/modal'
+import { PageHeader } from '@/components/layout/page-header'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -86,9 +87,9 @@ function difficultyVariant(d: number): 'success' | 'warning' | 'danger' {
 }
 
 function difficultyColorClass(d: number): string {
-  if (d <= 30) return 'text-[var(--success)]'
-  if (d <= 60) return 'text-[var(--warning)]'
-  return 'text-[var(--danger)]'
+  if (d <= 30) return 'text-success'
+  if (d <= 60) return 'text-warning'
+  return 'text-danger'
 }
 
 function difficultyLabel(d: number) {
@@ -102,7 +103,7 @@ function difficultyLabel(d: number) {
 function SummaryRow({ summary, loading }: { summary?: KeywordSummary; loading: boolean }) {
   if (loading) {
     return (
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-5 mb-6">
         {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
       </div>
     )
@@ -111,24 +112,24 @@ function SummaryRow({ summary, loading }: { summary?: KeywordSummary; loading: b
   const avgDiff = summary?.avg_difficulty ?? 0
 
   return (
-    <div className="grid grid-cols-3 gap-4 mb-6">
+    <div className="grid grid-cols-3 gap-5 mb-6">
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="rounded-xl border border-[var(--border)] bg-white/60 px-5 py-4"
+        className="rounded-xl border border-border bg-surface-raised px-6 py-6"
       >
-        <p className="text-xs text-[var(--dim)] font-sans uppercase tracking-wide mb-1">Total Keywords</p>
-        <p className="font-display text-2xl font-semibold text-[var(--ink)]">{formatNumber(summary?.total ?? 0)}</p>
+        <p className="text-[11px] text-dim font-sans uppercase tracking-wider mb-1">Total Keywords</p>
+        <p className="font-display text-3xl font-bold text-ink">{formatNumber(summary?.total ?? 0)}</p>
       </motion.div>
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.05 }}
-        className="rounded-xl border border-[var(--border)] bg-white/60 px-5 py-4"
+        className="rounded-xl border border-border bg-surface-raised px-6 py-6"
       >
-        <p className="text-xs text-[var(--dim)] font-sans uppercase tracking-wide mb-1">Avg Difficulty</p>
+        <p className="text-[11px] text-dim font-sans uppercase tracking-wider mb-1">Avg Difficulty</p>
         <div className="flex items-center gap-3">
-          <p className={cn('font-display text-2xl font-bold', difficultyColorClass(avgDiff))}>{avgDiff}</p>
+          <p className={cn('font-display text-3xl font-bold', difficultyColorClass(avgDiff))}>{avgDiff}</p>
           <div className="flex-1">
             <Progress value={avgDiff} variant={difficultyVariant(avgDiff)} />
           </div>
@@ -138,10 +139,10 @@ function SummaryRow({ summary, loading }: { summary?: KeywordSummary; loading: b
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="rounded-xl border border-[var(--border)] bg-white/60 px-5 py-4"
+        className="rounded-xl border border-border bg-surface-raised px-6 py-6"
       >
-        <p className="text-xs text-[var(--dim)] font-sans uppercase tracking-wide mb-1">Keyword Gaps</p>
-        <p className="font-display text-2xl font-semibold text-[var(--ink)]">{formatNumber(summary?.gaps ?? 0)}</p>
+        <p className="text-[11px] text-dim font-sans uppercase tracking-wider mb-1">Keyword Gaps</p>
+        <p className="font-display text-3xl font-bold text-ink">{formatNumber(summary?.gaps ?? 0)}</p>
       </motion.div>
     </div>
   )
@@ -199,7 +200,7 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
       key: 'keyword',
       header: 'Keyword',
       render: (_, row) => (
-        <span className="text-sm font-medium text-[var(--ink)] font-sans">{row.keyword}</span>
+        <span className="text-sm font-medium text-ink font-sans">{row.keyword}</span>
       ),
     },
     {
@@ -207,13 +208,13 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
       header: 'Volume',
       render: (_, row) => (
         <div className="flex items-center gap-1.5">
-          <span className="text-[var(--dim)] text-sm">{formatNumber(row.volume)}</span>
+          <span className="text-dim text-sm">{formatNumber(row.volume)}</span>
           <span
             className="inline-block w-16 h-1 bg-[var(--border)] rounded"
             style={{ display: 'inline-block' }}
           >
             <span
-              className="block h-1 rounded bg-[var(--ember)]"
+              className="block h-1 rounded bg-ember"
               style={{ width: `${(row.volume / maxVolume) * 100}%` }}
             />
           </span>
@@ -240,7 +241,7 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
       key: 'ranking_position',
       header: 'Latest Ranking',
       render: (_, row) => (
-        <span className={cn('font-mono text-sm', row.ranking_position ? 'text-[var(--ink)]' : 'text-[var(--dim)]')}>
+        <span className={cn('font-mono text-sm', row.ranking_position ? 'text-ink' : 'text-dim')}>
           {row.ranking_position ? `#${row.ranking_position}` : '—'}
         </span>
       ),
@@ -252,9 +253,9 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
       <SummaryRow summary={summary} loading={summaryLoading} />
 
       {/* Filter row */}
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
+      <div className="flex items-center gap-3 mb-6 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--dim)]" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-dim" />
           <Input
             placeholder="Search keywords…"
             value={search}
@@ -262,35 +263,35 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
             className="pl-9"
           />
         </div>
-        <div className="flex items-center gap-1 bg-[var(--surface)] border border-[var(--border)] rounded-md p-0.5">
+        <div className="flex items-center gap-1 bg-surface border border-border rounded-md p-0.5">
           {(['all', 'low', 'medium', 'high'] as const).map((d) => (
             <button
               key={d}
               onClick={() => setDifficulty(d)}
               className={cn(
                 'px-3 py-1.5 text-xs font-sans font-medium rounded capitalize transition-colors',
-                difficulty === d ? 'bg-[var(--ink)] text-[var(--paper)]' : 'text-[var(--dim)] hover:text-[var(--ink)]'
+                difficulty === d ? 'bg-[var(--ink)] text-[var(--paper)]' : 'text-dim hover:text-ink'
               )}
             >
               {d}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1 bg-[var(--surface)] border border-[var(--border)] rounded-md p-0.5">
+        <div className="flex items-center gap-1 bg-surface border border-border rounded-md p-0.5">
           {(['all', 'informational', 'commercial', 'transactional', 'navigational']).map((i) => (
             <button
               key={i}
               onClick={() => setIntent(i)}
               className={cn(
                 'px-3 py-1.5 text-xs font-sans font-medium rounded capitalize transition-colors',
-                intent === i ? 'bg-[var(--ink)] text-[var(--paper)]' : 'text-[var(--dim)] hover:text-[var(--ink)]'
+                intent === i ? 'bg-[var(--ink)] text-[var(--paper)]' : 'text-dim hover:text-ink'
               )}
             >
               {i === 'all' ? 'All' : i.slice(0, 4) + '.'}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex items-center gap-3 ml-auto">
           <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={() => {}} />
           <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
             <Upload className="h-4 w-4 mr-1.5" /> Import CSV
@@ -320,7 +321,7 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
           <ModalBody>
             <div className="flex flex-col gap-4">
               <div>
-                <label className="text-xs text-[var(--dim)] font-sans mb-1 block">Keyword</label>
+                <label className="text-[11px] text-dim font-sans mb-1 block uppercase tracking-wider">Keyword</label>
                 <Input
                   placeholder="e.g. best crm software"
                   value={newKeyword}
@@ -330,7 +331,7 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-[var(--dim)] font-sans mb-1 block">Volume</label>
+                  <label className="text-[11px] text-dim font-sans mb-1 block uppercase tracking-wider">Volume</label>
                   <Input
                     type="number"
                     placeholder="e.g. 5400"
@@ -339,7 +340,7 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-[var(--dim)] font-sans mb-1 block">Difficulty (0–100)</label>
+                  <label className="text-[11px] text-dim font-sans mb-1 block uppercase tracking-wider">Difficulty (0–100)</label>
                   <Input
                     type="number"
                     placeholder="e.g. 42"
@@ -351,11 +352,11 @@ function KeywordsTab({ slug, brandId }: { slug: string; brandId: string }) {
                 </div>
               </div>
               <div>
-                <label className="text-xs text-[var(--dim)] font-sans mb-1 block">Intent</label>
+                <label className="text-[11px] text-dim font-sans mb-1 block uppercase tracking-wider">Intent</label>
                 <select
                   value={newIntent}
                   onChange={(e) => setNewIntent(e.target.value)}
-                  className="w-full h-9 px-3 rounded-md border border-[var(--border)] bg-[var(--paper)] text-sm font-sans text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
+                  className="w-full h-9 px-3 rounded-md border border-border bg-paper text-sm font-sans text-ink focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
                 >
                   <option value="informational">Informational</option>
                   <option value="navigational">Navigational</option>
@@ -402,14 +403,14 @@ function ClustersTab({ slug, brandId }: { slug: string; brandId: string }) {
   })
 
   if (isLoading) return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
       {[...Array(6)].map((_, i) => <SkeletonCard key={i} />)}
     </div>
   )
 
   return (
     <div>
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-end mb-6">
         <Button size="sm" onClick={() => setShowModal(true)}>
           <Plus className="h-4 w-4 mr-1.5" /> Create Cluster
         </Button>
@@ -423,7 +424,7 @@ function ClustersTab({ slug, brandId }: { slug: string; brandId: string }) {
         />
       ) : (
         <motion.div
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
           initial="hidden"
           animate="visible"
         >
@@ -433,27 +434,27 @@ function ClustersTab({ slug, brandId }: { slug: string; brandId: string }) {
                 <CardHeader>
                   <div className="flex items-start justify-between gap-2">
                     <CardTitle className="text-sm font-sans">{c.name}</CardTitle>
-                    <span className="text-xs font-mono bg-[var(--surface)] border border-[var(--border)] rounded-full px-2 py-0.5 text-[var(--dim)] shrink-0">
+                    <span className="text-xs font-mono bg-surface border border-border rounded-full px-2 py-0.5 text-dim shrink-0">
                       {c.keyword_count} kw
                     </span>
                   </div>
                   {c.pillar_topic && (
-                    <p className="text-xs text-[var(--dim)] mt-0.5">{c.pillar_topic}</p>
+                    <p className="text-[11px] text-dim mt-0.5 uppercase tracking-wider">{c.pillar_topic}</p>
                   )}
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-display text-2xl font-semibold text-[var(--ink)]">{c.keyword_count}</p>
-                      <p className="text-xs text-[var(--dim)]">keywords</p>
+                      <p className="font-display text-2xl font-bold text-ink">{c.keyword_count}</p>
+                      <p className="text-[11px] text-dim uppercase tracking-wider">keywords</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-display text-lg font-medium text-[var(--ink)]">{formatNumber(c.avg_volume)}</p>
-                      <p className="text-xs text-[var(--dim)]">avg volume</p>
+                      <p className="font-display text-lg font-medium text-ink">{formatNumber(c.avg_volume)}</p>
+                      <p className="text-[11px] text-dim uppercase tracking-wider">avg volume</p>
                     </div>
                   </div>
                   {c.top_keyword && (
-                    <p className="text-xs text-[var(--dim)] mt-3 truncate">Top: {c.top_keyword}</p>
+                    <p className="text-[11px] text-dim mt-3 truncate uppercase tracking-wider">Top: {c.top_keyword}</p>
                   )}
                 </CardContent>
               </Card>
@@ -497,22 +498,22 @@ function GapsTab({ slug, brandId }: { slug: string; brandId: string }) {
     {
       key: 'keyword',
       header: 'Keyword',
-      render: (_, row) => <span className="font-medium text-[var(--ink)]">{row.keyword}</span>,
+      render: (_, row) => <span className="font-medium text-ink">{row.keyword}</span>,
     },
     {
       key: 'volume',
       header: 'Volume',
-      render: (_, row) => <span className="text-[var(--dim)]">{formatNumber(row.volume)}</span>,
+      render: (_, row) => <span className="text-dim">{formatNumber(row.volume)}</span>,
     },
     {
       key: 'competitor_name',
       header: 'Competitor',
-      render: (_, row) => <span className="text-[var(--dim)]">{row.competitor_name}</span>,
+      render: (_, row) => <span className="text-dim">{row.competitor_name}</span>,
     },
     {
       key: 'competitor_ranking',
       header: 'Comp. Rank',
-      render: (_, row) => <span className="font-mono text-sm text-[var(--ink)]">#{row.competitor_ranking}</span>,
+      render: (_, row) => <span className="font-mono text-sm text-ink">#{row.competitor_ranking}</span>,
     },
     {
       key: 'gap_opportunity_score',
@@ -520,7 +521,7 @@ function GapsTab({ slug, brandId }: { slug: string; brandId: string }) {
       render: (_, row) => (
         <div className="flex items-center gap-2">
           <Progress value={row.gap_opportunity_score} className="w-16" />
-          <span className="text-xs text-[var(--dim)]">{row.gap_opportunity_score}</span>
+          <span className="text-xs text-dim">{row.gap_opportunity_score}</span>
         </div>
       ),
     },
@@ -564,29 +565,29 @@ function OverlapTab({ slug, brandId }: { slug: string; brandId: string }) {
     {
       key: 'keyword',
       header: 'Keyword',
-      render: (_, row) => <span className="font-medium text-[var(--ink)]">{row.keyword}</span>,
+      render: (_, row) => <span className="font-medium text-ink">{row.keyword}</span>,
     },
     {
       key: 'your_ranking',
       header: 'Your Rank',
       render: (_, row) => (
-        <span className="font-mono text-sm font-semibold text-[var(--ember)]">#{row.your_ranking}</span>
+        <span className="font-mono text-sm font-semibold text-ember">#{row.your_ranking}</span>
       ),
     },
     {
       key: 'competitor_name',
       header: 'Competitor',
-      render: (_, row) => <span className="text-[var(--dim)]">{row.competitor_name}</span>,
+      render: (_, row) => <span className="text-dim">{row.competitor_name}</span>,
     },
     {
       key: 'competitor_ranking',
       header: 'Comp. Rank',
-      render: (_, row) => <span className="font-mono text-sm text-[var(--ink)]">#{row.competitor_ranking}</span>,
+      render: (_, row) => <span className="font-mono text-sm text-ink">#{row.competitor_ranking}</span>,
     },
     {
       key: 'volume',
       header: 'Volume',
-      render: (_, row) => <span className="text-[var(--dim)]">{formatNumber(row.volume)}</span>,
+      render: (_, row) => <span className="text-dim">{formatNumber(row.volume)}</span>,
     },
     {
       key: 'action',
@@ -594,9 +595,9 @@ function OverlapTab({ slug, brandId }: { slug: string; brandId: string }) {
       render: (_, row) => (
         <Button variant="outline" size="sm">
           {row.your_ranking < row.competitor_ranking ? (
-            <><TrendingUp className="h-3 w-3 mr-1 text-[var(--success)]" /> Ahead</>
+            <><TrendingUp className="h-3 w-3 mr-1 text-success" /> Ahead</>
           ) : (
-            <><TrendingDown className="h-3 w-3 mr-1 text-[var(--danger)]" /> Defend</>
+            <><TrendingDown className="h-3 w-3 mr-1 text-danger" /> Defend</>
           )}
         </Button>
       ),
@@ -622,19 +623,12 @@ export default function SEOPage() {
   const { slug, brandId } = useParams<{ slug: string; brandId: string }>()
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-12 p-6">
+    <div className="max-w-5xl mx-auto space-y-8 pb-16">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-[var(--ember)]/10 flex items-center justify-center">
-            <BarChart2 className="h-5 w-5 text-[var(--ember)]" />
-          </div>
-          <div>
-            <h1 className="font-display text-2xl font-semibold text-[var(--ink)]">SEO Intelligence</h1>
-            <p className="text-sm text-[var(--dim)] font-sans">Keyword tracking, clusters, gaps &amp; competitive overlap</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="SEO Intelligence"
+        subtitle="Keyword tracking, clusters, gaps & competitive overlap"
+      />
 
       <Tabs defaultValue="keywords">
         <TabsList>

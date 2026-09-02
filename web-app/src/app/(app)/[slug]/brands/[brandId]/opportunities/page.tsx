@@ -12,6 +12,8 @@ import { Badge } from '@/components/ui/badge'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ScoreRing } from '@/components/ui/score-ring'
+import { PageHeader } from '@/components/layout/page-header'
+import { SPRING_CURVE } from '@/lib/motion'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,7 +37,7 @@ interface Opportunity {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const SPRING = [0.16, 1, 0.3, 1] as [number, number, number, number]
+const SPRING = SPRING_CURVE as unknown as [number, number, number, number]
 
 function tierBadgeVariant(tier: Tier): 'danger' | 'warning' | 'info' {
   switch (tier) {
@@ -71,9 +73,9 @@ function typeLabel(type: OppType) {
 
 function priorityBgClass(tier: Tier) {
   switch (tier) {
-    case 'P1': return 'bg-[var(--danger)] text-white'
-    case 'P2': return 'bg-[var(--warning)] text-white'
-    case 'P3': return 'border border-[var(--border)] text-[var(--ink)] bg-transparent'
+    case 'P1': return 'bg-danger text-white'
+    case 'P2': return 'bg-warning text-white'
+    case 'P3': return 'border border-border text-ink bg-transparent'
   }
 }
 
@@ -96,7 +98,7 @@ function OppCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: SPRING, delay: index * 0.05 }}
       className={cn(
-        'rounded-xl border border-[var(--border)] bg-white/70 p-5 mb-3',
+        'rounded-xl border border-border bg-surface-raised p-5 mb-3',
         'hover:border-[var(--ember)]/50 transition-colors cursor-pointer',
         selected && 'ring-2 ring-[var(--ember)] ring-offset-1',
       )}
@@ -108,21 +110,21 @@ function OppCard({
           {opp.tier}
         </span>
         <Badge variant={typeBadgeVariant(opp.type)} size="sm">{typeLabel(opp.type)}</Badge>
-        <span className="ml-auto font-display text-2xl font-bold text-[var(--ember)]">{opp.unified_score}</span>
+        <span className="ml-auto font-display text-2xl font-bold text-ember">{opp.unified_score}</span>
       </div>
 
       {/* Title */}
-      <p className="font-display text-lg font-semibold text-[var(--ink)] mt-2 leading-snug">{opp.title}</p>
+      <p className="font-display text-lg font-semibold text-ink mt-2 leading-snug">{opp.title}</p>
 
       {/* Description */}
       {opp.description && (
-        <p className="text-sm text-[var(--dim)] mt-1 line-clamp-2">{opp.description}</p>
+        <p className="text-sm text-dim mt-1 line-clamp-2">{opp.description}</p>
       )}
 
       {/* Score bar */}
       <div className="w-full h-1.5 bg-[var(--border)] rounded-full mt-3 overflow-hidden">
         <motion.div
-          className="h-1.5 rounded-full bg-[var(--ember)]"
+          className="h-1.5 rounded-full bg-ember"
           initial={{ width: 0 }}
           animate={{ width: `${opp.unified_score}%` }}
           transition={{ duration: 0.6, ease: 'easeOut', delay: index * 0.05 + 0.15 }}
@@ -132,7 +134,7 @@ function OppCard({
       {/* Footer */}
       <div className="flex items-center gap-2 mt-3">
         {opp.volume != null && (
-          <span className="text-xs text-[var(--dim)] font-mono">{opp.volume.toLocaleString()} vol</span>
+          <span className="text-[11px] text-dim font-mono uppercase tracking-wider">{opp.volume.toLocaleString()} vol</span>
         )}
         <Button
           variant="outline"
@@ -169,8 +171,8 @@ function P3Row({
       <button
         onClick={onClick}
         className={cn(
-          'w-full text-left flex items-center gap-3 px-3 py-2 rounded-md border transition-all hover:bg-[var(--surface)]/80',
-          selected ? 'ring-2 ring-[var(--ember)] border-[var(--ember)]/30' : 'border-[var(--border)] bg-[var(--paper)]',
+          'w-full text-left flex items-center gap-3 px-3 py-4 rounded-md border transition-all hover:bg-surface/80',
+          selected ? 'ring-2 ring-[var(--ember)] border-[var(--ember)]/30' : 'border-border bg-paper',
         )}
       >
         <span
@@ -179,9 +181,9 @@ function P3Row({
         >
           {opp.unified_score}
         </span>
-        <span className="text-sm text-[var(--ink)] flex-1 truncate">{opp.title}</span>
+        <span className="text-sm text-ink flex-1 truncate">{opp.title}</span>
         <Badge variant={typeBadgeVariant(opp.type)} size="sm">{typeLabel(opp.type)}</Badge>
-        <ChevronRight className="h-3 w-3 text-[var(--dim)] shrink-0" />
+        <ChevronRight className="h-3 w-3 text-dim shrink-0" />
       </button>
     </motion.div>
   )
@@ -242,14 +244,14 @@ function DetailPanel({
               <Badge variant={tierBadgeVariant(opp.tier)} size="sm">{tierLabel(opp.tier)}</Badge>
               <Badge variant={typeBadgeVariant(opp.type)} size="sm">{typeLabel(opp.type)}</Badge>
             </div>
-            <h2 className="font-display text-2xl font-semibold text-[var(--ink)] leading-tight">{opp.title}</h2>
+            <h2 className="font-display text-2xl font-semibold text-ink leading-tight">{opp.title}</h2>
             {opp.description && (
-              <p className="text-sm text-[var(--dim)] mt-2 leading-relaxed">{opp.description}</p>
+              <p className="text-sm text-dim mt-2 leading-relaxed">{opp.description}</p>
             )}
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-md hover:bg-[var(--surface)] transition-colors text-[var(--dim)] hover:text-[var(--ink)] shrink-0"
+            className="p-1.5 rounded-md hover:bg-surface transition-colors text-dim hover:text-ink shrink-0"
           >
             <X className="h-4 w-4" />
           </button>
@@ -257,16 +259,16 @@ function DetailPanel({
 
         {/* Score breakdown */}
         <div className="space-y-3">
-          <p className="text-xs text-[var(--dim)] uppercase tracking-wide font-semibold">Score Breakdown</p>
-          <div className="flex items-center justify-around py-4 bg-[var(--surface)] rounded-lg border border-[var(--border)]">
+          <p className="text-[11px] text-dim uppercase tracking-wider font-semibold">Score Breakdown</p>
+          <div className="flex items-center justify-around py-4 bg-surface rounded-lg border border-border">
             <div className="text-center">
               <ScoreRing score={opp.seo_score} size={64} strokeWidth={5} label="SEO" />
             </div>
-            <div className="text-[var(--dim)] text-2xl font-light">+</div>
+            <div className="text-dim text-2xl font-light">+</div>
             <div className="text-center">
               <ScoreRing score={opp.geo_score} size={64} strokeWidth={5} label="GEO" />
             </div>
-            <div className="text-[var(--dim)] text-2xl font-light">=</div>
+            <div className="text-dim text-2xl font-light">=</div>
             <div className="text-center">
               <ScoreRing score={opp.unified_score} size={72} strokeWidth={6} label="Unified" />
             </div>
@@ -275,17 +277,17 @@ function DetailPanel({
 
         {/* Metrics */}
         {(opp.volume != null || opp.effort != null) && (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-6">
             {opp.volume != null && (
-              <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-3">
-                <p className="text-xs text-[var(--dim)] mb-1">Search Volume</p>
-                <p className="font-display text-xl font-semibold text-[var(--ink)]">{opp.volume.toLocaleString()}</p>
+              <div className="bg-surface border border-border rounded-lg p-5">
+                <p className="text-[11px] text-dim mb-1 uppercase tracking-wider">Search Volume</p>
+                <p className="font-display text-xl font-semibold text-ink">{opp.volume.toLocaleString()}</p>
               </div>
             )}
             {opp.effort != null && (
-              <div className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-3">
-                <p className="text-xs text-[var(--dim)] mb-1">Effort Score</p>
-                <p className="font-display text-xl font-semibold text-[var(--ink)]">{opp.effort}</p>
+              <div className="bg-surface border border-border rounded-lg p-5">
+                <p className="text-[11px] text-dim mb-1 uppercase tracking-wider">Effort Score</p>
+                <p className="font-display text-xl font-semibold text-ink">{opp.effort}</p>
               </div>
             )}
           </div>
@@ -294,11 +296,11 @@ function DetailPanel({
         {/* Recommended actions */}
         {opp.recommended_actions && opp.recommended_actions.length > 0 && (
           <div className="space-y-2">
-            <p className="text-xs text-[var(--dim)] uppercase tracking-wide font-semibold">Recommended Actions</p>
+            <p className="text-[11px] text-dim uppercase tracking-wider font-semibold">Recommended Actions</p>
             <ul className="space-y-1.5">
               {opp.recommended_actions.map((action, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-[var(--ink)]">
-                  <Zap className="h-3.5 w-3.5 text-[var(--ember)] shrink-0 mt-0.5" />
+                <li key={i} className="flex items-start gap-2 text-sm text-ink">
+                  <Zap className="h-3.5 w-3.5 text-ember shrink-0 mt-0.5" />
                   {action}
                 </li>
               ))}
@@ -322,7 +324,7 @@ function DetailPanel({
                 initial={{ opacity: 0, y: -4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="text-xs text-center text-[var(--success)]"
+                className="text-xs text-center text-success"
               >
                 Brief generated
               </motion.p>
@@ -343,7 +345,7 @@ function DetailPanel({
                 initial={{ opacity: 0, y: -4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="text-xs text-center text-[var(--success)]"
+                className="text-xs text-center text-success"
               >
                 Added to action center
               </motion.p>
@@ -404,7 +406,7 @@ export default function OpportunitiesPage() {
 
   if (isLoading) {
     return (
-      <div className="max-w-5xl mx-auto space-y-4 p-6">
+      <div className="max-w-5xl mx-auto space-y-8">
         <SkeletonCard />
         <SkeletonCard />
         <SkeletonCard />
@@ -413,19 +415,13 @@ export default function OpportunitiesPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto pb-12 p-6">
+    <div className="max-w-5xl mx-auto pb-16">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: SPRING }}
-        className="flex items-start justify-between gap-4 mb-6"
-      >
-        <div>
-          <h1 className="font-display text-2xl font-semibold text-[var(--ink)]">Growth Opportunities</h1>
-          <p className="text-sm text-[var(--dim)] mt-1">{allOpps.length} opportunities detected</p>
-        </div>
-      </motion.div>
+      <PageHeader
+        className="mb-6"
+        title="Growth Opportunities"
+        subtitle={`${allOpps.length} opportunities detected`}
+      />
 
       <div className="flex gap-6 items-start">
         {/* Left: List */}
@@ -435,17 +431,17 @@ export default function OpportunitiesPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.1 }}
-            className="flex flex-wrap items-center gap-3 mb-5"
+            className="flex flex-wrap items-center gap-3 mb-6"
           >
             {/* Tier pills */}
-            <div className="flex items-center gap-1 bg-[var(--surface)] rounded-lg p-1 border border-[var(--border)]">
+            <div className="flex items-center gap-1 bg-surface rounded-lg p-1 border border-border">
               {TIERS.map((t) => (
                 <button
                   key={t}
                   onClick={() => setTierFilter(t)}
                   className={cn(
                     'px-3 py-1 text-xs font-semibold rounded-md transition-all',
-                    tierFilter === t ? 'bg-[var(--ember)] text-white shadow-sm' : 'text-[var(--dim)] hover:text-[var(--ink)]',
+                    tierFilter === t ? 'bg-ember text-white shadow-sm' : 'text-dim hover:text-ink',
                   )}
                 >
                   {tierLabels[t]}
@@ -457,7 +453,7 @@ export default function OpportunitiesPage() {
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value as 'all' | OppType)}
-              className="h-8 px-2 rounded-md border border-[var(--border)] bg-[var(--paper)] text-xs font-sans text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
+              className="h-8 px-2 rounded-md border border-border bg-paper text-xs font-sans text-ink focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
             >
               {TYPES.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
@@ -468,7 +464,7 @@ export default function OpportunitiesPage() {
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortKey)}
-              className="h-8 px-2 rounded-md border border-[var(--border)] bg-[var(--paper)] text-xs font-sans text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
+              className="h-8 px-2 rounded-md border border-border bg-paper text-xs font-sans text-ink focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
             >
               {SORTS.map((s) => (
                 <option key={s.value} value={s.value}>Sort: {s.label}</option>
@@ -485,10 +481,10 @@ export default function OpportunitiesPage() {
 
           {/* P1 Section */}
           {p1.length > 0 && (
-            <div className="mb-4">
+            <div className="mb-6">
               <div className="flex items-center gap-2 mb-3">
                 <Badge variant="danger" size="sm">P1 — Critical</Badge>
-                <span className="text-xs text-[var(--dim)]">{p1.length} items</span>
+                <span className="text-[11px] text-dim uppercase tracking-wider">{p1.length} items</span>
               </div>
               {p1.map((opp, i) => (
                 <OppCard
@@ -504,10 +500,10 @@ export default function OpportunitiesPage() {
 
           {/* P2 Section */}
           {p2.length > 0 && (
-            <div className="mb-4">
+            <div className="mb-6">
               <div className="flex items-center gap-2 mb-3">
                 <Badge variant="warning" size="sm">P2 — High</Badge>
-                <span className="text-xs text-[var(--dim)]">{p2.length} items</span>
+                <span className="text-[11px] text-dim uppercase tracking-wider">{p2.length} items</span>
               </div>
               {p2.map((opp, i) => (
                 <OppCard
@@ -523,10 +519,10 @@ export default function OpportunitiesPage() {
 
           {/* P3 Section */}
           {p3.length > 0 && (
-            <div className="mb-4">
+            <div className="mb-6">
               <div className="flex items-center gap-2 mb-3">
                 <Badge variant="info" size="sm">P3 — Medium</Badge>
-                <span className="text-xs text-[var(--dim)]">{p3.length} items</span>
+                <span className="text-[11px] text-dim uppercase tracking-wider">{p3.length} items</span>
               </div>
               <div className="space-y-1.5">
                 {p3.map((opp, i) => (
@@ -552,7 +548,7 @@ export default function OpportunitiesPage() {
               animate={{ opacity: 1, width: '40%' }}
               exit={{ opacity: 0, width: 0 }}
               transition={{ duration: 0.35, ease: SPRING }}
-              className="shrink-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--paper)] shadow-md sticky top-4"
+              className="shrink-0 overflow-hidden rounded-xl border border-border bg-surface-raised shadow-[0_4px_16px_rgba(22,20,15,0.10),0_2px_4px_rgba(22,20,15,0.06)] sticky top-4"
               style={{ maxHeight: 'calc(100vh - 120px)' }}
             >
               <DetailPanel

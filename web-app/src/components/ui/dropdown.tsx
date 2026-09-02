@@ -3,15 +3,16 @@
 import * as React from 'react'
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
 import { motion } from 'framer-motion'
-import { Check, ChevronRight } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { spring } from '@/design-system/motion'
 
-const Dropdown = DropdownMenuPrimitive.Root
-const DropdownTrigger = DropdownMenuPrimitive.Trigger
-const DropdownGroup = DropdownMenuPrimitive.Group
-const DropdownPortal = DropdownMenuPrimitive.Portal
-const DropdownSub = DropdownMenuPrimitive.Sub
+const SPRING = { type: 'spring' as const, stiffness: 420, damping: 34, mass: 0.9 }
+
+const Dropdown          = DropdownMenuPrimitive.Root
+const DropdownTrigger   = DropdownMenuPrimitive.Trigger
+const DropdownGroup     = DropdownMenuPrimitive.Group
+const DropdownPortal    = DropdownMenuPrimitive.Portal
+const DropdownSub       = DropdownMenuPrimitive.Sub
 const DropdownSubTrigger = DropdownMenuPrimitive.SubTrigger
 const DropdownRadioGroup = DropdownMenuPrimitive.RadioGroup
 
@@ -26,7 +27,8 @@ function DropdownContent({
       <DropdownMenuPrimitive.Content
         sideOffset={sideOffset}
         className={cn(
-          'z-[100] min-w-[10rem] overflow-hidden rounded-lg border border-border bg-paper shadow-md p-1',
+          'z-[200] min-w-[180px] overflow-hidden rounded-xl border border-border bg-surface-raised py-1.5',
+          'shadow-[0_8px_32px_rgba(22,20,15,0.12),0_2px_8px_rgba(22,20,15,0.06)]',
           className
         )}
         {...props}
@@ -35,7 +37,7 @@ function DropdownContent({
           initial={{ opacity: 0, scale: 0.97, y: -4 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.97, y: -4 }}
-          transition={spring}
+          transition={SPRING}
         >
           {children}
         </motion.div>
@@ -52,10 +54,11 @@ function DropdownItem({
   return (
     <DropdownMenuPrimitive.Item
       className={cn(
-        'relative flex cursor-pointer select-none items-center gap-2 rounded-md px-3 py-2',
-        'text-sm font-sans text-ink outline-none',
-        'transition-colors duration-[100ms] focus:bg-surface',
-        'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+        'relative flex cursor-pointer select-none items-center gap-2 mx-1.5 rounded-md px-2.5 py-2',
+        'text-[13px] font-sans text-ink outline-none',
+        'transition-colors duration-100 focus:bg-surface',
+        'data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
+        'data-[destructive]:text-danger data-[destructive]:focus:bg-danger/5',
         inset && 'pl-8',
         className
       )}
@@ -73,10 +76,10 @@ function DropdownCheckboxItem({
   return (
     <DropdownMenuPrimitive.CheckboxItem
       className={cn(
-        'relative flex cursor-pointer select-none items-center gap-2 rounded-md pl-8 pr-3 py-2',
-        'text-sm font-sans text-ink outline-none',
-        'transition-colors duration-[100ms] focus:bg-surface',
-        'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+        'relative flex cursor-pointer select-none items-center gap-2 mx-1.5 rounded-md pl-8 pr-2.5 py-2',
+        'text-[13px] font-sans text-ink outline-none',
+        'transition-colors duration-100 focus:bg-surface',
+        'data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
         className
       )}
       checked={checked}
@@ -84,7 +87,7 @@ function DropdownCheckboxItem({
     >
       <span className="absolute left-2 flex h-4 w-4 items-center justify-center">
         <DropdownMenuPrimitive.ItemIndicator>
-          <Check className="h-4 w-4" />
+          <Check className="h-3.5 w-3.5" />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
       {children}
@@ -98,7 +101,7 @@ function DropdownSeparator({
 }: React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Separator>) {
   return (
     <DropdownMenuPrimitive.Separator
-      className={cn('-mx-1 my-1 h-px bg-border', className)}
+      className={cn('h-px bg-border mx-1.5 my-1', className)}
       {...props}
     />
   )
@@ -112,7 +115,7 @@ function DropdownLabel({
   return (
     <DropdownMenuPrimitive.Label
       className={cn(
-        'px-3 py-1.5 text-xs font-medium text-dim uppercase tracking-wide font-sans',
+        'px-3.5 py-1.5 text-[11px] font-semibold text-dim uppercase tracking-wider font-sans',
         inset && 'pl-8',
         className
       )}

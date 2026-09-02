@@ -37,55 +37,55 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
 import { clearToken, getStoredUser } from '@/lib/auth-storage'
 
+/* ── Types ────────────────────────────────────────────────────────────── */
 interface NavItem {
   href: string
   label: string
   icon: React.ComponentType<{ size?: number; className?: string; style?: React.CSSProperties }>
 }
-
 interface NavGroup {
   label: string
   items: NavItem[]
 }
 
+/* ── Nav structure ────────────────────────────────────────────────────── */
 function buildNavGroups(slug: string, brandId: string | null): NavGroup[] {
   const b = brandId ? `/${slug}/brands/${brandId}` : null
-
   return [
     {
       label: 'Overview',
       items: [
         { href: `/${slug}/dashboard`, label: 'Dashboard', icon: LayoutDashboard },
-        { href: `/${slug}/brands`, label: 'Brands', icon: Tag },
+        { href: `/${slug}/brands`,    label: 'Brands',    icon: Tag },
       ],
     },
     {
       label: 'Visibility',
       items: [
-        { href: b ? `${b}/visibility/runs` : '#', label: 'AI Runs', icon: Play },
-        { href: b ? `${b}/visibility` : '#', label: 'Visibility', icon: Eye },
-        { href: b ? `${b}/competitive` : '#', label: 'Competitive', icon: Users },
+        { href: b ? `${b}/visibility/runs` : '#', label: 'AI Runs',     icon: Play },
+        { href: b ? `${b}/visibility`      : '#', label: 'Visibility',  icon: Eye },
+        { href: b ? `${b}/competitive`     : '#', label: 'Competitive', icon: Users },
       ],
     },
     {
       label: 'SEO & GEO',
       items: [
-        { href: b ? `${b}/seo` : '#', label: 'SEO', icon: Search },
+        { href: b ? `${b}/seo` : '#', label: 'SEO',      icon: Search },
         { href: b ? `${b}/geo` : '#', label: 'GEO Gaps', icon: Globe },
       ],
     },
     {
       label: 'Content',
       items: [
-        { href: b ? `${b}/content` : '#', label: 'Content Intelligence', icon: FileText },
+        { href: b ? `${b}/content`            : '#', label: 'Content Intel',      icon: FileText },
         { href: b ? `${b}/content-generation` : '#', label: 'Content Generation', icon: Sparkles },
-        { href: b ? `${b}/publishing` : '#', label: 'Publishing', icon: Send },
+        { href: b ? `${b}/publishing`         : '#', label: 'Publishing',         icon: Send },
       ],
     },
     {
       label: 'AI Agents',
       items: [
-        { href: b ? `${b}/agents` : '#', label: 'Agents', icon: Bot },
+        { href: b ? `${b}/agents`     : '#', label: 'Agents',     icon: Bot },
         { href: b ? `${b}/autonomous` : '#', label: 'Autonomous', icon: Cpu },
       ],
     },
@@ -93,108 +93,92 @@ function buildNavGroups(slug: string, brandId: string | null): NavGroup[] {
       label: 'Growth',
       items: [
         { href: b ? `${b}/opportunities` : '#', label: 'Opportunities', icon: Lightbulb },
-        { href: b ? `${b}/actions` : '#', label: 'Actions', icon: Zap },
-        { href: b ? `${b}/experiments` : '#', label: 'Experiments', icon: FlaskConical },
-        { href: b ? `${b}/marketing` : '#', label: 'Marketing', icon: Megaphone },
+        { href: b ? `${b}/actions`       : '#', label: 'Actions',       icon: Zap },
+        { href: b ? `${b}/experiments`   : '#', label: 'Experiments',   icon: FlaskConical },
+        { href: b ? `${b}/marketing`     : '#', label: 'Marketing',     icon: Megaphone },
       ],
     },
     {
       label: 'Intelligence',
       items: [
-        { href: b ? `${b}/reports` : '#', label: 'Reports', icon: BarChart2 },
+        { href: b ? `${b}/reports`   : '#', label: 'Reports',   icon: BarChart2 },
         { href: b ? `${b}/snapshots` : '#', label: 'Snapshots', icon: Camera },
-        { href: b ? `${b}/learning` : '#', label: 'Learning', icon: GraduationCap },
+        { href: b ? `${b}/learning`  : '#', label: 'Learning',  icon: GraduationCap },
       ],
     },
     {
       label: 'Organization',
       items: [
         { href: `/${slug}/notifications`, label: 'Notifications', icon: Bell },
-        { href: `/${slug}/stories`, label: 'Stories', icon: BookOpen },
-        { href: `/${slug}/agency`, label: 'Agency', icon: Layers },
-        { href: `/${slug}/white-label`, label: 'White Label', icon: RadioTower },
-        { href: `/${slug}/settings`, label: 'Settings', icon: Settings },
+        { href: `/${slug}/stories`,       label: 'Stories',       icon: BookOpen },
+        { href: `/${slug}/agency`,        label: 'Agency',        icon: Layers },
+        { href: `/${slug}/white-label`,   label: 'White Label',   icon: RadioTower },
+        { href: `/${slug}/settings`,      label: 'Settings',      icon: Settings },
       ],
     },
   ]
 }
 
+/* ── NavItemLink ──────────────────────────────────────────────────────── */
 function NavItemLink({ item, isActive }: { item: NavItem; isActive: boolean }) {
   const Icon = item.icon
-
   return (
     <Link
       href={item.href}
       className={cn(
-        'group relative flex items-center gap-2.5 font-sans font-medium text-[13px] rounded-lg transition-all duration-[150ms]',
-        'no-underline',
+        'group relative flex items-center gap-2.5 text-[13px] font-medium font-sans rounded-md no-underline',
+        'transition-colors duration-[120ms]',
+        'h-8 px-3',
         isActive
-          ? 'bg-[rgba(194,65,12,0.15)] text-[var(--ember)]'
-          : 'text-[var(--dim)] hover:bg-white/5 hover:text-[var(--paper)]'
+          ? 'bg-[rgba(194,65,12,0.14)] text-[#F7F3EC]'
+          : 'text-[rgba(247,243,236,0.48)] hover:bg-[rgba(247,243,236,0.06)] hover:text-[rgba(247,243,236,0.9)]'
       )}
-      style={{
-        height: 36,
-        padding: '0 12px',
-        textDecoration: 'none',
-      }}
     >
+      {/* Left accent bar for active state */}
+      {isActive && (
+        <span
+          aria-hidden
+          className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full bg-ember"
+        />
+      )}
       <Icon
-        size={15}
-        style={{
-          flexShrink: 0,
-          color: 'inherit',
-          opacity: isActive ? 1 : undefined,
-          transition: 'opacity 150ms',
-        }}
-        className={cn(!isActive && 'opacity-60 group-hover:opacity-100')}
+        size={14}
+        className={cn(
+          'shrink-0 transition-opacity duration-[120ms]',
+          isActive
+            ? 'opacity-90 text-ember'
+            : 'opacity-45 group-hover:opacity-80'
+        )}
       />
-      <span style={{ color: 'inherit' }}>{item.label}</span>
+      <span className="truncate leading-none">{item.label}</span>
     </Link>
   )
 }
 
-function PulseDot() {
+/* ── Live indicator dot ───────────────────────────────────────────────── */
+function LiveDot() {
   return (
-    <span
-      style={{ position: 'relative', display: 'inline-flex', width: 8, height: 8, flexShrink: 0 }}
-    >
-      <span
-        style={{
-          position: 'absolute',
-          inset: 0,
-          borderRadius: '50%',
-          background: 'var(--ember)',
-          opacity: 0.5,
-          animation: 'ping 1.6s cubic-bezier(0,0,0.2,1) infinite',
-        }}
-      />
-      <span
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: '50%',
-          background: 'var(--ember)',
-          display: 'inline-block',
-        }}
-      />
-      <style>{`@keyframes ping { 75%,100% { transform:scale(2); opacity:0 } }`}</style>
+    <span className="relative inline-flex w-2 h-2 shrink-0">
+      <span className="absolute inset-0 rounded-full bg-ember animate-[pulse-ring_2s_ease-in-out_infinite]" />
+      <span className="relative inline-block w-2 h-2 rounded-full bg-ember" />
     </span>
   )
 }
 
+/* ── Sidebar content (shared between desktop + mobile) ────────────────── */
 function SidebarContent({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname()
-  const currentOrg = useAppStore((s) => s.currentOrg)
+  const currentOrg   = useAppStore((s) => s.currentOrg)
   const currentBrand = useAppStore((s) => s.currentBrand)
   const [orgOpen, setOrgOpen] = useState(false)
 
-  const slug = currentOrg?.slug ?? ''
+  const slug    = currentOrg?.slug ?? ''
   const brandId = currentBrand?.id ?? null
   const navGroups = buildNavGroups(slug, brandId)
 
-  const user = getStoredUser()
+  const user      = getStoredUser()
   const userEmail = user?.email ?? ''
-  const initials = (user?.name ?? userEmail)
+  const initials  = (user?.name ?? userEmail)
     .split(' ')
     .map((p) => p[0] ?? '')
     .slice(0, 2)
@@ -207,70 +191,34 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        background: '#0F0E0A',
-      }}
-    >
-      {/* Logo + close */}
-      <div
-        style={{
-          padding: '18px 16px 16px',
-          borderBottom: '1px solid rgba(255,255,255,0.07)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {/* Logo row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+    <div className="flex flex-col h-full bg-ink overflow-hidden">
+
+      {/* ── Header: logo + org selector ─────────────────────────── */}
+      <div className="flex items-center justify-between px-4 pt-5 pb-4 border-b border-[rgba(247,243,236,0.07)] shrink-0">
+        <div className="flex flex-col gap-1.5 min-w-0">
+          {/* Wordmark */}
+          <div className="flex items-center gap-2">
             <span
-              className="font-display font-bold"
-              style={{ fontSize: 22, color: 'var(--paper)', letterSpacing: '-0.02em' }}
+              className="font-display font-bold text-paper tracking-tight"
+              style={{ fontSize: 20, letterSpacing: '-0.025em' }}
             >
               BeBest
             </span>
-            <PulseDot />
+            <LiveDot />
           </div>
 
-          {/* Brand / org selector */}
+          {/* Org selector */}
           <button
-            onClick={() => setOrgOpen(!orgOpen)}
-            className="font-sans hover:!text-[var(--paper)] transition-colors"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
-              color: 'var(--dim)',
-              fontSize: 13,
-            }}
+            onClick={() => setOrgOpen((v) => !v)}
+            className="flex items-center gap-1 text-xs text-[rgba(247,243,236,0.40)] hover:text-[rgba(247,243,236,0.75)] transition-colors bg-none border-none p-0 cursor-pointer font-sans"
           >
-            <span
-              style={{
-                maxWidth: 148,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
+            <span className="truncate max-w-[140px]">
               {currentOrg?.name ?? 'Select org'}
             </span>
             <ChevronDown
-              size={12}
-              style={{
-                flexShrink: 0,
-                transition: 'transform 200ms',
-                transform: orgOpen ? 'rotate(180deg)' : 'none',
-              }}
+              size={11}
+              className="shrink-0 transition-transform duration-200"
+              style={{ transform: orgOpen ? 'rotate(180deg)' : 'none' }}
             />
           </button>
         </div>
@@ -278,49 +226,22 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
         {onClose && (
           <button
             onClick={onClose}
-            className="lg:hidden cursor-pointer"
-            style={{
-              padding: 4,
-              background: 'none',
-              border: 'none',
-              color: 'var(--dim)',
-              cursor: 'pointer',
-            }}
+            className="lg:hidden flex items-center justify-center w-7 h-7 rounded-md text-[rgba(247,243,236,0.30)] hover:text-[rgba(247,243,236,0.70)] hover:bg-[rgba(247,243,236,0.06)] transition-colors cursor-pointer border-none bg-none"
+            aria-label="Close sidebar"
           >
-            <X size={17} />
+            <X size={16} />
           </button>
         )}
       </div>
 
-      {/* Nav groups */}
-      <nav
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '10px 8px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 18,
-        }}
-      >
+      {/* ── Navigation ──────────────────────────────────────────── */}
+      <nav className="flex-1 overflow-y-auto px-3 py-3 flex flex-col">
         {navGroups.map((group) => (
-          <div key={group.label}>
-            <p
-              className="font-sans"
-              style={{
-                padding: '0 12px',
-                marginBottom: 4,
-                marginTop: 0,
-                fontSize: 10,
-                fontWeight: 600,
-                textTransform: 'uppercase',
-                letterSpacing: '0.1em',
-                color: 'var(--dim)',
-              }}
-            >
+          <div key={group.label} className="mb-5">
+            <p className="px-3 mb-1 text-[10px] font-bold uppercase tracking-[0.09em] text-[rgba(247,243,236,0.28)] font-sans select-none">
               {group.label}
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <div className="flex flex-col gap-0.5">
               {group.items.map((item) => (
                 <NavItemLink
                   key={item.href}
@@ -336,99 +257,61 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
         ))}
       </nav>
 
-      {/* Bottom: user */}
-      <div
-        style={{
-          padding: '12px 10px',
-          borderTop: '1px solid rgba(255,255,255,0.07)',
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-        }}
-      >
+      {/* ── Footer: user ────────────────────────────────────────── */}
+      <div className="shrink-0 px-4 py-3 border-t border-[rgba(247,243,236,0.07)] flex items-center gap-2.5">
         {/* Avatar */}
-        <div
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: '50%',
-            background: 'rgba(194,65,12,0.3)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
-          <span className="font-sans" style={{ fontSize: 11, fontWeight: 600, color: 'var(--ember)' }}>
+        <div className="w-7 h-7 rounded-full bg-ember flex items-center justify-center shrink-0">
+          <span className="font-sans text-[10px] font-semibold text-paper leading-none">
             {initials || '?'}
           </span>
         </div>
 
-        <p
-          className="font-sans"
-          style={{
-            fontSize: 12,
-            color: 'var(--dim)',
-            flex: 1,
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
+        <p className="font-sans text-xs text-[rgba(247,243,236,0.45)] flex-1 min-w-0 truncate">
           {userEmail || 'Account'}
         </p>
 
         <button
           onClick={handleLogout}
           title="Sign out"
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: 4,
-            cursor: 'pointer',
-            color: 'var(--dim)',
-            flexShrink: 0,
-            display: 'flex',
-            alignItems: 'center',
-            borderRadius: 4,
-            transition: 'color 150ms',
-          }}
-          className="hover:!text-[var(--danger)]"
+          className="flex items-center justify-center w-6 h-6 rounded text-[rgba(247,243,236,0.28)] hover:text-danger hover:bg-[rgba(247,243,236,0.06)] transition-colors shrink-0 cursor-pointer border-none bg-none"
+          aria-label="Sign out"
         >
-          <LogOut size={14} />
+          <LogOut size={13} />
         </button>
       </div>
     </div>
   )
 }
 
+/* ── Exported Sidebar ─────────────────────────────────────────────────── */
 export function Sidebar() {
-  const mobileOpen = useAppStore((s) => s.mobileSidebarOpen)
+  const mobileOpen         = useAppStore((s) => s.mobileSidebarOpen)
   const closeMobileSidebar = useAppStore((s) => s.closeMobileSidebar)
+
+  const SIDEBAR_W = 260
 
   return (
     <>
-      {/* Mobile drawer overlay */}
+      {/* Mobile drawer */}
       <AnimatePresence>
         {mobileOpen && (
           <>
             <motion.div
               className="fixed inset-0 z-40 lg:hidden"
-              style={{ background: 'rgba(22,20,15,0.6)', backdropFilter: 'blur(2px)' }}
+              style={{ background: 'rgba(22,20,15,0.55)', backdropFilter: 'blur(3px)' }}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
               onClick={closeMobileSidebar}
             />
             <motion.aside
               className="fixed left-0 top-0 bottom-0 z-50 lg:hidden"
-              style={{ width: 240, boxShadow: '4px 0 32px rgba(0,0,0,0.5)' }}
-              initial={{ x: -240 }}
+              style={{ width: SIDEBAR_W, boxShadow: '6px 0 48px rgba(0,0,0,0.45)' }}
+              initial={{ x: -SIDEBAR_W }}
               animate={{ x: 0 }}
-              exit={{ x: -240 }}
-              transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+              exit={{ x: -SIDEBAR_W }}
+              transition={{ type: 'spring', stiffness: 340, damping: 34 }}
             >
               <SidebarContent onClose={closeMobileSidebar} />
             </motion.aside>
@@ -436,10 +319,10 @@ export function Sidebar() {
         )}
       </AnimatePresence>
 
-      {/* Desktop fixed sidebar */}
+      {/* Desktop fixed */}
       <aside
-        className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0"
-        style={{ width: 240 }}
+        className="hidden lg:block fixed left-0 top-0 bottom-0 z-40"
+        style={{ width: SIDEBAR_W }}
       >
         <SidebarContent />
       </aside>

@@ -16,6 +16,7 @@ import { DataTable } from '@/components/ui/data-table'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Spinner } from '@/components/ui/spinner'
 import { useToast } from '@/components/ui/toast'
+import { SPRING_CURVE } from '@/lib/motion'
 
 interface Brand {
   id: string
@@ -96,12 +97,11 @@ const crawlBadgeVariant = (status?: string): 'success' | 'info' | 'danger' | 'ou
   }
 }
 
-const SPRING = [0.16, 1, 0.3, 1] as [number, number, number, number]
 
 const fadeUp = (i: number) => ({
   initial: { opacity: 0, y: 16 },
   animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.35, ease: SPRING, delay: i * 0.08 },
+  transition: { duration: 0.35, ease: SPRING_CURVE, delay: i * 0.08 },
 })
 
 // ─── Runs Table ───────────────────────────────────────────────────────────────
@@ -120,7 +120,7 @@ function RunsTable({ slug, brandId, limit }: { slug: string; brandId: string; li
       key: 'created_at',
       header: 'Date',
       render: (v: unknown) => (
-        <span className="text-sm text-[var(--ink)] font-sans">{relativeTime(v as string)}</span>
+        <span className="text-sm text-ink font-sans">{relativeTime(v as string)}</span>
       ),
     },
     {
@@ -136,17 +136,17 @@ function RunsTable({ slug, brandId, limit }: { slug: string; brandId: string; li
       key: 'provider',
       header: 'Provider',
       render: (v: unknown) => (
-        <span className="text-sm text-[var(--dim)] font-sans">{(v as string) ?? '—'}</span>
+        <span className="text-sm text-dim font-sans">{(v as string) ?? '—'}</span>
       ),
     },
     {
       key: 'completed_at',
       header: 'Duration',
       render: (v: unknown, row: Run) => {
-        if (!v || !row.created_at) return <span className="text-sm text-[var(--dim)]">—</span>
+        if (!v || !row.created_at) return <span className="text-sm text-dim">—</span>
         const ms = new Date(v as string).getTime() - new Date(row.created_at).getTime()
         const s = Math.round(ms / 1000)
-        return <span className="font-mono text-xs text-[var(--dim)]">{s}s</span>
+        return <span className="font-mono text-xs text-dim">{s}s</span>
       },
     },
     {
@@ -155,7 +155,7 @@ function RunsTable({ slug, brandId, limit }: { slug: string; brandId: string; li
       render: (v: unknown) => (
         <a
           href={`/${slug}/brands/${brandId}/visibility/runs/${v as string}`}
-          className="text-xs text-[var(--ember)] hover:underline font-sans"
+          className="text-xs text-ember hover:underline font-sans"
         >
           View →
         </a>
@@ -193,9 +193,9 @@ function OverviewTab({ brand, slug, brandId }: { brand: Brand; slug: string; bra
   const isRunning = brand.crawl_status === 'running'
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Stat cards row */}
-      <motion.div {...fadeUp(0)} className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <motion.div {...fadeUp(0)} className="grid grid-cols-2 sm:grid-cols-4 gap-5">
         {[
           { label: 'Visibility Score', value: brand.visibility_score ?? 0 },
           { label: 'Keywords', value: brand.queries_tracked ?? 0 },
@@ -204,10 +204,10 @@ function OverviewTab({ brand, slug, brandId }: { brand: Brand; slug: string; bra
         ].map((stat) => (
           <div
             key={stat.label}
-            className="rounded-xl border border-[var(--border)] bg-white/60 px-4 py-4"
+            className="rounded-xl border border-border bg-surface-raised px-6 py-7"
           >
-            <p className="text-xs font-sans text-[var(--dim)] uppercase tracking-wider mb-1">{stat.label}</p>
-            <p className="font-display text-2xl font-semibold text-[var(--ink)]">{stat.value}</p>
+            <p className="text-[11px] font-sans text-dim uppercase tracking-wider font-medium mb-1">{stat.label}</p>
+            <p className="font-display text-3xl font-bold text-ink">{stat.value}</p>
           </div>
         ))}
       </motion.div>
@@ -219,7 +219,7 @@ function OverviewTab({ brand, slug, brandId }: { brand: Brand; slug: string; bra
             <CardTitle>Crawl Status</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-6">
               <div className="flex-1 space-y-2">
                 <div className="flex items-center gap-2">
                   <Badge
@@ -229,7 +229,7 @@ function OverviewTab({ brand, slug, brandId }: { brand: Brand; slug: string; bra
                   >
                     {isRunning ? (
                       <span className="flex items-center gap-1.5">
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--ember)] animate-pulse" />
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-ember animate-pulse" />
                         Running
                       </span>
                     ) : (
@@ -240,14 +240,14 @@ function OverviewTab({ brand, slug, brandId }: { brand: Brand; slug: string; bra
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <p className="text-xs text-[var(--dim)]">Pages crawled</p>
-                    <p className="font-display text-2xl font-semibold text-[var(--ink)]">
+                    <p className="text-[11px] text-dim uppercase tracking-wider font-medium">Pages crawled</p>
+                    <p className="font-display text-3xl font-bold text-ink">
                       {brand.pages_crawled ?? 0}
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-[var(--dim)]">Last crawled</p>
-                    <p className="text-sm text-[var(--ink)]">{relativeTime(brand.last_crawled_at)}</p>
+                    <p className="text-[11px] text-dim">Last crawled</p>
+                    <p className="text-sm text-ink">{relativeTime(brand.last_crawled_at)}</p>
                   </div>
                 </div>
               </div>
@@ -266,7 +266,7 @@ function OverviewTab({ brand, slug, brandId }: { brand: Brand; slug: string; bra
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}
-                      className="text-xs text-[var(--success)] text-center"
+                      className="text-xs text-success text-center"
                     >
                       Crawl started
                     </motion.p>
@@ -313,7 +313,7 @@ function PagesTab({ slug, brandId }: { slug: string; brandId: string }) {
           href={row.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-[var(--ember)] hover:underline font-mono text-xs truncate block max-w-xs"
+          className="text-ember hover:underline font-mono text-xs truncate block max-w-xs"
         >
           {row.url}
         </a>
@@ -343,7 +343,7 @@ function PagesTab({ slug, brandId }: { slug: string; brandId: string }) {
     {
       key: 'crawled_at',
       header: 'Crawled',
-      render: (v: unknown) => <span className="text-xs text-[var(--dim)]">{relativeTime(v as string)}</span>,
+      render: (v: unknown) => <span className="text-xs text-dim">{relativeTime(v as string)}</span>,
     },
   ]
 
@@ -401,7 +401,7 @@ function JourneysTab({ slug, brandId }: { slug: string; brandId: string }) {
   if (isLoading) return <SkeletonCard />
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <motion.div {...fadeUp(0)} className="flex justify-end">
         <Button
           variant="outline"
@@ -442,12 +442,12 @@ function JourneysTab({ slug, brandId }: { slug: string; brandId: string }) {
                     }}
                   >
                     <div className="flex gap-2 pt-1">
-                      <input
+                      <Input
                         autoFocus
                         value={newQuery}
                         onChange={(e) => setNewQuery(e.target.value)}
                         placeholder="Enter a buyer query…"
-                        className="flex-1 h-9 px-3 rounded-md border border-[var(--border)] bg-[var(--paper)] text-sm font-sans focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
+                        className="flex-1 h-9 text-sm"
                       />
                       <Button type="submit" size="sm" loading={addQueryMutation.isPending}>Add</Button>
                       <Button
@@ -464,11 +464,11 @@ function JourneysTab({ slug, brandId }: { slug: string; brandId: string }) {
               </AnimatePresence>
 
               {byStage[stage].length === 0 ? (
-                <p className="text-sm text-[var(--dim)]">No queries yet for this stage.</p>
+                <p className="text-sm text-dim">No queries yet for this stage.</p>
               ) : (
                 <div className="space-y-2">
                   {byStage[stage].map((j) => (
-                    <div key={j.id} className="flex items-center gap-3 py-2 border-b border-[var(--border)] last:border-0">
+                    <div key={j.id} className="flex items-center gap-3 py-3.5 border-b border-border last:border-0">
                       {j.intent && (
                         <Badge
                           variant={intentVariant(j.intent) as 'info' | 'warning' | 'success' | 'outline'}
@@ -477,7 +477,7 @@ function JourneysTab({ slug, brandId }: { slug: string; brandId: string }) {
                           {j.intent}
                         </Badge>
                       )}
-                      <span className="text-sm text-[var(--ink)]">{j.query}</span>
+                      <span className="text-sm text-ink">{j.query}</span>
                     </div>
                   ))}
                 </div>
@@ -496,7 +496,7 @@ function RunsTab({ slug, brandId }: { slug: string; brandId: string }) {
   return (
     <motion.div {...fadeUp(0)}>
       <Card>
-        <CardContent className="pt-6 p-0">
+        <CardContent className="p-0">
           <RunsTable slug={slug} brandId={brandId} />
         </CardContent>
       </Card>
@@ -530,7 +530,7 @@ function SettingsTab({ brand, slug, brandId }: { brand: Brand; slug: string; bra
   })
 
   return (
-    <div className="space-y-6 max-w-lg">
+    <div className="space-y-8 max-w-lg">
       <motion.div {...fadeUp(0)}>
         <Card>
           <CardHeader><CardTitle>Brand Settings</CardTitle></CardHeader>
@@ -558,9 +558,9 @@ function SettingsTab({ brand, slug, brandId }: { brand: Brand; slug: string; bra
       </motion.div>
 
       <motion.div {...fadeUp(1)}>
-        <div className="rounded-xl border border-[var(--danger)]/30 bg-[var(--danger)]/5 p-6">
-          <h3 className="font-display font-semibold text-[var(--danger)] mb-2">Danger Zone</h3>
-          <p className="text-sm text-[var(--dim)] font-sans mb-4">
+        <div className="rounded-xl border border-[var(--danger)]/30 bg-danger/5 p-6">
+          <h3 className="font-display font-semibold text-danger mb-2">Danger Zone</h3>
+          <p className="text-sm text-dim font-sans mb-4">
             Permanently delete this brand and all its data. This action cannot be undone.
           </p>
           <Button
@@ -591,7 +591,7 @@ export default function BrandDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="max-w-5xl mx-auto space-y-6">
+      <div className="max-w-5xl mx-auto space-y-8">
         <SkeletonCard />
         <SkeletonCard />
       </div>
@@ -615,10 +615,10 @@ export default function BrandDetailPage() {
         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
         className="flex items-center justify-between gap-4 mb-8"
       >
-        <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="font-display text-3xl font-semibold text-[var(--ink)]">{brand.name}</h1>
+        <div className="flex flex-col gap-1.5">
+          <h1 className="font-display text-[32px] font-semibold text-ink leading-tight tracking-tight">{brand.name}</h1>
           {brand.website && (
-            <span className="font-mono text-sm bg-[var(--surface)] border border-[var(--border)] rounded-full px-3 py-1 flex items-center gap-1.5 text-[var(--dim)]">
+            <span className="font-mono text-xs bg-surface border border-border rounded-full px-3 py-1 inline-flex items-center gap-1.5 text-dim self-start">
               <Globe className="h-3 w-3" />
               {brand.website.replace(/^https?:\/\//, '')}
             </span>

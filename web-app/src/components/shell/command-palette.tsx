@@ -23,7 +23,7 @@ import {
   Bell,
   CreditCard,
   Settings,
-  ArrowRight,
+  CornerDownLeft,
 } from 'lucide-react'
 import { useAppStore } from '@/store/app-store'
 import { cn } from '@/lib/utils'
@@ -34,43 +34,47 @@ interface PaletteItem {
   section: string
   href?: string
   icon: React.ComponentType<{ size?: number; className?: string }>
-  hint?: string
 }
 
 const allItems: PaletteItem[] = [
-  { id: 'dashboard', label: 'Dashboard', section: 'Navigation', href: '/dashboard', icon: LayoutDashboard, hint: '↵' },
-  { id: 'runs', label: 'Runs', section: 'Navigation', href: '/runs', icon: Play, hint: '↵' },
-  { id: 'visibility', label: 'Visibility', section: 'Navigation', href: '/visibility', icon: Eye, hint: '↵' },
-  { id: 'keywords', label: 'Keywords', section: 'Navigation', href: '/keywords', icon: Hash, hint: '↵' },
-  { id: 'geo-gaps', label: 'GEO Gaps', section: 'Navigation', href: '/geo-gaps', icon: Globe, hint: '↵' },
-  { id: 'competitive', label: 'Competitive', section: 'Navigation', href: '/competitive', icon: Users, hint: '↵' },
-  { id: 'opportunities', label: 'Opportunities', section: 'Navigation', href: '/opportunities', icon: Lightbulb, hint: '↵' },
-  { id: 'content-intel', label: 'Content Intel', section: 'Navigation', href: '/content-intel', icon: FileText, hint: '↵' },
-  { id: 'generate', label: 'Generate', section: 'Navigation', href: '/generate', icon: Sparkles, hint: '↵' },
-  { id: 'publishing', label: 'Publishing', section: 'Navigation', href: '/publishing', icon: Send, hint: '↵' },
-  { id: 'geo-agent', label: 'GEO Agent', section: 'Agents', href: '/geo-agent', icon: Bot, hint: '↵' },
-  { id: 'seo-agent', label: 'SEO Agent', section: 'Agents', href: '/seo-agent', icon: Search, hint: '↵' },
-  { id: 'growth-agent', label: 'Growth Agent', section: 'Agents', href: '/growth-agent', icon: TrendingUp, hint: '↵' },
-  { id: 'actions', label: 'Actions', section: 'Manage', href: '/actions', icon: Zap, hint: '↵' },
-  { id: 'experiments', label: 'Experiments', section: 'Manage', href: '/experiments', icon: FlaskConical, hint: '↵' },
-  { id: 'reports', label: 'Reports', section: 'Manage', href: '/reports', icon: BarChart2, hint: '↵' },
-  { id: 'notifications', label: 'Notifications', section: 'Org', href: '/notifications', icon: Bell, hint: '↵' },
-  { id: 'billing', label: 'Billing', section: 'Org', href: '/billing', icon: CreditCard, hint: '↵' },
-  { id: 'settings', label: 'Settings', section: 'Org', href: '/settings', icon: Settings, hint: '↵' },
+  { id: 'dashboard',    label: 'Dashboard',      section: 'Navigate', href: '/dashboard',    icon: LayoutDashboard },
+  { id: 'runs',         label: 'AI Runs',        section: 'Navigate', href: '/runs',         icon: Play },
+  { id: 'visibility',  label: 'Visibility',     section: 'Navigate', href: '/visibility',   icon: Eye },
+  { id: 'keywords',    label: 'Keywords',       section: 'Navigate', href: '/keywords',     icon: Hash },
+  { id: 'geo-gaps',    label: 'GEO Gaps',       section: 'Navigate', href: '/geo-gaps',     icon: Globe },
+  { id: 'competitive', label: 'Competitive',    section: 'Navigate', href: '/competitive',  icon: Users },
+  { id: 'opps',        label: 'Opportunities',  section: 'Navigate', href: '/opportunities',icon: Lightbulb },
+  { id: 'content',     label: 'Content Intel',  section: 'Navigate', href: '/content-intel',icon: FileText },
+  { id: 'generate',    label: 'Generate',       section: 'Navigate', href: '/generate',     icon: Sparkles },
+  { id: 'publishing',  label: 'Publishing',     section: 'Navigate', href: '/publishing',   icon: Send },
+  { id: 'geo-agent',   label: 'GEO Agent',      section: 'Agents',   href: '/geo-agent',    icon: Bot },
+  { id: 'seo-agent',   label: 'SEO Agent',      section: 'Agents',   href: '/seo-agent',    icon: Search },
+  { id: 'growth-agent',label: 'Growth Agent',   section: 'Agents',   href: '/growth-agent', icon: TrendingUp },
+  { id: 'actions',     label: 'Actions',        section: 'Manage',   href: '/actions',      icon: Zap },
+  { id: 'experiments', label: 'Experiments',    section: 'Manage',   href: '/experiments',  icon: FlaskConical },
+  { id: 'reports',     label: 'Reports',        section: 'Manage',   href: '/reports',      icon: BarChart2 },
+  { id: 'notifications',label: 'Notifications', section: 'Org',      href: '/notifications',icon: Bell },
+  { id: 'billing',     label: 'Billing',        section: 'Org',      href: '/billing',      icon: CreditCard },
+  { id: 'settings',    label: 'Settings',       section: 'Org',      href: '/settings',     icon: Settings },
 ]
 
-const recentItems = allItems.slice(0, 3)
+const recentItems = allItems.slice(0, 4)
 
 export function CommandPalette() {
   const router = useRouter()
-  const open = useAppStore((s) => s.commandPaletteOpen)
+  const open  = useAppStore((s) => s.commandPaletteOpen)
   const close = useAppStore((s) => s.closeCommandPalette)
-  const [query, setQuery] = useState('')
+
+  const [query, setQuery]       = useState('')
   const [activeIdx, setActiveIdx] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const listRef  = useRef<HTMLDivElement>(null)
 
   const filtered = query.trim()
-    ? allItems.filter((i) => i.label.toLowerCase().includes(query.toLowerCase()))
+    ? allItems.filter((i) =>
+        i.label.toLowerCase().includes(query.toLowerCase()) ||
+        i.section.toLowerCase().includes(query.toLowerCase())
+      )
     : recentItems
 
   const grouped = filtered.reduce<Record<string, PaletteItem[]>>((acc, item) => {
@@ -95,20 +99,24 @@ export function CommandPalette() {
     if (open) {
       setQuery('')
       setActiveIdx(0)
-      setTimeout(() => inputRef.current?.focus(), 50)
+      setTimeout(() => inputRef.current?.focus(), 40)
     }
   }, [open])
 
+  useEffect(() => { setActiveIdx(0) }, [query])
+
+  /* Scroll active item into view */
   useEffect(() => {
-    setActiveIdx(0)
-  }, [query])
+    const el = listRef.current?.querySelector(`[data-active="true"]`)
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [activeIdx])
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!open) return
       if (e.key === 'Escape') { close(); return }
       if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx((i) => Math.min(i + 1, flat.length - 1)) }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx((i) => Math.max(i - 1, 0)) }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setActiveIdx((i) => Math.max(i - 1, 0)) }
       if (e.key === 'Enter') { e.preventDefault(); if (flat[activeIdx]) navigate(flat[activeIdx]) }
     }
     document.addEventListener('keydown', onKey)
@@ -121,77 +129,107 @@ export function CommandPalette() {
         <>
           {/* Backdrop */}
           <motion.div
-            className="fixed inset-0 z-50 bg-[var(--ink)]/50 backdrop-blur-sm"
+            className="fixed inset-0 z-[500] bg-ink/35 backdrop-blur-[4px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
             onClick={close}
           />
 
           {/* Panel */}
           <motion.div
-            className="fixed z-50 left-1/2 top-[20%] w-full max-w-lg -translate-x-1/2 bg-[var(--paper)] border border-[var(--border)] rounded-2xl shadow-2xl overflow-hidden"
-            initial={{ opacity: 0, scale: 0.94, y: -12 }}
+            className="fixed z-[501] left-1/2 top-[18%] w-full max-w-[560px] -translate-x-1/2 px-4"
+            initial={{ opacity: 0, scale: 0.95, y: -10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.94, y: -12 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            exit={{ opacity: 0, scale: 0.96, y: -8 }}
+            transition={{ type: 'spring', stiffness: 440, damping: 34 }}
           >
-            {/* Search input */}
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)]">
-              <Search size={16} className="text-[var(--dim)] shrink-0" />
-              <input
-                ref={inputRef}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search pages, actions…"
-                className="flex-1 bg-transparent text-[var(--ink)] placeholder:text-[var(--dim)] text-sm outline-none"
-              />
-              <kbd className="text-[10px] text-[var(--dim)] bg-[var(--surface)] border border-[var(--border)] rounded px-1.5 py-0.5 font-mono">
-                ESC
-              </kbd>
-            </div>
+            <div className="rounded-2xl border border-border bg-surface-raised overflow-hidden shadow-[0_24px_64px_rgba(22,20,15,0.18),0_8px_24px_rgba(22,20,15,0.10)]">
 
-            {/* Results */}
-            <div className="max-h-80 overflow-y-auto py-2">
-              {flat.length === 0 && (
-                <p className="text-center text-sm text-[var(--dim)] py-8">No results found.</p>
-              )}
+              {/* Search row */}
+              <div className="relative flex items-center border-b border-border">
+                <Search size={15} className="absolute left-5 text-dim shrink-0 pointer-events-none" />
+                <input
+                  ref={inputRef}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search pages, actions, agents…"
+                  className={cn(
+                    'w-full pl-11 pr-5 py-4 bg-transparent',
+                    'text-[15px] text-ink placeholder:text-dim/60 font-sans',
+                    'outline-none border-0'
+                  )}
+                />
+              </div>
 
-              {Object.entries(grouped).map(([section, items]) => (
-                <div key={section}>
-                  <p className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--dim)]">
-                    {section}
+              {/* Results */}
+              <div ref={listRef} className="max-h-[380px] overflow-y-auto py-2">
+                {flat.length === 0 && (
+                  <p className="text-center text-[13px] text-dim py-10">
+                    No results for &ldquo;{query}&rdquo;
                   </p>
-                  {items.map((item) => {
-                    const globalIdx = flat.indexOf(item)
-                    const Icon = item.icon
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => navigate(item)}
-                        onMouseEnter={() => setActiveIdx(globalIdx)}
-                        className={cn(
-                          'w-full flex items-center gap-3 px-4 py-2 text-sm text-left transition-colors cursor-pointer',
-                          globalIdx === activeIdx
-                            ? 'bg-[var(--surface)] text-[var(--ink)]'
-                            : 'text-[var(--dim)] hover:bg-[var(--surface)] hover:text-[var(--ink)]'
-                        )}
-                      >
-                        <Icon size={15} className="shrink-0" />
-                        <span className="flex-1">{item.label}</span>
-                        {globalIdx === activeIdx && (
-                          <ArrowRight size={13} className="text-[var(--ember)]" />
-                        )}
-                        {item.hint && globalIdx !== activeIdx && (
-                          <kbd className="text-[10px] bg-[var(--surface)] border border-[var(--border)] rounded px-1 py-0.5 font-mono">
-                            {item.hint}
-                          </kbd>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              ))}
+                )}
+
+                {Object.entries(grouped).map(([section, items]) => (
+                  <div key={section}>
+                    <p className="px-5 pt-3 pb-1 text-[10px] font-bold uppercase tracking-[0.09em] text-dim/80 font-sans">
+                      {section}
+                    </p>
+                    {items.map((item) => {
+                      const globalIdx = flat.indexOf(item)
+                      const Icon = item.icon
+                      const isActive = globalIdx === activeIdx
+                      return (
+                        <button
+                          key={item.id}
+                          data-active={isActive}
+                          onClick={() => navigate(item)}
+                          onMouseEnter={() => setActiveIdx(globalIdx)}
+                          className={cn(
+                            'w-full flex items-center gap-3 mx-2 px-3 py-2.5 text-[13px] text-left rounded-lg transition-colors cursor-pointer',
+                            'w-[calc(100%-16px)]',
+                            isActive
+                              ? 'bg-ember/10 text-ember'
+                              : 'text-ink hover:bg-surface'
+                          )}
+                        >
+                          <Icon
+                            size={14}
+                            className={cn('shrink-0', isActive ? 'text-ember' : 'text-dim')}
+                          />
+                          <span className="flex-1 font-medium">{item.label}</span>
+                          {isActive && (
+                            <CornerDownLeft size={12} className="text-ember shrink-0 opacity-70" />
+                          )}
+                          {!isActive && (
+                            <kbd className="hidden sm:inline-flex items-center text-[10px] bg-surface border border-border rounded px-1.5 py-0.5 font-mono text-dim leading-none">
+                              ↵
+                            </kbd>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+
+              {/* Footer hint */}
+              <div className="px-5 py-2 border-t border-border bg-surface/40 flex items-center gap-5 text-[11px] text-dim font-sans">
+                <span className="flex items-center gap-1.5">
+                  <kbd className="font-mono bg-surface border border-border rounded px-1 py-0.5 text-[10px]">↑</kbd>
+                  <kbd className="font-mono bg-surface border border-border rounded px-1 py-0.5 text-[10px]">↓</kbd>
+                  navigate
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <kbd className="font-mono bg-surface border border-border rounded px-1 py-0.5 text-[10px]">↵</kbd>
+                  open
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <kbd className="font-mono bg-surface border border-border rounded px-1 py-0.5 text-[10px]">esc</kbd>
+                  close
+                </span>
+              </div>
             </div>
           </motion.div>
         </>

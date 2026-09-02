@@ -5,28 +5,56 @@ import { Slot } from '@radix-ui/react-slot'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
-import { tokens } from '@/design-system/tokens'
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 font-sans font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer select-none',
+  [
+    'inline-flex items-center justify-center gap-2',
+    'font-sans font-semibold tracking-[-0.01em]',
+    'transition-all duration-150 ease-out',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember/40 focus-visible:ring-offset-2 focus-visible:ring-offset-paper',
+    'disabled:pointer-events-none disabled:opacity-40',
+    'cursor-pointer select-none',
+    'whitespace-nowrap',
+  ].join(' '),
   {
     variants: {
       variant: {
-        default: 'bg-ember text-paper hover:bg-ember-light active:bg-ember-dark',
-        outline: 'border border-border bg-transparent text-ink hover:bg-surface hover:border-border-strong',
-        ghost: 'text-ink hover:bg-surface',
-        danger: 'bg-danger text-white hover:bg-red-700 active:bg-red-800',
-        success: 'bg-success text-white hover:bg-green-700 active:bg-green-800',
+        /* Primary: ember fill, warm shadow */
+        primary:
+          'bg-ember text-paper shadow-[0_1px_2px_rgba(194,65,12,0.25),0_1px_1px_rgba(0,0,0,0.06)] ' +
+          'hover:bg-ember-light hover:shadow-[0_2px_8px_rgba(194,65,12,0.32)] ' +
+          'active:bg-ember-dark active:shadow-none',
+        /* Secondary: white card, ink text */
+        secondary:
+          'bg-surface-raised text-ink border border-border shadow-[0_1px_2px_rgba(22,20,15,0.05)] ' +
+          'hover:border-border-strong hover:shadow-[0_2px_8px_rgba(22,20,15,0.08)] ' +
+          'active:bg-surface',
+        /* Ghost: transparent, minimal */
+        ghost:
+          'bg-transparent text-dim hover:text-ink hover:bg-surface active:bg-border/60',
+        /* Outline: bordered, no fill */
+        outline:
+          'bg-transparent text-ink border border-border ' +
+          'hover:bg-surface hover:border-border-strong ' +
+          'shadow-[0_1px_2px_rgba(22,20,15,0.04)]',
+        /* Danger: red fill */
+        danger:
+          'bg-danger text-paper shadow-sm ' +
+          'hover:bg-[#b91c1c] active:bg-[#991b1b]',
+        /* Success: green fill */
+        success:
+          'bg-success text-paper shadow-sm ' +
+          'hover:bg-[#15803d] active:bg-[#166534]',
       },
       size: {
-        sm: 'h-8 px-3 text-sm rounded-md',
-        md: 'h-10 px-4 text-sm rounded-md',
-        lg: 'h-12 px-6 text-base rounded-lg',
-        icon: 'h-10 w-10 rounded-md',
+        sm:   'h-7 px-2.5 text-[12px] rounded-md',
+        md:   'h-9 px-4 text-[13px] rounded-md',
+        lg:   'h-11 px-6 text-[14px] rounded-lg',
+        icon: 'h-9 w-9 rounded-md p-0',
       },
     },
     defaultVariants: {
-      variant: 'default',
+      variant: 'primary',
       size: 'md',
     },
   }
@@ -39,15 +67,15 @@ export interface ButtonProps
   loading?: boolean
 }
 
-function Spinner({ size }: { size: 'sm' | 'md' | 'lg' | 'icon' | null | undefined }) {
-  const dim = size === 'sm' ? 14 : size === 'lg' ? 18 : 16
+function InlineSpinner({ sizeName }: { sizeName: 'sm' | 'md' | 'lg' | 'icon' | null | undefined }) {
+  const dim = sizeName === 'sm' ? 13 : sizeName === 'lg' ? 18 : 15
   return (
     <svg
       width={dim}
       height={dim}
       viewBox="0 0 24 24"
       fill="none"
-      className="animate-spin"
+      className="animate-[spin_0.7s_linear_infinite]"
       aria-hidden="true"
     >
       <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
@@ -75,10 +103,7 @@ export function Button({
 }: ButtonProps) {
   if (asChild) {
     return (
-      <Slot
-        className={cn(buttonVariants({ variant, size, className }))}
-        {...props}
-      >
+      <Slot className={cn(buttonVariants({ variant, size, className }))} {...props}>
         {children}
       </Slot>
     )
@@ -86,18 +111,14 @@ export function Button({
 
   return (
     <MotionButton
-      whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.98 }}
-      transition={{
-        type: 'tween',
-        ease: tokens.animation.easing.spring,
-        duration: tokens.animation.duration.fast / 1000,
-      }}
+      whileTap={{ scale: 0.975 }}
+      transition={{ type: 'tween', duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
       className={cn(buttonVariants({ variant, size, className }))}
       disabled={disabled || loading}
+      aria-busy={loading}
       {...(props as React.ComponentPropsWithoutRef<typeof MotionButton>)}
     >
-      {loading && <Spinner size={size} />}
+      {loading && <InlineSpinner sizeName={size} />}
       {children}
     </MotionButton>
   )

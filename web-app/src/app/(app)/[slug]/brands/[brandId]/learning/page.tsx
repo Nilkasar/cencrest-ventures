@@ -19,6 +19,7 @@ import { Progress } from '@/components/ui/progress'
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
+import { PageHeader } from '@/components/layout/page-header'
 import { cn, relativeTime } from '@/lib/utils'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -110,24 +111,24 @@ const CATEGORIES = [
     description: 'Set up your brand profile and run your first visibility scan.',
     articleCount: 8,
     Icon: Rocket,
-    color: 'bg-[var(--ember)]/10',
-    iconColor: 'text-[var(--ember)]',
+    color: 'bg-ember/10',
+    iconColor: 'text-ember',
   },
   {
     name: 'GEO Optimization',
     description: 'Improve how AI models describe and recommend your brand.',
     articleCount: 12,
     Icon: Globe,
-    color: 'bg-[var(--info)]/10',
-    iconColor: 'text-[var(--info)]',
+    color: 'bg-info/10',
+    iconColor: 'text-info',
   },
   {
     name: 'SEO Integration',
     description: 'Connect traditional search signals with AI recommendation data.',
     articleCount: 9,
     Icon: Search,
-    color: 'bg-[var(--success)]/10',
-    iconColor: 'text-[var(--success)]',
+    color: 'bg-success/10',
+    iconColor: 'text-success',
   },
   {
     name: 'Content Strategy',
@@ -147,7 +148,7 @@ function SignalItem({ signal, index }: { signal: Signal; index: number }) {
       initial={{ opacity: 0, x: -12 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ ...SPRING, delay: index * 0.04 }}
-      className="flex items-start gap-3 py-3"
+      className="flex items-start gap-3 py-4"
     >
       <Badge variant={signalTypeVariant(signal.signal_type)} size="sm" className="shrink-0 mt-0.5">
         {signalTypeLabel(signal.signal_type)}
@@ -192,7 +193,7 @@ function InsightCard({
       animate={{ opacity: insight.actioned ? 0.4 : 1, y: 0 }}
       transition={{ ...SPRING, delay: index * 0.05 }}
       className={cn(
-        'relative rounded-xl border bg-paper p-5 overflow-hidden transition-opacity',
+        'relative rounded-xl border bg-surface-raised p-6 overflow-hidden transition-opacity',
         insight.actioned ? 'border-border' : 'border-border hover:border-ember/30',
       )}
     >
@@ -234,13 +235,13 @@ function InsightCard({
       </div>
 
       <p className={cn(
-        'text-sm text-ink leading-relaxed mb-4',
+        'text-sm text-ink leading-relaxed mb-6',
         insight.actioned && 'line-through text-dim',
       )}>
         {insight.text}
       </p>
 
-      <div className="mb-4">
+      <div className="mb-6">
         <div className="flex items-center justify-between text-[10px] text-dim mb-1">
           <span>Confidence</span>
           <span className="font-mono">{Math.round(insight.confidence * 100)}%</span>
@@ -305,7 +306,7 @@ function RecordSignalForm({
           transition={{ duration: 0.28, ease: EASE }}
           className="overflow-hidden"
         >
-          <div className="border border-ember/30 rounded-xl bg-ember/5 p-4 mb-4 space-y-3">
+          <div className="border border-ember/30 rounded-xl bg-ember/5 p-5 mb-4 space-y-3">
             <p className="text-xs font-semibold text-ember uppercase tracking-wide">Record Signal</p>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-ink">Type</label>
@@ -448,18 +449,12 @@ export default function LearningPage() {
   return (
     <div className="max-w-7xl mx-auto">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={SPRING}
-        className="mb-8"
-      >
-        <h1 className="font-display text-3xl font-semibold text-[var(--ink)]">Learning Center</h1>
-        <p className="text-sm text-[var(--dim)] mt-1">Master AI recommendation optimization</p>
-      </motion.div>
+      <div className="mb-8">
+        <PageHeader title="Learning Center" subtitle="Master AI recommendation optimization" />
+      </div>
 
       {/* Featured card */}
-      <div className="bg-[var(--ink)] rounded-2xl p-8 mb-8">
+      <div className="bg-ink rounded-2xl p-8 mb-8">
         <h2 className="font-display text-2xl text-[var(--paper)]">
           How AI Models Choose What to Recommend
         </h2>
@@ -468,29 +463,29 @@ export default function LearningPage() {
           determine which brands appear in AI-generated recommendations.
         </p>
         <Button
-          className="mt-6 bg-[var(--ember)] text-white hover:bg-[var(--ember)]/90"
+          className="mt-6 bg-ember text-white hover:bg-ember/90"
         >
           Read Guide →
         </Button>
       </div>
 
       {/* Category grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-10">
         {CATEGORIES.map((cat) => (
           <div
             key={cat.name}
-            className="rounded-xl border border-[var(--border)] bg-white/70 p-5 flex gap-4"
+            className="rounded-xl border border-border bg-surface-raised p-6 flex gap-4"
           >
-            <div className={cn('w-10 h-10 rounded-full flex items-center justify-center shrink-0', cat.color)}>
+            <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0', cat.color)}>
               <cat.Icon className={cn('h-5 w-5', cat.iconColor)} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-display text-lg text-[var(--ink)]">{cat.name}</p>
-              <p className="text-sm text-[var(--dim)] mt-1">{cat.description}</p>
-              <p className="text-xs text-[var(--dim)] mt-2">{cat.articleCount} articles</p>
+              <p className="font-display text-lg text-ink">{cat.name}</p>
+              <p className="text-sm text-dim mt-1">{cat.description}</p>
+              <p className="text-xs text-dim mt-2">{cat.articleCount} articles</p>
               <a
                 href="#"
-                className="text-[var(--ember)] text-sm font-medium mt-2 inline-block hover:underline"
+                className="text-ember text-sm font-medium mt-2 inline-block hover:underline"
               >
                 Explore →
               </a>
@@ -500,7 +495,7 @@ export default function LearningPage() {
       </div>
 
       {/* Two-panel layout: Signals + Insights */}
-      <div className="flex gap-5 items-start">
+      <div className="flex gap-6 items-start">
 
         {/* Left panel — Signals (35%) */}
         <div className="w-[35%] shrink-0">
@@ -508,9 +503,9 @@ export default function LearningPage() {
             initial={{ opacity: 0, x: -16 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ ...SPRING, delay: 0.08 }}
-            className="rounded-xl border border-border bg-paper overflow-hidden"
+            className="rounded-xl border border-border bg-surface-raised overflow-hidden"
           >
-            <div className="px-4 py-3.5 border-b border-border flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Radio className="h-4 w-4 text-ember" />
                 <span className="text-sm font-semibold text-ink">Signals</span>
@@ -527,7 +522,7 @@ export default function LearningPage() {
               </Button>
             </div>
 
-            <div className="p-4">
+            <div className="p-6">
               <RecordSignalForm
                 open={showRecord}
                 onClose={() => setShowRecord(false)}
@@ -592,7 +587,7 @@ export default function LearningPage() {
             transition={{ ...SPRING, delay: 0.12 }}
             className="rounded-xl border border-border bg-paper overflow-hidden relative"
           >
-            <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Lightbulb className="h-4 w-4 text-ember" />
                 <span className="text-sm font-semibold text-ink">Insights</span>
@@ -634,7 +629,7 @@ export default function LearningPage() {
               )}
             </AnimatePresence>
 
-            <div className="p-5">
+            <div className="p-6">
               {insightsLoading ? (
                 <div className="space-y-4">
                   {[0, 1, 2].map((i) => <SkeletonCard key={i} />)}
@@ -650,7 +645,7 @@ export default function LearningPage() {
                   }
                 />
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <AnimatePresence mode="popLayout">
                     {filteredInsights.map((ins, i) => (
                       <InsightCard

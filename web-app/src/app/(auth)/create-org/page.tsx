@@ -10,13 +10,13 @@ import { Building2, TriangleAlert } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
+import { SPRING_CURVE } from '@/lib/motion'
 
 const schema = z.object({
   name: z.string().min(2, 'Organization name must be at least 2 characters').max(100),
 })
 type FormData = z.infer<typeof schema>
 
-const SPRING = [0.16, 1, 0.3, 1] as const
 
 export default function CreateOrgPage() {
   const router = useRouter()
@@ -43,16 +43,16 @@ export default function CreateOrgPage() {
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: SPRING }}
+        transition={{ duration: 0.4, ease: SPRING_CURVE }}
         className="mb-8"
       >
         <div className="w-11 h-11 rounded-xl bg-ember/10 flex items-center justify-center mb-5">
           <Building2 size={20} className="text-ember" />
         </div>
-        <h1 className="font-display font-semibold text-[var(--ink)] text-[28px] leading-tight tracking-[-0.02em]">
+        <h1 className="font-display font-semibold text-ink text-[32px] leading-tight tracking-tight">
           Create your organization
         </h1>
-        <p className="font-sans text-sm text-[var(--dim)] mt-1.5">
+        <p className="font-sans text-[15px] text-dim mt-2.5">
           Set up your workspace to start measuring AI visibility.
         </p>
       </motion.div>
@@ -61,7 +61,7 @@ export default function CreateOrgPage() {
         <motion.div
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-5 flex items-start gap-2.5 rounded-lg border-l-4 border-danger bg-danger/8 px-3.5 py-3"
+          className="mb-5 flex items-start gap-2.5 rounded-lg border-l-[3px] border-danger bg-danger/[0.06] px-4 py-3.5"
         >
           <TriangleAlert size={14} className="text-danger shrink-0 mt-0.5" />
           <span className="font-sans text-[13px] text-danger leading-snug">{error}</span>
@@ -72,33 +72,26 @@ export default function CreateOrgPage() {
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: 0.08, ease: SPRING }}
+          transition={{ duration: 0.35, delay: 0.08, ease: SPRING_CURVE }}
         >
-          <label
-            htmlFor="name"
-            className="block font-sans text-[13px] font-medium text-[var(--ink)] mb-1.5"
-          >
-            Organization name
-          </label>
           <Input
+            label="Organization name"
             id="name"
             {...register('name')}
             placeholder="Acme Inc."
             autoFocus
             disabled={isSubmitting}
             error={errors.name?.message}
+            hint="This is what appears in your workspace URL and reports"
             className="w-full"
           />
-          <p className="font-sans text-[12px] text-[var(--dim)] mt-1.5">
-            This will be your workspace name visible to all members.
-          </p>
         </motion.div>
 
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: 0.14, ease: SPRING }}
-          className="mt-7"
+          transition={{ duration: 0.35, delay: 0.14, ease: SPRING_CURVE }}
+          className="mt-8"
         >
           <Button
             type="submit"

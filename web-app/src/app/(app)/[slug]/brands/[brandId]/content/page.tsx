@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FileText, Plus, RefreshCw, CheckCircle, AlertTriangle,
-  Lightbulb, ExternalLink, FileJson, FileSpreadsheet, Clock,
+  Lightbulb, ExternalLink, FileJson, FileSpreadsheet,
   Search, SlidersHorizontal,
 } from 'lucide-react'
 import { api, routes } from '@/lib/api'
@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
+import { PageHeader } from '@/components/layout/page-header'
 import { cn, scoreColor, relativeTime } from '@/lib/utils'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -119,9 +120,9 @@ function geoScoreProgressVariant(score: number): 'success' | 'warning' | 'danger
 }
 
 function geoScoreTextColor(score: number) {
-  if (score >= 70) return 'text-[var(--success)]'
-  if (score >= 40) return 'text-[var(--warning)]'
-  return 'text-[var(--danger)]'
+  if (score >= 70) return 'text-success'
+  if (score >= 40) return 'text-warning'
+  return 'text-danger'
 }
 
 function severityVariant(s: Gap['severity']): 'danger' | 'warning' | 'info' | 'outline' {
@@ -136,9 +137,9 @@ function effortVariant(e: Improvement['effort']): 'success' | 'warning' | 'dange
 
 function priorityHeaderClass(p: Improvement['priority']) {
   const map = {
-    critical: 'text-[var(--danger)] border-[color:var(--danger)]/20 bg-red-50',
-    high: 'text-[var(--warning)] border-[color:var(--warning)]/20 bg-amber-50',
-    medium: 'text-[var(--info)] border-[color:var(--info)]/20 bg-blue-50',
+    critical: 'text-danger border-[color:var(--danger)]/20 bg-red-50',
+    high: 'text-warning border-[color:var(--warning)]/20 bg-amber-50',
+    medium: 'text-info border-[color:var(--info)]/20 bg-blue-50',
   }
   return map[p]
 }
@@ -155,7 +156,7 @@ function ContentCard({ piece, onSelect, index }: { piece: ContentPiece; onSelect
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: SPRING, delay: index * 0.05 }}
-      className="rounded-2xl border border-[var(--border)] bg-white/70 p-5 hover:shadow-md transition-shadow cursor-pointer flex flex-col"
+      className="rounded-2xl border border-border bg-surface-raised p-5 hover:shadow-[0_4px_16px_rgba(22,20,15,0.08),0_2px_4px_rgba(22,20,15,0.04)] hover:border-border-strong transition-all duration-200 cursor-pointer flex flex-col"
       onClick={onSelect}
     >
       {/* Type badge */}
@@ -169,14 +170,14 @@ function ContentCard({ piece, onSelect, index }: { piece: ContentPiece; onSelect
       })()}
 
       {/* Title */}
-      <h3 className="font-display text-lg text-[var(--ink)] mt-2 leading-snug line-clamp-2">
+      <h3 className="font-display text-lg text-ink mt-2 leading-snug line-clamp-2">
         {piece.title}
       </h3>
 
       {/* GEO Score bar */}
       <div className="mt-3 mb-4">
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[11px] font-medium text-[var(--dim)] uppercase tracking-wide">GEO Score</span>
+          <span className="text-[11px] font-medium text-dim uppercase tracking-wider">GEO Score</span>
           <span className={cn('text-sm font-display font-semibold', textColor)}>{geoScore}/100</span>
         </div>
         <Progress value={geoScore} variant={progressVariant} className="h-1.5" />
@@ -186,7 +187,7 @@ function ContentCard({ piece, onSelect, index }: { piece: ContentPiece; onSelect
       <div className="flex items-center gap-2 flex-wrap mt-auto">
         <Badge variant={statusVariant(piece.status)} size="sm">{statusLabel(piece.status)}</Badge>
         {piece.keywords_count != null && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[var(--surface)] border border-[var(--border)] text-[11px] font-mono text-[var(--dim)]">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-surface border border-border text-[11px] font-mono text-dim">
             {piece.keywords_count} kw
           </span>
         )}
@@ -214,9 +215,9 @@ interface Filters {
 function FilterBar({ filters, onChange }: { filters: Filters; onChange: (f: Filters) => void }) {
   return (
     <div className="flex items-center gap-3 flex-wrap">
-      <div className="flex items-center gap-1.5 text-[var(--dim)]">
+      <div className="flex items-center gap-1.5 text-dim">
         <SlidersHorizontal className="h-3.5 w-3.5" />
-        <span className="text-xs font-medium uppercase tracking-wide">Filter</span>
+        <span className="text-[11px] font-medium uppercase tracking-wider">Filter</span>
       </div>
       <Select value={filters.type || 'all'} onValueChange={(v) => onChange({ ...filters, type: v === 'all' ? '' : v })}>
         <SelectTrigger className="h-8 text-xs w-36">
@@ -263,7 +264,7 @@ function PieceModal({ piece, open, onClose }: { piece: ContentPiece | null; open
             <div className="flex-1 min-w-0">
               <ModalTitle className="line-clamp-2">{piece.title}</ModalTitle>
               <a href={piece.url} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-[var(--dim)] hover:text-[var(--ember)] transition-colors mt-1 font-mono">
+                className="inline-flex items-center gap-1 text-xs text-dim hover:text-ember transition-colors mt-1 font-mono">
                 {piece.url.length > 60 ? piece.url.slice(0, 60) + '…' : piece.url}
                 <ExternalLink className="h-3 w-3" />
               </a>
@@ -277,12 +278,12 @@ function PieceModal({ piece, open, onClose }: { piece: ContentPiece | null; open
               if (cls) return <span className={cls}>{badge.label}</span>
               return <Badge variant={badge.variant} size="sm">{badge.label}</Badge>
             })()}
-            <span className="text-xs text-[var(--dim)] font-mono">{piece.word_count.toLocaleString()} words</span>
-            <span className="text-xs text-[var(--dim)]">· {relativeTime(piece.last_modified)}</span>
+            <span className="text-xs text-dim font-mono">{piece.word_count.toLocaleString()} words</span>
+            <span className="text-xs text-dim">· {relativeTime(piece.last_modified)}</span>
           </div>
           <div className="mt-3">
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-medium text-[var(--dim)] uppercase tracking-wide">GEO Score</span>
+              <span className="text-[11px] font-medium text-dim uppercase tracking-wider">GEO Score</span>
               <span className={cn('text-sm font-display font-semibold', textColor)}>{geoScore}/100</span>
             </div>
             <Progress value={geoScore} variant={progressVariant} />
@@ -291,11 +292,11 @@ function PieceModal({ piece, open, onClose }: { piece: ContentPiece | null; open
         <ModalBody className="space-y-5">
           {piece.strengths.length > 0 && (
             <div>
-              <p className="text-xs font-semibold text-[var(--dim)] uppercase tracking-wide mb-2">Strengths</p>
+              <p className="text-[11px] font-semibold text-dim uppercase tracking-wider mb-2">Strengths</p>
               <ul className="space-y-1.5">
                 {piece.strengths.map((s, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-[var(--ink)]">
-                    <CheckCircle className="h-4 w-4 text-[var(--success)] shrink-0 mt-0.5" />{s}
+                  <li key={i} className="flex items-start gap-2 text-sm text-ink">
+                    <CheckCircle className="h-4 w-4 text-success shrink-0 mt-0.5" />{s}
                   </li>
                 ))}
               </ul>
@@ -303,11 +304,11 @@ function PieceModal({ piece, open, onClose }: { piece: ContentPiece | null; open
           )}
           {piece.weaknesses.length > 0 && (
             <div>
-              <p className="text-xs font-semibold text-[var(--dim)] uppercase tracking-wide mb-2">Weaknesses</p>
+              <p className="text-[11px] font-semibold text-dim uppercase tracking-wider mb-2">Weaknesses</p>
               <ul className="space-y-1.5">
                 {piece.weaknesses.map((w, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-[var(--ink)]">
-                    <AlertTriangle className="h-4 w-4 text-[var(--warning)] shrink-0 mt-0.5" />{w}
+                  <li key={i} className="flex items-start gap-2 text-sm text-ink">
+                    <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />{w}
                   </li>
                 ))}
               </ul>
@@ -315,11 +316,11 @@ function PieceModal({ piece, open, onClose }: { piece: ContentPiece | null; open
           )}
           {piece.recommendations.length > 0 && (
             <div>
-              <p className="text-xs font-semibold text-[var(--dim)] uppercase tracking-wide mb-2">Recommendations</p>
+              <p className="text-[11px] font-semibold text-dim uppercase tracking-wider mb-2">Recommendations</p>
               <ul className="space-y-1.5">
                 {piece.recommendations.map((r, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-[var(--ink)]">
-                    <Lightbulb className="h-4 w-4 text-[var(--ember)] shrink-0 mt-0.5" />{r}
+                  <li key={i} className="flex items-start gap-2 text-sm text-ink">
+                    <Lightbulb className="h-4 w-4 text-ember shrink-0 mt-0.5" />{r}
                   </li>
                 ))}
               </ul>
@@ -358,18 +359,18 @@ function ContentGrid({ pieces, onSelect }: { pieces: ContentPiece[]; onSelect: (
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <FilterBar filters={filters} onChange={setFilters} />
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
-          <Search className="h-8 w-8 text-[var(--dim)]" />
-          <p className="text-sm text-[var(--dim)]">No content matches these filters.</p>
-          <button onClick={() => setFilters({ type: '', status: '', sort: 'modified' })} className="text-xs text-[var(--ember)] hover:underline">
+          <Search className="h-8 w-8 text-dim" />
+          <p className="text-sm text-dim">No content matches these filters.</p>
+          <button onClick={() => setFilters({ type: '', status: '', sort: 'modified' })} className="text-xs text-ember hover:underline">
             Clear filters
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
           <AnimatePresence mode="popLayout">
             {filtered.map((piece, i) => (
               <ContentCard key={piece.id} piece={piece} onSelect={() => onSelect(piece)} index={i} />
@@ -404,7 +405,7 @@ function GapsTab({ gaps }: { gaps: Gap[] }) {
           transition={{ duration: 0.3, ease: SPRING, delay: i * 0.06 }}
         >
           <Card className="overflow-hidden">
-            <CardContent className="p-4">
+            <CardContent className="p-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1.5">
@@ -413,11 +414,11 @@ function GapsTab({ gaps }: { gaps: Gap[] }) {
                     </Badge>
                     <Badge variant="outline" size="sm">{gap.gap_type.replace(/_/g, ' ')}</Badge>
                   </div>
-                  <p className="text-sm text-[var(--ink)] leading-relaxed">{gap.description}</p>
+                  <p className="text-sm text-ink leading-relaxed">{gap.description}</p>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="text-xs text-[var(--dim)] mb-0.5">Est. Impact</p>
-                  <p className={cn('text-lg font-display font-semibold', gap.estimated_impact >= 20 ? 'text-[var(--success)]' : 'text-[var(--warning)]')}>
+                  <p className="text-[11px] text-dim mb-0.5 uppercase tracking-wider">Est. Impact</p>
+                  <p className={cn('text-lg font-display font-semibold', gap.estimated_impact >= 20 ? 'text-success' : 'text-warning')}>
                     +{gap.estimated_impact}%
                   </p>
                 </div>
@@ -465,15 +466,15 @@ function ImprovementsTab({ improvements }: { improvements: Improvement[] }) {
                   transition={{ duration: 0.25, ease: SPRING, delay: i * 0.05 }}
                 >
                   <Card>
-                    <CardContent className="p-4 flex items-center gap-4">
+                    <CardContent className="p-5 flex items-center gap-4">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-[var(--ink)]">{imp.title}</p>
+                        <p className="text-sm font-medium text-ink">{imp.title}</p>
                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                          <span className="text-xs text-[var(--dim)]">Effort:</span>
+                          <span className="text-[11px] text-dim uppercase tracking-wider">Effort:</span>
                           <Badge variant={effortVariant(imp.effort)} size="sm">
                             {imp.effort.charAt(0).toUpperCase() + imp.effort.slice(1)}
                           </Badge>
-                          <span className="text-xs text-[var(--dim)] ml-1">
+                          <span className="text-[11px] text-dim ml-1 uppercase tracking-wider">
                             Impact: <span className={cn('font-semibold', scoreColor(imp.impact_score))}>{imp.impact_score}</span>
                           </span>
                         </div>
@@ -500,7 +501,7 @@ function ExportTab({ slug, brandId }: { slug: string; brandId: string }) {
 
   return (
     <div className="flex flex-col items-center justify-center py-20 gap-6">
-      <p className="text-sm text-[var(--dim)] font-sans text-center max-w-xs leading-relaxed">
+      <p className="text-sm text-dim font-sans text-center max-w-xs leading-relaxed">
         Export your full content analysis for offline review or client reporting.
       </p>
       <div className="flex items-center gap-4">
@@ -515,12 +516,12 @@ function ExportTab({ slug, brandId }: { slug: string; brandId: string }) {
             whileHover={{ scale: 1.03, y: -2 }}
             whileTap={{ scale: 0.97 }}
             onClick={() => downloadAs(format)}
-            className="flex flex-col items-center gap-3 p-8 rounded-xl border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--paper)] hover:border-[var(--ember)]/40 hover:shadow-md transition-all cursor-pointer group"
+            className="flex flex-col items-center gap-3 p-8 rounded-xl border border-border bg-surface hover:bg-paper hover:border-[var(--ember)]/40 hover:shadow-md transition-all cursor-pointer group"
           >
-            <Icon className="h-10 w-10 text-[var(--dim)] group-hover:text-[var(--ember)] transition-colors" />
+            <Icon className="h-10 w-10 text-dim group-hover:text-ember transition-colors" />
             <div className="text-center">
-              <p className="font-semibold text-[var(--ink)] text-sm">{label}</p>
-              <p className="text-xs text-[var(--dim)] mt-0.5">{sub}</p>
+              <p className="font-semibold text-ink text-sm">{label}</p>
+              <p className="text-[11px] text-dim mt-0.5 uppercase tracking-wider">{sub}</p>
             </div>
           </motion.button>
         ))}
@@ -566,12 +567,12 @@ export default function ContentPage() {
 
   if (isLoading) {
     return (
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="h-10 w-72 rounded-lg bg-[var(--surface)] animate-pulse" />
-        <div className="grid grid-cols-3 gap-4">
+      <div className="max-w-7xl mx-auto space-y-8">
+        <div className="h-10 w-72 rounded-lg bg-surface animate-pulse" />
+        <div className="grid grid-cols-3 gap-5">
           {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
           {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
       </div>
@@ -582,41 +583,31 @@ export default function ContentPage() {
     <>
       <PieceModal piece={selectedPiece} open={!!selectedPiece} onClose={() => setSelectedPiece(null)} />
 
-      <div className="max-w-7xl mx-auto space-y-6">
+      <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, ease: SPRING }}
-          className="flex items-start justify-between gap-4"
-        >
-          <div>
-            <h1 className="font-display text-3xl font-semibold text-[var(--ink)]">Content Intelligence</h1>
-            {summary?.last_analyzed && (
-              <p className="text-sm text-[var(--dim)] mt-1 flex items-center gap-1.5">
-                <Clock className="h-3.5 w-3.5" />
-                Last analyzed {relativeTime(summary.last_analyzed)}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => analyzeMutation.mutate()} loading={analyzeMutation.isPending}>
-              <RefreshCw className="h-4 w-4" />
-              Analyze
-            </Button>
-            <Button>
-              <Plus className="h-4 w-4" />
-              Add Content
-            </Button>
-          </div>
-        </motion.div>
+        <PageHeader
+          title="Content Intelligence"
+          subtitle={summary?.last_analyzed ? `Last analyzed ${relativeTime(summary.last_analyzed)}` : undefined}
+          actions={
+            <>
+              <Button variant="outline" onClick={() => analyzeMutation.mutate()} loading={analyzeMutation.isPending}>
+                <RefreshCw className="h-4 w-4" />
+                Analyze
+              </Button>
+              <Button>
+                <Plus className="h-4 w-4" />
+                Add Content
+              </Button>
+            </>
+          }
+        />
 
         {/* Stats row — 3 cards */}
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, ease: SPRING, delay: 0.05 }}
-          className="grid grid-cols-3 gap-4"
+          className="grid grid-cols-3 gap-5"
         >
           <StatCard label="Total Pieces" value={summary?.pieces_analyzed ?? pieces.length} />
           <StatCard label="Published" value={published} />
@@ -633,15 +624,15 @@ export default function ContentPage() {
             <TabsList>
               <TabsTrigger value="content">
                 Content
-                {pieces.length > 0 && <span className="ml-1.5 text-xs text-[var(--dim)] font-mono">({pieces.length})</span>}
+                {pieces.length > 0 && <span className="ml-1.5 text-xs text-dim font-mono">({pieces.length})</span>}
               </TabsTrigger>
               <TabsTrigger value="gaps">
                 Gaps
-                {gaps.length > 0 && <span className="ml-1.5 text-xs text-[var(--dim)] font-mono">({gaps.length})</span>}
+                {gaps.length > 0 && <span className="ml-1.5 text-xs text-dim font-mono">({gaps.length})</span>}
               </TabsTrigger>
               <TabsTrigger value="improvements">
                 Improvements
-                {improvements.length > 0 && <span className="ml-1.5 text-xs text-[var(--dim)] font-mono">({improvements.length})</span>}
+                {improvements.length > 0 && <span className="ml-1.5 text-xs text-dim font-mono">({improvements.length})</span>}
               </TabsTrigger>
               <TabsTrigger value="export">Export</TabsTrigger>
             </TabsList>

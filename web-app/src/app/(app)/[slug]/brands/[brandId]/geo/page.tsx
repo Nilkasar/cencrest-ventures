@@ -16,6 +16,7 @@ import { DataTable, type Column } from '@/components/ui/data-table'
 import { Skeleton, SkeletonCard } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/layout/page-header'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -109,10 +110,10 @@ const GAP_TYPE_CONFIG: Record<GapType, {
     label: 'No Citation',
     icon: <Link2Off className="h-5 w-5" />,
     description: 'Mentioned but no source URL linked',
-    bgClass: 'bg-[var(--surface)]',
-    textClass: 'text-[var(--slate)]',
+    bgClass: 'bg-surface',
+    textClass: 'text-slate',
     borderColor: 'border-l-[var(--slate)]',
-    iconBg: 'bg-[var(--surface)]',
+    iconBg: 'bg-surface',
   },
   ok: {
     label: 'OK',
@@ -152,7 +153,7 @@ const cardUp = {
 function SummaryStatRow({ summary, loading }: { summary?: GeoGapSummary; loading: boolean }) {
   if (loading) {
     return (
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
         {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
       </div>
     )
@@ -163,15 +164,15 @@ function SummaryStatRow({ summary, loading }: { summary?: GeoGapSummary; loading
       label: 'Total Gaps',
       value: summary?.total_gaps ?? 0,
       icon: <MessageSquareOff className="h-4 w-4 text-dim" />,
-      cardClass: 'border-[var(--border)]',
+      cardClass: 'border-border',
       valClass: 'text-ink',
     },
     {
       label: 'No Mention',
       value: summary?.no_mention ?? 0,
-      icon: <Brain className="h-4 w-4 text-[var(--danger)]" />,
-      cardClass: 'border-[var(--danger)]/40 bg-[var(--danger)]/5',
-      valClass: 'text-[var(--danger)]',
+      icon: <Brain className="h-4 w-4 text-danger" />,
+      cardClass: 'border-[var(--danger)]/40 bg-danger/5',
+      valClass: 'text-danger',
     },
     {
       label: 'Low Sentiment',
@@ -183,24 +184,24 @@ function SummaryStatRow({ summary, loading }: { summary?: GeoGapSummary; loading
     {
       label: 'Competitor Only',
       value: summary?.competitor_only ?? 0,
-      icon: <Users className="h-4 w-4 text-[var(--ember)]" />,
-      cardClass: 'border-[var(--ember)]/40 bg-[var(--ember)]/5',
-      valClass: 'text-[var(--ember)]',
+      icon: <Users className="h-4 w-4 text-ember" />,
+      cardClass: 'border-[var(--ember)]/40 bg-ember/5',
+      valClass: 'text-ember',
     },
   ]
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
       {cards.map((c) => (
         <div
           key={c.label}
-          className={cn('rounded-xl border px-5 py-4 bg-white/60', c.cardClass)}
+          className={cn('rounded-xl border px-6 py-6 bg-surface-raised', c.cardClass)}
         >
           <div className="flex items-center gap-1.5 mb-2">{c.icon}</div>
           <p className={cn('font-display text-3xl font-bold', c.valClass)}>
             {formatNumber(c.value)}
           </p>
-          <p className="text-xs text-[var(--dim)] uppercase tracking-wide mt-0.5">{c.label}</p>
+          <p className="text-[11px] text-dim uppercase tracking-wider mt-0.5">{c.label}</p>
         </div>
       ))}
     </div>
@@ -223,15 +224,15 @@ function GapTypeCards({ slug, brandId, totalGaps }: { slug: string; brandId: str
   ]
 
   const iconBgMap: Record<string, string> = {
-    no_mention: 'bg-[var(--danger)]/10',
-    competitor_only: 'bg-[var(--warning)]/10',
+    no_mention: 'bg-danger/10',
+    competitor_only: 'bg-warning/10',
     low_sentiment: 'bg-[#D97706]/10',
-    no_citation: 'bg-[var(--surface)]',
+    no_citation: 'bg-surface',
   }
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-5">
         {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
       </div>
     )
@@ -239,7 +240,7 @@ function GapTypeCards({ slug, brandId, totalGaps }: { slug: string; brandId: str
 
   return (
     <motion.div
-      className="grid grid-cols-2 gap-4 mb-6"
+      className="grid grid-cols-2 gap-5 mb-6"
       variants={staggerContainer}
       initial="hidden"
       animate="visible"
@@ -250,18 +251,18 @@ function GapTypeCards({ slug, brandId, totalGaps }: { slug: string; brandId: str
         const pct = totalGaps > 0 ? Math.round((count / totalGaps) * 100) : 0
         return (
           <motion.div key={key} variants={cardUp}>
-            <div className="rounded-xl border p-5 bg-white/60 flex gap-4">
+            <div className="rounded-xl border border-border p-6 bg-surface-raised flex gap-4">
               <div className={cn(
-                'w-10 h-10 rounded-full flex items-center justify-center shrink-0',
+                'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
                 iconBgMap[gapType],
                 cfg.textClass,
               )}>
                 {cfg.icon}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-display text-base font-semibold text-[var(--ink)]">{cfg.label}</p>
-                <p className={cn('text-2xl font-bold', cfg.textClass)}>{formatNumber(count)}</p>
-                <p className="text-xs text-[var(--dim)] mt-0.5">{cfg.description} · {pct}%</p>
+                <p className="font-display text-base font-semibold text-ink">{cfg.label}</p>
+                <p className={cn('text-3xl font-bold', cfg.textClass)}>{formatNumber(count)}</p>
+                <p className="text-[11px] uppercase tracking-wider text-dim mt-0.5">{cfg.description} · {pct}%</p>
               </div>
             </div>
           </motion.div>
@@ -308,7 +309,7 @@ function GapHeatmap({ slug, brandId }: { slug: string; brandId: string }) {
           <div className="w-48 shrink-0" />
           {PROVIDERS.map((p) => (
             <div key={p} className="flex-1 text-center">
-              <span className="text-xs font-sans font-medium text-[var(--dim)] uppercase tracking-wide">{p}</span>
+              <span className="text-[11px] font-sans font-medium text-dim uppercase tracking-wider">{p}</span>
             </div>
           ))}
         </div>
@@ -316,7 +317,7 @@ function GapHeatmap({ slug, brandId }: { slug: string; brandId: string }) {
           {heatmapData.map((row, ri) => (
             <div key={row.query_id} className="flex items-center gap-2">
               <div className="w-48 shrink-0">
-                <p className="text-xs text-[var(--dim)] font-sans truncate pr-3" title={row.query}>{row.query}</p>
+                <p className="text-[11px] text-dim font-sans truncate pr-3" title={row.query}>{row.query}</p>
               </div>
               {PROVIDERS.map((provider, ci) => {
                 const cell = row.cells[provider]
@@ -363,7 +364,7 @@ function GapHeatmap({ slug, brandId }: { slug: string; brandId: string }) {
           {(Object.entries(GAP_TYPE_CONFIG) as [GapType, typeof GAP_TYPE_CONFIG[GapType]][]).map(([key, cfg]) => (
             <div key={key} className="flex items-center gap-1.5">
               <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: CELL_COLOR[key] }} />
-              <span className="text-xs text-[var(--dim)] font-sans">{cfg.label}</span>
+              <span className="text-[11px] text-dim font-sans uppercase tracking-wider">{cfg.label}</span>
             </div>
           ))}
         </div>
@@ -396,7 +397,7 @@ function RootCauses({ slug, brandId }: { slug: string; brandId: string }) {
           initial={{ opacity: 0, x: -8 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: i * 0.07 }}
-          className="flex items-center justify-between bg-[var(--paper)] border border-[var(--border)] rounded-lg px-4 py-3"
+          className="flex items-center justify-between bg-surface-raised border border-border rounded-lg px-4 py-4"
         >
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-7 h-7 rounded-md bg-danger-muted flex items-center justify-center shrink-0">
@@ -406,10 +407,10 @@ function RootCauses({ slug, brandId }: { slug: string; brandId: string }) {
               href={c.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm font-sans text-[var(--ink)] hover:text-[var(--ember)] transition-colors truncate max-w-[380px] flex items-center gap-1"
+              className="text-sm font-sans text-ink hover:text-ember transition-colors truncate max-w-[380px] flex items-center gap-1"
             >
               {c.url}
-              <ExternalLink className="h-3 w-3 shrink-0 text-[var(--dim)]" />
+              <ExternalLink className="h-3 w-3 shrink-0 text-dim" />
             </a>
           </div>
           <div className="flex items-center gap-3 shrink-0 ml-4">
@@ -475,12 +476,12 @@ function GapDetailTable({ slug, brandId }: { slug: string; brandId: string }) {
     {
       key: 'query',
       header: 'Query',
-      render: (_, row) => <span className="font-medium text-[var(--ink)] max-w-[200px] block truncate">{row.query}</span>,
+      render: (_, row) => <span className="font-medium text-ink max-w-[200px] block truncate">{row.query}</span>,
     },
     {
       key: 'stage',
       header: 'Stage',
-      render: (_, row) => <span className="text-[var(--dim)] text-sm">{row.stage}</span>,
+      render: (_, row) => <span className="text-dim text-sm">{row.stage}</span>,
     },
     {
       key: 'provider',
@@ -504,7 +505,7 @@ function GapDetailTable({ slug, brandId }: { slug: string; brandId: string }) {
         <div className="flex items-center gap-2">
           <button
             onClick={(e) => { e.stopPropagation(); setExpandedRow(expandedRow === row.id ? null : row.id) }}
-            className="text-[var(--dim)] hover:text-[var(--ink)] transition-colors"
+            className="text-dim hover:text-ink transition-colors"
           >
             {expandedRow === row.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
@@ -524,13 +525,13 @@ function GapDetailTable({ slug, brandId }: { slug: string; brandId: string }) {
   if (isLoading) return <SkeletonCard />
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Filter bar */}
-      <div className="flex flex-wrap gap-3 items-center">
+      <div className="flex flex-wrap gap-3 items-center mb-6">
         <select
           value={gapTypeFilter}
           onChange={(e) => setGapTypeFilter(e.target.value as GapType | 'all')}
-          className="h-8 px-2 rounded-md border border-[var(--border)] bg-[var(--paper)] text-xs font-sans text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
+          className="h-8 px-2 rounded-md border border-border bg-paper text-xs font-sans text-ink focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
         >
           <option value="all">All Gap Types</option>
           <option value="no_mention">No Mention</option>
@@ -541,7 +542,7 @@ function GapDetailTable({ slug, brandId }: { slug: string; brandId: string }) {
         <select
           value={severityFilter}
           onChange={(e) => setSeverityFilter(e.target.value as Severity | 'all')}
-          className="h-8 px-2 rounded-md border border-[var(--border)] bg-[var(--paper)] text-xs font-sans text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
+          className="h-8 px-2 rounded-md border border-border bg-paper text-xs font-sans text-ink focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
         >
           <option value="all">All Severities</option>
           <option value="critical">Critical</option>
@@ -552,12 +553,12 @@ function GapDetailTable({ slug, brandId }: { slug: string; brandId: string }) {
         <select
           value={sortFilter}
           onChange={(e) => setSortFilter(e.target.value as 'severity' | 'gap_type')}
-          className="h-8 px-2 rounded-md border border-[var(--border)] bg-[var(--paper)] text-xs font-sans text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
+          className="h-8 px-2 rounded-md border border-border bg-paper text-xs font-sans text-ink focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
         >
           <option value="severity">Sort: Severity</option>
           <option value="gap_type">Sort: Gap Type</option>
         </select>
-        <span className="text-xs text-[var(--dim)] ml-auto">{filtered.length} gaps</span>
+        <span className="text-[11px] text-dim ml-auto uppercase tracking-wider">{filtered.length} gaps</span>
       </div>
 
       {filtered.length === 0 ? (
@@ -588,34 +589,32 @@ export default function GEOPage() {
   })
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-12 p-6">
+    <div className="max-w-5xl mx-auto space-y-8 pb-16">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-semibold text-[var(--ink)]">GEO Gaps</h1>
-          <p className="text-sm text-[var(--dim)] font-sans mt-1">AI recommendation coverage gaps by query and provider</p>
-        </div>
-      </div>
+      <PageHeader
+        title="GEO Gaps"
+        subtitle="AI recommendation coverage gaps by query and provider"
+      />
 
       {/* Summary stat row */}
       <SummaryStatRow summary={summary} loading={summaryLoading} />
 
       {/* Gap Type Distribution 2×2 */}
       <section>
-        <h2 className="font-display text-base font-semibold text-[var(--ink)] mb-4">Gap Type Breakdown</h2>
+        <h2 className="font-display text-base font-semibold text-ink mb-6">Gap Type Breakdown</h2>
         <GapTypeCards slug={slug} brandId={brandId} totalGaps={summary?.total_gaps ?? 0} />
       </section>
 
       {/* Gap Detail Table */}
       <section>
-        <h2 className="font-display text-base font-semibold text-[var(--ink)] mb-4">Gap Details</h2>
+        <h2 className="font-display text-base font-semibold text-ink mb-6">Gap Details</h2>
         <GapDetailTable slug={slug} brandId={brandId} />
       </section>
 
       {/* Heatmap */}
       <section>
-        <h2 className="font-display text-base font-semibold text-[var(--ink)] mb-1">Gap Heatmap</h2>
-        <p className="text-sm text-[var(--dim)] font-sans mb-5">Each row = query, each column = AI provider. Color = gap type.</p>
+        <h2 className="font-display text-base font-semibold text-ink mb-1">Gap Heatmap</h2>
+        <p className="text-[14px] text-dim font-sans mb-5">Each row = query, each column = AI provider. Color = gap type.</p>
         <Card>
           <CardContent className="pt-6">
             <GapHeatmap slug={slug} brandId={brandId} />
@@ -625,8 +624,8 @@ export default function GEOPage() {
 
       {/* Root Causes */}
       <section>
-        <h2 className="font-display text-base font-semibold text-[var(--ink)] mb-1">Root Cause Pages</h2>
-        <p className="text-sm text-[var(--dim)] font-sans mb-4">Pages whose content gaps drive the most AI visibility failures.</p>
+        <h2 className="font-display text-base font-semibold text-ink mb-1">Root Cause Pages</h2>
+        <p className="text-[14px] text-dim font-sans mb-6">Pages whose content gaps drive the most AI visibility failures.</p>
         <RootCauses slug={slug} brandId={brandId} />
       </section>
     </div>

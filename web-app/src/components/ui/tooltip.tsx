@@ -18,14 +18,18 @@ function TooltipContent({
       <TooltipPrimitive.Content
         sideOffset={sideOffset}
         className={cn(
-          'z-[500] max-w-xs rounded-md bg-ink px-3 py-1.5 text-xs font-sans text-paper shadow-md',
-          'animate-fade-in',
-          'data-[state=delayed-open]:animate-fade-in',
-          'data-[state=closed]:opacity-0',
+          'z-[500] max-w-[220px] rounded-md bg-ink text-paper',
+          'text-[12px] font-sans font-medium px-2.5 py-1.5',
+          'shadow-lg pointer-events-none leading-snug',
+          'data-[state=delayed-open]:animate-[fadeIn_0.12s_ease-out]',
+          'data-[state=closed]:animate-[fadeIn_0.08s_ease-in_reverse]',
           className
         )}
         {...props}
-      />
+      >
+        {props.children}
+        <TooltipPrimitive.Arrow className="fill-ink" width={8} height={4} />
+      </TooltipPrimitive.Content>
     </TooltipPrimitive.Portal>
   )
 }
@@ -37,7 +41,7 @@ interface TooltipProps {
   delayDuration?: number
 }
 
-function Tooltip({ children, content, side = 'top', delayDuration = 150 }: TooltipProps) {
+function Tooltip({ children, content, side = 'top', delayDuration = 200 }: TooltipProps) {
   return (
     <TooltipProvider>
       <TooltipRoot delayDuration={delayDuration}>

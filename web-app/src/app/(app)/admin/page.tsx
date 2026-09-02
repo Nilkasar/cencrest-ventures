@@ -20,6 +20,7 @@ import { ScoreRing } from '@/components/ui/score-ring'
 import { DataTable, type Column } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { SkeletonCard } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/layout/page-header'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -409,22 +410,20 @@ export default function AdminPage() {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={spring}
-      className="flex flex-col gap-6 p-6 max-w-7xl mx-auto"
+      className="flex flex-col gap-6 max-w-7xl mx-auto pb-16"
     >
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-3 flex-1">
-          <ShieldCheck className="h-7 w-7 text-[var(--danger)]" />
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-display text-3xl font-semibold text-ink leading-tight">Admin Panel</h1>
-              <Badge variant="danger" size="sm" className="ml-2">Admin Access</Badge>
-            </div>
-            <p className="text-sm text-dim font-sans mt-0.5">Super-admin system view</p>
-          </div>
-        </div>
-        <SystemStatusBadge status={status} />
-      </div>
+      <PageHeader
+        title={
+          <span className="flex items-center gap-3">
+            <ShieldCheck className="h-7 w-7 text-danger" />
+            Admin Panel
+            <Badge variant="danger" size="sm" className="ml-2">Admin Access</Badge>
+          </span>
+        }
+        subtitle="Super-admin system view"
+        actions={<SystemStatusBadge status={status} />}
+      />
 
       {/* Stats row — 4 cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -434,12 +433,12 @@ export default function AdminPage() {
           { label: 'Total Brands', value: 0, icon: BarChart3 },
           { label: 'Runs Today', value: 0, icon: PlayCircle },
         ].map(({ label, value, icon: Icon }) => (
-          <div key={label} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5">
+          <div key={label} className="bg-surface border border-border rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-sans font-medium text-[var(--dim)] uppercase tracking-wide">{label}</span>
-              <Icon className="h-4 w-4 text-[var(--dim)]" />
+              <span className="text-xs font-sans font-medium text-dim uppercase tracking-wide">{label}</span>
+              <Icon className="h-4 w-4 text-dim" />
             </div>
-            <p className="font-display text-3xl font-semibold text-[var(--ink)]">{value}</p>
+            <p className="font-display text-3xl font-semibold text-ink">{value}</p>
           </div>
         ))}
       </div>

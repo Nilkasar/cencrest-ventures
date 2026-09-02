@@ -5,7 +5,6 @@ import { useEffect } from 'react'
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { tokens } from '@/design-system/tokens'
 
 interface StatCardProps {
   label: string
@@ -13,21 +12,23 @@ interface StatCardProps {
   prefix?: string
   suffix?: string
   decimals?: number
+  /** Pass as percentage integer, e.g. 12 for +12% */
   delta?: number
   deltaLabel?: string
+  icon?: React.ReactNode
   className?: string
 }
 
 function AnimatedNumber({
   value,
-  decimals = 0,
   prefix = '',
   suffix = '',
+  decimals = 0,
 }: {
   value: number
-  decimals?: number
   prefix?: string
   suffix?: string
+  decimals?: number
 }) {
   const motionVal = useMotionValue(0)
   const display = useTransform(
@@ -36,10 +37,7 @@ function AnimatedNumber({
   )
 
   useEffect(() => {
-    const controls = animate(motionVal, value, {
-      duration: tokens.animation.duration.crawl / 1000,
-      ease: 'easeOut',
-    })
+    const controls = animate(motionVal, value, { duration: 1.0, ease: 'easeOut' })
     return controls.stop
   }, [value, motionVal])
 
@@ -54,55 +52,51 @@ export function StatCard({
   decimals = 0,
   delta,
   deltaLabel,
+  icon,
   className,
 }: StatCardProps) {
   const isPositive = delta !== undefined && delta > 0
   const isNegative = delta !== undefined && delta < 0
-  const isNeutral = delta === undefined || delta === 0
+  const isZero     = delta !== undefined && delta === 0
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{
-        type: 'tween',
-        ease: tokens.animation.easing.spring,
-        duration: tokens.animation.duration.normal / 1000,
-      }}
+    <div
       className={cn(
-        'bg-surface border border-border rounded-lg shadow-sm p-6',
-        'border-l-2 border-l-ember',
+        'bg-surface-raised rounded-xl border border-border p-6 relative',
+        'shadow-[0_1px_3px_rgba(22,20,15,0.06),0_1px_2px_rgba(22,20,15,0.03)]',
         className
       )}
     >
-      <p className="text-sm font-sans text-dim mb-2">{label}</p>
-      <div className="font-display text-4xl font-semibold text-ink leading-none mb-3">
-        <AnimatedNumber
-          value={value}
-          prefix={prefix}
-          suffix={suffix}
-          decimals={decimals}
-        />
+      {icon && (
+        <span className="absolute top-5 right-5 text-dim" aria-hidden="true">
+          {icon}
+        </span>
+      )}
+      <p className="text-[11px] font-semibold font-sans text-dim uppercase tracking-wider mb-2">
+        {label}
+      </p>
+      <div className="font-display text-3xl font-bold text-ink tracking-tight leading-none">
+        <AnimatedNumber value={value} prefix={prefix} suffix={suffix} decimals={decimals} />
       </div>
       {delta !== undefined && (
-        <div
-          className={cn(
-            'inline-flex items-center gap-1 text-sm font-sans font-medium',
-            isPositive && 'text-success',
-            isNegative && 'text-danger',
-            isNeutral && 'text-dim',
-          )}
-        >
-          {isPositive && <TrendingUp className="h-4 w-4" aria-hidden="true" />}
-          {isNegative && <TrendingDown className="h-4 w-4" aria-hidden="true" />}
-          {isNeutral && delta === 0 && <Minus className="h-4 w-4" aria-hidden="true" />}
-          <span>
+        <div className="mt-2.5">
+          <span
+            className={cn(
+              'text-[11px] font-semibold inline-flex items-center gap-1 px-2 py-0.5 rounded-full',
+              isPositive && 'text-success bg-success/10',
+              isNegative && 'text-danger bg-danger/10',
+              isZero     && 'text-dim bg-surface',
+            )}
+          >
+            {isPositive && <TrendingUp className="h-3 w-3" aria-hidden="true" />}
+            {isNegative && <TrendingDown className="h-3 w-3" aria-hidden="true" />}
+            {isZero     && <Minus className="h-3 w-3" aria-hidden="true" />}
             {isPositive && '+'}
             {delta.toFixed(1)}%
-            {deltaLabel && <span className="text-dim font-normal ml-1">{deltaLabel}</span>}
+            {deltaLabel && <span className="font-normal opacity-70">{deltaLabel}</span>}
           </span>
         </div>
       )}
-    </motion.div>
+    </div>
   )
 }

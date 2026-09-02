@@ -44,14 +44,16 @@ export function DataTable<T extends Record<string, unknown>>({
   return (
     <div className={cn('w-full flex flex-col gap-0', className)}>
       <div className="w-full overflow-x-auto">
-        <table className="w-full text-sm font-sans">
-          <thead className="sticky top-0 bg-surface z-10 border-b border-border">
+        <table className="w-full border-collapse font-sans">
+          <thead className="border-b border-border sticky top-0 bg-surface z-10">
             <tr>
-              {columns.map((col) => (
+              {columns.map((col, i) => (
                 <th
                   key={String(col.key)}
                   className={cn(
-                    'text-left py-3 px-4 text-xs font-medium text-dim uppercase tracking-wide',
+                    'text-left text-[11px] font-semibold text-dim uppercase tracking-wider px-4 py-3.5',
+                    i === 0 && 'pl-6',
+                    i === columns.length - 1 && 'pr-6',
                     col.className
                   )}
                 >
@@ -63,9 +65,16 @@ export function DataTable<T extends Record<string, unknown>>({
           <tbody>
             {loading ? (
               Array.from({ length: Math.min(pageSize, 5) }).map((_, i) => (
-                <tr key={i} className="border-b border-border last:border-0">
-                  {columns.map((col) => (
-                    <td key={String(col.key)} className="py-3 px-4">
+                <tr key={i} className="border-b border-border/50 last:border-0">
+                  {columns.map((col, ci) => (
+                    <td
+                      key={String(col.key)}
+                      className={cn(
+                        'px-4 py-4',
+                        ci === 0 && 'pl-6',
+                        ci === columns.length - 1 && 'pr-6'
+                      )}
+                    >
                       <SkeletonText lines={1} />
                     </td>
                   ))}
@@ -73,12 +82,12 @@ export function DataTable<T extends Record<string, unknown>>({
               ))
             ) : pageData.length === 0 ? (
               <tr>
-                <td colSpan={columns.length}>
-                  <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-surface border border-border flex items-center justify-center text-dim">
+                <td colSpan={columns.length} className="py-12 text-center">
+                  <div className="flex flex-col items-center justify-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-surface border border-border flex items-center justify-center text-dim mb-1">
                       {emptyIcon ?? <Table2 className="h-5 w-5" />}
                     </div>
-                    <p className="text-sm text-dim">{emptyMessage}</p>
+                    <p className="text-[14px] font-semibold text-ink font-display">{emptyMessage}</p>
                   </div>
                 </td>
               </tr>
@@ -86,14 +95,19 @@ export function DataTable<T extends Record<string, unknown>>({
               pageData.map((row, i) => (
                 <tr
                   key={rowKey ? rowKey(row) : i}
-                  className="border-b border-border last:border-0 transition-colors duration-[100ms] hover:bg-surface"
+                  className="border-b border-border/50 last:border-0 hover:bg-surface/50 transition-colors duration-100"
                 >
-                  {columns.map((col) => {
+                  {columns.map((col, ci) => {
                     const val = row[col.key as keyof T]
                     return (
                       <td
                         key={String(col.key)}
-                        className={cn('py-3 px-4 text-ink', col.className)}
+                        className={cn(
+                          'text-[14px] text-ink px-4 py-4',
+                          ci === 0 && 'pl-6',
+                          ci === columns.length - 1 && 'pr-6',
+                          col.className
+                        )}
                       >
                         {col.render ? col.render(val as unknown, row) : String(val ?? '—')}
                       </td>
@@ -107,8 +121,8 @@ export function DataTable<T extends Record<string, unknown>>({
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-          <span className="text-xs text-dim font-sans">
+        <div className="flex items-center justify-between px-6 py-3 border-t border-border">
+          <span className="text-[11px] text-dim font-sans uppercase tracking-wider">
             Page {page + 1} of {totalPages}
           </span>
           <div className="flex items-center gap-1">

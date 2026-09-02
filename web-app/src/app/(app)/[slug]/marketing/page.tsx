@@ -24,6 +24,7 @@ import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter, M
 import { Input } from '@/components/ui/input'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Skeleton, SkeletonCard } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/layout/page-header'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -510,7 +511,7 @@ function LeversTab({ slug }: { slug: string }) {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Lever list */}
-        <div className="xl:col-span-2 flex flex-col gap-3">
+        <div className="xl:col-span-2 flex flex-col gap-6">
           {levers.isLoading ? (
             Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} className="h-20" />)
           ) : sorted.length === 0 ? (
@@ -519,7 +520,7 @@ function LeversTab({ slug }: { slug: string }) {
               <p className="text-sm text-dim">No levers yet.</p>
             </div>
           ) : (
-            <motion.div variants={staggerContainer} initial="initial" animate="animate" className="flex flex-col gap-3">
+            <motion.div variants={staggerContainer} initial="initial" animate="animate" className="flex flex-col gap-6">
               <AnimatePresence>
                 {sorted.map((lever) => (
                   <motion.div
@@ -527,7 +528,7 @@ function LeversTab({ slug }: { slug: string }) {
                     variants={staggerItem}
                     layout
                     exit={{ opacity: 0, x: -16 }}
-                    className="bg-surface border border-border rounded-xl p-4 flex items-center gap-4"
+                    className="bg-surface-raised border border-border rounded-xl p-5 flex items-center gap-4"
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -565,7 +566,7 @@ function LeversTab({ slug }: { slug: string }) {
         </div>
 
         {/* Scatter chart */}
-        <div className="bg-surface border border-border rounded-xl p-5">
+        <div className="bg-surface-raised border border-border rounded-xl p-5">
           <h3 className="font-display font-semibold text-ink text-sm mb-1">Effort vs Impact</h3>
           <p className="text-xs text-dim font-sans mb-4">Each dot is a lever. Upper-left = quick wins.</p>
           <ResponsiveContainer width="100%" height={240}>
@@ -587,7 +588,7 @@ function LeversTab({ slug }: { slug: string }) {
                   if (!active || !payload?.length) return null
                   const d = payload[0]?.payload
                   return (
-                    <div className="bg-paper border border-border rounded-lg px-3 py-2 shadow-md text-xs font-sans">
+                    <div className="bg-surface-raised border border-border rounded-xl px-3 py-2.5 shadow-lg text-xs font-sans">
                       <p className="font-medium text-ink">{d?.name}</p>
                       <p className="text-dim">Impact: {d?.y} · Effort: {(['', 'Low', 'Med', 'High'][d?.x] ?? '')}</p>
                     </div>
@@ -623,14 +624,14 @@ function SummaryTab({ slug }: { slug: string }) {
             <StatCard label="Active campaigns" value={data?.active_campaigns ?? 0} />
             <StatCard label="Total budget" value={data?.total_budget ?? 0} prefix="$" />
             <StatCard label="Levers in progress" value={data?.levers_in_progress ?? 0} />
-            <div className="bg-surface border border-border border-l-2 border-l-ember rounded-lg shadow-sm p-6">
+            <div className="bg-surface-raised border border-border border-l-2 border-l-ember rounded-lg shadow-sm p-6">
               <p className="text-sm font-sans text-dim mb-2">Top channel</p>
               <p className="font-display text-2xl font-semibold text-ink capitalize">{data?.top_channel ?? '—'}</p>
             </div>
           </div>
 
           {data?.budget_by_channel?.length ? (
-            <div className="bg-surface border border-border rounded-xl p-6">
+            <div className="bg-surface-raised border border-border rounded-xl p-6">
               <h3 className="font-display font-semibold text-ink mb-6">Budget by Channel</h3>
               <div className="flex items-center gap-8">
                 <ResponsiveContainer width="100%" height={200}>
@@ -679,18 +680,18 @@ export default function MarketingPage() {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={spring}
-      className="flex flex-col gap-6 p-6 max-w-7xl mx-auto"
+      className="flex flex-col gap-6 max-w-7xl mx-auto pb-16"
     >
       {/* Header */}
-      <div>
-        <h1 className="font-display text-3xl font-semibold text-ink leading-tight">Marketing Intelligence</h1>
-        <p className="text-sm text-dim font-sans mt-1">Campaign performance and AI visibility correlation</p>
-      </div>
+      <PageHeader
+        title="Marketing Intelligence"
+        subtitle="Campaign performance and AI visibility correlation"
+      />
 
       {/* Insight card */}
-      <div className="rounded-xl bg-[var(--ember)]/8 border border-[var(--ember)]/20 p-5 flex items-start gap-3">
-        <Zap className="h-5 w-5 text-[var(--ember)] shrink-0 mt-0.5" />
-        <p className="text-sm text-[var(--ink)]">
+      <div className="rounded-xl bg-ember/8 border border-ember/20 p-5 flex items-start gap-3">
+        <Zap className="h-5 w-5 text-ember shrink-0 mt-0.5" />
+        <p className="text-sm text-ink">
           Campaigns with thought leadership content show <strong>3&times;</strong> higher AI visibility across ChatGPT, Gemini, and Perplexity.
         </p>
       </div>

@@ -16,6 +16,8 @@ import {
   StatCard,
 } from '@/components/ui'
 import { Progress } from '@/components/ui/progress'
+import { PageHeader } from '@/components/layout/page-header'
+import { SPRING_CURVE } from '@/lib/motion'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -52,7 +54,7 @@ const PROVIDERS = [
   { key: 'perplexity' as const, label: 'Perplexity', color: '#EA580C' },
 ]
 
-const EASE = [0.16, 1, 0.3, 1] as [number, number, number, number]
+const EASE = SPRING_CURVE as unknown as [number, number, number, number]
 
 // ── Custom Tooltip ─────────────────────────────────────────────────────────────
 
@@ -63,13 +65,13 @@ function ChartTooltip({ active, payload, label }: {
 }) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-[var(--paper)] border border-[var(--border)] rounded-xl px-4 py-3 shadow-lg min-w-[160px]">
-      <p className="text-xs text-[var(--dim)] font-sans mb-1.5">{label}</p>
+    <div className="bg-surface-raised border border-border rounded-xl px-4 py-3 shadow-lg min-w-[160px]">
+      <p className="text-xs text-dim font-sans mb-1.5">{label}</p>
       {payload.map((p) => (
         <div key={p.name} className="flex items-center gap-2 text-xs font-sans py-0.5">
           <span className="w-2 h-2 rounded-full shrink-0" style={{ background: p.color }} />
-          <span className="text-[var(--dim)]">{p.name}</span>
-          <span className="ml-auto font-semibold text-[var(--ink)]">{Math.round(p.value)}</span>
+          <span className="text-dim">{p.name}</span>
+          <span className="ml-auto font-semibold text-ink">{Math.round(p.value)}</span>
         </div>
       ))}
     </div>
@@ -88,16 +90,16 @@ function ProviderScoreRow({
   score: number
 }) {
   return (
-    <div className="flex items-center gap-3 py-2">
+    <div className="flex items-center gap-3 py-3.5">
       <span
         className="rounded-full shrink-0"
         style={{ width: 10, height: 10, background: color }}
       />
-      <span className="font-sans text-sm text-[var(--ink)] w-24 shrink-0">{label}</span>
+      <span className="font-sans text-sm text-ink w-24 shrink-0">{label}</span>
       <div className="flex-1">
         <Progress value={score} className="h-2" />
       </div>
-      <span className="text-sm font-semibold text-[var(--ink)] w-10 text-right font-sans" style={{ color }}>
+      <span className="text-sm font-semibold text-ink w-10 text-right font-sans" style={{ color }}>
         {formatScore(score)}
       </span>
     </div>
@@ -111,7 +113,7 @@ const mentionColumns = [
     key: 'query',
     header: 'Query',
     render: (v: unknown) => (
-      <span className="text-xs font-sans text-[var(--ink)] line-clamp-2 max-w-[280px]">{String(v)}</span>
+      <span className="text-xs font-sans text-ink line-clamp-2 max-w-[280px]">{String(v)}</span>
     ),
   },
   {
@@ -124,7 +126,7 @@ const mentionColumns = [
           <span className="w-2 h-2 rounded-full shrink-0" style={{ background: p.color }} />
           <span className="text-xs font-sans">{p.label}</span>
         </div>
-      ) : <span className="text-xs font-sans text-[var(--dim)]">{String(v)}</span>
+      ) : <span className="text-xs font-sans text-dim">{String(v)}</span>
     },
   },
   {
@@ -133,9 +135,9 @@ const mentionColumns = [
     render: (v: unknown) => (
       <span className={cn(
         'inline-flex items-center gap-1.5 text-xs font-sans font-medium',
-        v ? 'text-[var(--success)]' : 'text-[var(--dim)]'
+        v ? 'text-success' : 'text-dim'
       )}>
-        <span className={cn('w-1.5 h-1.5 rounded-full', v ? 'bg-[var(--success)]' : 'bg-[var(--dim)]')} />
+        <span className={cn('w-1.5 h-1.5 rounded-full', v ? 'bg-success' : 'bg-dim')} />
         {v ? 'Yes' : 'No'}
       </span>
     ),
@@ -153,7 +155,7 @@ const mentionColumns = [
     key: 'position',
     header: 'Position',
     render: (v: unknown) => (
-      <span className="text-xs font-mono text-[var(--dim)]">{v != null ? `#${v}` : '—'}</span>
+      <span className="text-xs font-mono text-dim">{v != null ? `#${v}` : '—'}</span>
     ),
   },
 ] as const
@@ -210,7 +212,7 @@ export default function VisibilityPage() {
 
   if (isLoading) {
     return (
-      <div className="grid gap-4">
+      <div className="grid gap-6">
         {[0, 1, 2].map((i) => <SkeletonCard key={i} />)}
       </div>
     )
@@ -218,8 +220,8 @@ export default function VisibilityPage() {
 
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 gap-4">
-        <p className="text-sm text-[var(--dim)] font-sans">Failed to load visibility data.</p>
+      <div className="flex flex-col items-center justify-center py-24 gap-6">
+        <p className="text-sm text-dim font-sans">Failed to load visibility data.</p>
         <Button variant="outline" onClick={() => refetch()}>
           <RefreshCw className="h-4 w-4" /> Retry
         </Button>
@@ -242,7 +244,13 @@ export default function VisibilityPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8 pb-12">
+    <div className="flex flex-col gap-8 pb-16">
+
+      {/* Page header */}
+      <PageHeader
+        title="AI Visibility"
+        subtitle="How often AI models mention your brand across tracked queries."
+      />
 
       {/* 1. Top section — ScoreRing + provider rows */}
       <motion.section
@@ -252,17 +260,17 @@ export default function VisibilityPage() {
       >
         <div className="flex flex-col sm:flex-row gap-8">
           {/* Left — overall ring */}
-          <div className="flex flex-col items-center justify-center gap-3 min-w-[160px]">
-            <ScoreRing score={overallScore} size={120} />
-            <p className="font-display text-xl font-semibold text-[var(--ink)] text-center">
+          <div className="flex flex-col items-center justify-center gap-6 min-w-[180px]">
+            <ScoreRing score={overallScore} size={140} />
+            <p className="font-display text-xl font-semibold text-ink text-center">
               Overall AI Visibility
             </p>
             {prev && (
               <span className={cn(
                 'text-xs font-sans',
                 overallScore > (prev.scores ? Math.round(Object.values(prev.scores).reduce((a, b) => a + b, 0) / PROVIDERS.length) : 0)
-                  ? 'text-[var(--success)]'
-                  : 'text-[var(--danger)]'
+                  ? 'text-success'
+                  : 'text-danger'
               )}>
                 vs last run
               </span>
@@ -271,7 +279,7 @@ export default function VisibilityPage() {
 
           {/* Right — 4 provider rows */}
           <Card className="flex-1">
-            <CardContent className="pt-4 pb-2">
+            <CardContent className="pt-6 pb-4">
               {PROVIDERS.map((p) => (
                 <ProviderScoreRow
                   key={p.key}
@@ -392,7 +400,7 @@ export default function VisibilityPage() {
               <CardTitle>Share of Voice</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col sm:flex-row items-center gap-8">
-              <ResponsiveContainer width={220} height={220}>
+              <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie
                     data={sovData}
@@ -419,12 +427,12 @@ export default function VisibilityPage() {
                   />
                 </PieChart>
               </ResponsiveContainer>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-3">
                 {sovData.map((entry) => (
                   <div key={entry.name} className="flex items-center gap-2 text-sm font-sans">
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: entry.color }} />
-                    <span className="text-[var(--dim)]">{entry.name}</span>
-                    <span className="ml-auto font-semibold text-[var(--ink)]">{Math.round(entry.value)}</span>
+                    <span className="text-dim">{entry.name}</span>
+                    <span className="ml-auto font-semibold text-ink">{Math.round(entry.value)}</span>
                   </div>
                 ))}
               </div>

@@ -27,6 +27,7 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { PageHeader } from '@/components/layout/page-header'
 import { cn, relativeTime } from '@/lib/utils'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -74,10 +75,10 @@ const SPRING = { type: 'spring', stiffness: 320, damping: 28 } as const
 function StatusBadge({ status }: { status: ExperimentStatus }) {
   if (status === 'running') {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium font-sans bg-[var(--info)]/10 text-[var(--info)]">
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium font-sans bg-info/10 text-info">
         <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--info)] opacity-60" />
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--info)]" />
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-info opacity-60" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-info" />
         </span>
         Running
       </span>
@@ -85,22 +86,22 @@ function StatusBadge({ status }: { status: ExperimentStatus }) {
   }
   if (status === 'completed') {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium font-sans bg-[var(--success)]/10 text-[var(--success)]">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--success)]" />
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium font-sans bg-success/10 text-success">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-success" />
         Completed
       </span>
     )
   }
   if (status === 'paused') {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium font-sans bg-[var(--warning)]/10 text-[var(--warning)]">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--warning)]" />
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium font-sans bg-warning/10 text-warning">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-warning" />
         Paused
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium font-sans bg-[var(--surface)] text-[var(--dim)] border border-[var(--border)]">
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium font-sans bg-surface text-dim border border-border">
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--dim)]" />
       Draft
     </span>
@@ -162,7 +163,7 @@ function ExperimentCard({
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ ...SPRING, delay: index * 0.06 }}
-      className="rounded-xl border border-[var(--border)] bg-white/70 p-5 mb-3 overflow-hidden"
+      className="rounded-xl border border-border bg-surface-raised p-5 mb-3 overflow-hidden"
     >
       {/* Status badge + hypothesis */}
       <div className="flex items-start justify-between gap-3 mb-3">
@@ -178,21 +179,21 @@ function ExperimentCard({
             <Badge variant="info" size="sm">Stat Sig</Badge>
           )}
         </div>
-        <span className="text-xs font-mono text-[var(--dim)] shrink-0 mt-0.5">
+        <span className="text-xs font-mono text-dim shrink-0 mt-0.5">
           {exp.measurements_count} measurements
         </span>
       </div>
 
       {/* Hypothesis */}
-      <h3 className="font-display text-lg text-[var(--ink)] leading-snug mb-1">{exp.hypothesis}</h3>
-      <p className="text-sm text-[var(--dim)] leading-relaxed line-clamp-2 mb-3">{exp.name}</p>
+      <h3 className="font-display text-lg text-ink leading-snug mb-1">{exp.hypothesis}</h3>
+      <p className="text-sm text-dim leading-relaxed line-clamp-2 mb-3">{exp.name}</p>
 
       {/* Variants chips */}
       <div className="flex items-center gap-2 mb-3">
-        <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-[var(--surface)] border border-[var(--border)] text-xs font-sans text-[var(--dim)]">
+        <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-surface border border-border text-xs font-sans text-dim">
           Control: {exp.variant_a?.label ?? 'Variant A'}
         </span>
-        <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-[var(--surface)] border border-[var(--border)] text-xs font-sans text-[var(--dim)]">
+        <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-surface border border-border text-xs font-sans text-dim">
           {exp.variant_b?.label ?? 'Variant A'}
         </span>
       </div>
@@ -201,8 +202,8 @@ function ExperimentCard({
       {exp.status === 'running' && (
         <div className="mb-3">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs text-[var(--dim)]">Progress elapsed</span>
-            <span className="text-xs font-mono text-[var(--dim)]">{progress}%</span>
+            <span className="text-xs text-dim">Progress elapsed</span>
+            <span className="text-xs font-mono text-dim">{progress}%</span>
           </div>
           <Progress value={progress} variant="default" className="h-1.5" />
         </div>
@@ -230,7 +231,7 @@ function ExperimentCard({
               size="sm"
               onClick={() => endMutation.mutate()}
               loading={endMutation.isPending}
-              className="gap-1.5 text-[var(--danger)] border-[var(--danger)]/30 hover:bg-[var(--danger)]/5"
+              className="gap-1.5 text-danger border-[var(--danger)]/30 hover:bg-danger/5"
             >
               <StopCircle className="h-3.5 w-3.5" />
               End
@@ -250,7 +251,7 @@ function ExperimentCard({
         )}
 
         {exp.started_at && (
-          <span className="text-xs text-[var(--dim)] ml-auto">Started {relativeTime(exp.started_at)}</span>
+          <span className="text-xs text-dim ml-auto">Started {relativeTime(exp.started_at)}</span>
         )}
       </div>
 
@@ -262,17 +263,17 @@ function ExperimentCard({
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="overflow-hidden border-t border-[var(--border)] mt-3"
+            className="overflow-hidden border-t border-border mt-3"
           >
             <div className="pt-4 space-y-3">
-              <p className="text-xs font-medium text-[var(--dim)] uppercase tracking-wide">Record Measurement</p>
+              <p className="text-xs font-medium text-dim uppercase tracking-wide">Record Measurement</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-[var(--ink)] mb-1 block">Variant</label>
+                  <label className="text-xs font-medium text-ink mb-1 block">Variant</label>
                   <select
                     value={measureForm.variant}
                     onChange={(e) => setMeasureForm((f) => ({ ...f, variant: e.target.value as 'A' | 'B' }))}
-                    className="h-9 w-full px-2 rounded-md border border-[var(--border)] bg-[var(--paper)] text-sm text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
+                    className="h-9 w-full px-2 rounded-md border border-border bg-paper text-sm text-ink focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
                   >
                     <option value="A">Variant A</option>
                     <option value="B">Variant B</option>
@@ -317,7 +318,7 @@ function ExperimentCard({
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="overflow-hidden border-t border-[var(--border)] mt-3"
+            className="overflow-hidden border-t border-border mt-3"
           >
             <div className="pt-4">
               {analysisLoading ? (
@@ -325,17 +326,17 @@ function ExperimentCard({
                   <Spinner />
                 </div>
               ) : chartData.length === 0 ? (
-                <p className="text-sm text-[var(--dim)] text-center py-6">No measurements recorded yet.</p>
+                <p className="text-sm text-dim text-center py-6">No measurements recorded yet.</p>
               ) : (
                 <>
-                  <p className="text-xs font-medium text-[var(--dim)] uppercase tracking-wide mb-4">Variant comparison</p>
+                  <p className="text-xs font-medium text-dim uppercase tracking-wide mb-4">Variant comparison</p>
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                       <XAxis dataKey="metric" tick={{ fontSize: 11, fill: 'var(--color-dim)', fontFamily: 'var(--font-mono)' }} />
                       <YAxis tick={{ fontSize: 11, fill: 'var(--color-dim)' }} />
                       <RechartsTooltip
-                        contentStyle={{ background: 'var(--color-paper)', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: '12px' }}
+                        contentStyle={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', borderRadius: '12px', fontSize: '12px', boxShadow: '0 4px 16px rgba(22,20,15,0.08)' }}
                       />
                       <Legend wrapperStyle={{ fontSize: '12px', fontFamily: 'var(--font-sans)' }} />
                       <Bar dataKey="Variant A" fill="#C2410C" radius={[3, 3, 0, 0]} />
@@ -345,11 +346,11 @@ function ExperimentCard({
                   {analysis?.metrics && (
                     <div className="mt-4 grid grid-cols-3 gap-2">
                       {analysis.metrics.map((m) => (
-                        <div key={m.name} className="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-3">
-                          <p className="text-[10px] font-mono text-[var(--dim)] truncate">{m.name}</p>
+                        <div key={m.name} className="bg-surface-raised border border-border rounded-lg p-3">
+                          <p className="text-[10px] font-mono text-dim truncate">{m.name}</p>
                           <p className={cn(
                             'text-sm font-semibold mt-0.5',
-                            m.lift_pct > 0 ? 'text-[var(--success)]' : m.lift_pct < 0 ? 'text-[var(--danger)]' : 'text-[var(--dim)]',
+                            m.lift_pct > 0 ? 'text-success' : m.lift_pct < 0 ? 'text-danger' : 'text-dim',
                           )}>
                             {m.lift_pct > 0 ? '+' : ''}{m.lift_pct.toFixed(1)}% lift
                           </p>
@@ -404,39 +405,39 @@ function NewExperimentModal({
             placeholder="e.g. Homepage CTA copy test"
           />
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-[var(--ink)] font-sans">Hypothesis</label>
+            <label className="text-sm font-medium text-ink font-sans">Hypothesis</label>
             <textarea
               value={form.hypothesis}
               onChange={(e) => setForm((f) => ({ ...f, hypothesis: e.target.value }))}
               rows={3}
               placeholder="We believe that… because…"
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--dim)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
+              className="w-full rounded-md border border-border bg-paper px-3 py-2 text-sm text-ink placeholder:text-dim resize-none focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-[var(--ink)] font-sans">Variant A (Control)</label>
+              <label className="text-sm font-medium text-ink font-sans">Variant A (Control)</label>
               <textarea
                 value={form.variant_a_description}
                 onChange={(e) => setForm((f) => ({ ...f, variant_a_description: e.target.value }))}
                 rows={2}
                 placeholder="Control / baseline"
-                className="w-full rounded-md border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--dim)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
+                className="w-full rounded-md border border-border bg-paper px-3 py-2 text-sm text-ink placeholder:text-dim resize-none focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-[var(--ink)] font-sans">Variant B</label>
+              <label className="text-sm font-medium text-ink font-sans">Variant B</label>
               <textarea
                 value={form.variant_b_description}
                 onChange={(e) => setForm((f) => ({ ...f, variant_b_description: e.target.value }))}
                 rows={2}
                 placeholder="Treatment / challenger"
-                className="w-full rounded-md border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--dim)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
+                className="w-full rounded-md border border-border bg-paper px-3 py-2 text-sm text-ink placeholder:text-dim resize-none focus:outline-none focus:ring-2 focus:ring-[var(--ember)]"
               />
             </div>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-[var(--ink)] font-sans">Primary metric</label>
+            <label className="text-sm font-medium text-ink font-sans">Primary metric</label>
             <Select value={form.primary_metric} onValueChange={(v) => setForm((f) => ({ ...f, primary_metric: v }))}>
               <SelectTrigger>
                 <SelectValue />
@@ -487,24 +488,18 @@ export default function ExperimentsPage() {
   return (
     <div className="max-w-4xl mx-auto">
       {/* Page header */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={SPRING}
-        className="flex items-center justify-between mb-6"
-      >
-        <div>
-          <h1 className="font-display text-3xl font-semibold text-[var(--ink)] flex items-center gap-2.5">
-            <FlaskConical className="h-7 w-7 text-[var(--ember)]" />
-            Experiments
-          </h1>
-          <p className="text-sm text-[var(--dim)] mt-1">A/B test your recommendation signals</p>
-        </div>
-        <Button onClick={() => setShowNew(true)} className="gap-2">
-          <Plus className="h-4 w-4" />
-          New Experiment
-        </Button>
-      </motion.div>
+      <div className="mb-6">
+        <PageHeader
+          title="Experiments"
+          subtitle="A/B test your recommendation signals"
+          actions={
+            <Button onClick={() => setShowNew(true)} className="gap-2">
+              <Plus className="h-4 w-4" />
+              New Experiment
+            </Button>
+          }
+        />
+      </div>
 
       {/* Stat cards */}
       <motion.div
@@ -521,10 +516,10 @@ export default function ExperimentsPage() {
       {/* Status tabs */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabFilter)} className="mb-4">
         <TabsList>
-          <TabsTrigger value="all">All <span className="ml-1 text-xs font-mono text-[var(--dim)]">({experiments.length})</span></TabsTrigger>
-          <TabsTrigger value="running">Running <span className="ml-1 text-xs font-mono text-[var(--dim)]">({experiments.filter(e => e.status === 'running').length})</span></TabsTrigger>
-          <TabsTrigger value="completed">Completed <span className="ml-1 text-xs font-mono text-[var(--dim)]">({experiments.filter(e => e.status === 'completed').length})</span></TabsTrigger>
-          <TabsTrigger value="draft">Draft <span className="ml-1 text-xs font-mono text-[var(--dim)]">({experiments.filter(e => e.status === 'draft').length})</span></TabsTrigger>
+          <TabsTrigger value="all">All <span className="ml-1 text-xs font-mono text-dim">({experiments.length})</span></TabsTrigger>
+          <TabsTrigger value="running">Running <span className="ml-1 text-xs font-mono text-dim">({experiments.filter(e => e.status === 'running').length})</span></TabsTrigger>
+          <TabsTrigger value="completed">Completed <span className="ml-1 text-xs font-mono text-dim">({experiments.filter(e => e.status === 'completed').length})</span></TabsTrigger>
+          <TabsTrigger value="draft">Draft <span className="ml-1 text-xs font-mono text-dim">({experiments.filter(e => e.status === 'draft').length})</span></TabsTrigger>
         </TabsList>
 
         {(['all', 'running', 'completed', 'draft'] as TabFilter[]).map((t) => (

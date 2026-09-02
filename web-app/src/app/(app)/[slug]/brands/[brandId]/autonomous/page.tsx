@@ -22,6 +22,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { DataTable, Column } from '@/components/ui/data-table'
 import { SkeletonCard } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/layout/page-header'
+import { SPRING_CURVE } from '@/lib/motion'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,7 +76,6 @@ interface RunHistoryData {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const SPRING = [0.16, 1, 0.3, 1] as [number, number, number, number]
 
 function buildRoute(slug: string, brandId: string) {
   return `/api/orgs/${slug}/brands/${brandId}/autonomous`
@@ -123,7 +124,7 @@ function ToggleSwitch({
       className={cn(
         'relative inline-flex items-center w-11 h-6 rounded-full transition-colors duration-200',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ember)] focus-visible:ring-offset-2',
-        checked ? 'bg-[var(--ember)]' : 'border border-[var(--border)] bg-[var(--surface)]',
+        checked ? 'bg-ember' : 'border border-border bg-surface',
       )}
     >
       <motion.span
@@ -143,20 +144,20 @@ function ToggleSwitch({
 function FrequencySelector({ value, onChange }: { value: Frequency; onChange: (f: Frequency) => void }) {
   const options: Frequency[] = ['daily', 'weekly', 'monthly']
   return (
-    <div className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--paper)] p-1 gap-1">
+    <div className="inline-flex rounded-lg border border-border bg-paper p-1 gap-1">
       {options.map((opt) => (
         <button
           key={opt}
           onClick={() => onChange(opt)}
           className={cn(
             'relative px-4 py-1.5 text-sm font-sans capitalize rounded-md transition-colors duration-150 focus-visible:outline-none',
-            value === opt ? 'text-white' : 'text-[var(--dim)] hover:text-[var(--ink)]'
+            value === opt ? 'text-white' : 'text-dim hover:text-ink'
           )}
         >
           {value === opt && (
             <motion.div
               layoutId="freq-indicator"
-              className="absolute inset-0 rounded-md bg-[var(--ember)]"
+              className="absolute inset-0 rounded-md bg-ember"
               transition={{ type: 'spring', stiffness: 450, damping: 36 }}
             />
           )}
@@ -192,13 +193,13 @@ function DayButtons({
             className={cn(
               'relative w-9 h-9 rounded-lg text-xs font-medium transition-colors duration-150',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ember)]',
-              active ? 'text-white' : 'text-[var(--dim)] hover:text-[var(--ink)] hover:bg-[var(--surface)] border border-[var(--border)]'
+              active ? 'text-white' : 'text-dim hover:text-ink hover:bg-surface border border-border'
             )}
           >
             {active && (
               <motion.div
                 layoutId={`day-${i}`}
-                className="absolute inset-0 rounded-lg bg-[var(--ember)]"
+                className="absolute inset-0 rounded-lg bg-ember"
                 transition={{ type: 'spring', stiffness: 450, damping: 36 }}
               />
             )}
@@ -225,13 +226,13 @@ function ModuleChecks({ selected, onChange }: { selected: string[]; onChange: (m
             key={id}
             className={cn(
               'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors duration-150',
-              checked ? 'bg-[var(--ember)]/5 border-[var(--ember)]/30' : 'bg-[var(--paper)] border-[var(--border)] hover:bg-[var(--surface)]'
+              checked ? 'bg-ember/5 border-[var(--ember)]/30' : 'bg-paper border-border hover:bg-surface'
             )}
           >
             <div
               className={cn(
                 'w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors duration-150',
-                checked ? 'bg-[var(--ember)] border-[var(--ember)]' : 'border-[var(--border)]'
+                checked ? 'bg-ember border-[var(--ember)]' : 'border-border'
               )}
               aria-hidden="true"
             >
@@ -242,8 +243,8 @@ function ModuleChecks({ selected, onChange }: { selected: string[]; onChange: (m
               )}
             </div>
             <input type="checkbox" checked={checked} onChange={() => toggle(id)} className="sr-only" />
-            <Icon className={cn('h-4 w-4 flex-shrink-0', checked ? 'text-[var(--ember)]' : 'text-[var(--dim)]')} />
-            <span className={cn('text-sm font-sans', checked ? 'text-[var(--ink)] font-medium' : 'text-[var(--dim)]')}>
+            <Icon className={cn('h-4 w-4 flex-shrink-0', checked ? 'text-ember' : 'text-dim')} />
+            <span className={cn('text-sm font-sans', checked ? 'text-ink font-medium' : 'text-dim')}>
               {label}
             </span>
           </label>
@@ -276,23 +277,23 @@ function ScheduleCard({ schedule, slug, brandId }: { schedule: Schedule; slug: s
   }
 
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-white/70 p-5 mb-6 space-y-5">
-      <h2 className="font-display text-lg text-[var(--ink)]">Schedule</h2>
+    <div className="rounded-xl border border-border bg-surface-raised p-5 mb-6 space-y-5">
+      <h2 className="font-display text-lg text-ink">Schedule</h2>
 
       {/* Frequency */}
       <div>
-        <label className="text-xs font-medium text-[var(--dim)] uppercase tracking-wide block mb-2">Frequency</label>
+        <label className="text-xs font-medium text-dim uppercase tracking-wide block mb-2">Frequency</label>
         <FrequencySelector value={form.frequency} onChange={(f) => setForm((p) => ({ ...p, frequency: f }))} />
       </div>
 
       {/* Time */}
       <div>
-        <label className="text-xs font-medium text-[var(--dim)] uppercase tracking-wide block mb-2">Run at</label>
+        <label className="text-xs font-medium text-dim uppercase tracking-wide block mb-2">Run at</label>
         <input
           type="time"
           value={timeValue}
           onChange={(e) => onTimeChange(e.target.value)}
-          className="h-10 rounded-md border border-[var(--border)] bg-[var(--paper)] px-3 text-sm font-mono text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--ember)] focus:border-[var(--ember)]"
+          className="h-10 rounded-md border border-border bg-paper px-3 text-sm font-mono text-ink focus:outline-none focus:ring-2 focus:ring-[var(--ember)] focus:border-[var(--ember)]"
         />
       </div>
 
@@ -303,10 +304,10 @@ function ScheduleCard({ schedule, slug, brandId }: { schedule: Schedule; slug: s
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.25, ease: SPRING }}
+            transition={{ duration: 0.25, ease: SPRING_CURVE }}
             className="overflow-hidden"
           >
-            <label className="text-xs font-medium text-[var(--dim)] uppercase tracking-wide block mb-2">Day of Week</label>
+            <label className="text-xs font-medium text-dim uppercase tracking-wide block mb-2">Day of Week</label>
             <DayButtons selected={selectedDays} onChange={setSelectedDays} />
           </motion.div>
         )}
@@ -314,7 +315,7 @@ function ScheduleCard({ schedule, slug, brandId }: { schedule: Schedule; slug: s
 
       {/* Modules */}
       <div>
-        <label className="text-xs font-medium text-[var(--dim)] uppercase tracking-wide block mb-2">Modules</label>
+        <label className="text-xs font-medium text-dim uppercase tracking-wide block mb-2">Modules</label>
         <ModuleChecks selected={form.modules} onChange={(modules) => setForm((p) => ({ ...p, modules }))} />
       </div>
 
@@ -330,21 +331,21 @@ function ScheduleCard({ schedule, slug, brandId }: { schedule: Schedule; slug: s
 function ScheduleStatusCards({ status }: { status: ScheduleStatus }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-      <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
+      <div className="bg-surface-raised rounded-xl p-5 border border-border">
         <div className="flex items-center gap-2 mb-1">
-          <Clock className="h-4 w-4 text-[var(--dim)]" />
-          <span className="text-xs text-[var(--dim)] font-sans uppercase tracking-wide">Next run</span>
+          <Clock className="h-4 w-4 text-dim" />
+          <span className="text-xs text-dim font-sans uppercase tracking-wide">Next run</span>
         </div>
-        <p className="font-display text-2xl font-semibold text-[var(--ink)]">
+        <p className="font-display text-2xl font-semibold text-ink">
           {status.next_run ? countdown(status.next_run) : '—'}
         </p>
       </div>
-      <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
+      <div className="bg-surface-raised rounded-xl p-5 border border-border">
         <div className="flex items-center gap-2 mb-1">
-          <CheckSquare className="h-4 w-4 text-[var(--dim)]" />
-          <span className="text-xs text-[var(--dim)] font-sans uppercase tracking-wide">Last run</span>
+          <CheckSquare className="h-4 w-4 text-dim" />
+          <span className="text-xs text-dim font-sans uppercase tracking-wide">Last run</span>
         </div>
-        <p className="text-sm font-sans text-[var(--ink)] mb-2">
+        <p className="text-sm font-sans text-ink mb-2">
           {status.last_run ? relativeTime(status.last_run) : '—'}
         </p>
         {status.last_status && (
@@ -362,12 +363,12 @@ function ScheduleStatusCards({ status }: { status: ScheduleStatus }) {
           </Badge>
         )}
       </div>
-      <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
+      <div className="bg-surface-raised rounded-xl p-5 border border-border">
         <div className="flex items-center gap-2 mb-1">
-          <Zap className="h-4 w-4 text-[var(--dim)]" />
-          <span className="text-xs text-[var(--dim)] font-sans uppercase tracking-wide">Total runs</span>
+          <Zap className="h-4 w-4 text-dim" />
+          <span className="text-xs text-dim font-sans uppercase tracking-wide">Total runs</span>
         </div>
-        <p className="font-display text-2xl font-semibold text-[var(--ink)]">
+        <p className="font-display text-2xl font-semibold text-ink">
           {formatNumber(status.total_runs)}
         </p>
       </div>
@@ -392,7 +393,7 @@ function RunHistory({ slug, brandId }: { slug: string; brandId: string }) {
       key: 'date',
       header: 'Date',
       render: (v) => (
-        <span className="text-sm text-[var(--ink)] font-mono">
+        <span className="text-sm text-ink font-mono">
           {relativeTime(v as string)}
         </span>
       ),
@@ -440,7 +441,7 @@ function RunHistory({ slug, brandId }: { slug: string; brandId: string }) {
       render: (v) => {
         const secs = v as number
         return (
-          <span className="font-mono text-xs text-[var(--dim)]">
+          <span className="font-mono text-xs text-dim">
             {secs >= 60 ? `${Math.round(secs / 60)}m` : `${secs}s`}
           </span>
         )
@@ -450,14 +451,14 @@ function RunHistory({ slug, brandId }: { slug: string; brandId: string }) {
       key: 'actions_generated',
       header: 'Actions',
       render: (v) => (
-        <span className="font-mono text-sm text-[var(--ink)]">{formatNumber(v as number)}</span>
+        <span className="font-mono text-sm text-ink">{formatNumber(v as number)}</span>
       ),
     },
     {
       key: 'id',
       header: '',
       render: () => (
-        <button className="text-xs text-[var(--ember)] hover:underline font-medium">View</button>
+        <button className="text-xs text-ember hover:underline font-medium">View</button>
       ),
     },
   ]
@@ -465,9 +466,9 @@ function RunHistory({ slug, brandId }: { slug: string; brandId: string }) {
   if (isLoading) return <SkeletonCard />
 
   return (
-    <div className="rounded-xl border border-[var(--border)] overflow-hidden">
-      <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--surface)]">
-        <h2 className="font-display text-lg text-[var(--ink)]">Run History</h2>
+    <div className="rounded-xl border border-border overflow-hidden">
+      <div className="px-4 py-3 border-b border-border bg-surface">
+        <h2 className="font-display text-lg text-ink">Run History</h2>
       </div>
       <DataTable
         data={runs}
@@ -488,13 +489,13 @@ function NextRunsList({ schedule }: { schedule: Schedule }) {
   if (times.length === 0) return null
 
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-white/70 p-5">
-      <h2 className="font-display text-lg text-[var(--ink)] mb-3">Upcoming Runs</h2>
+    <div className="rounded-xl border border-border bg-surface-raised p-5">
+      <h2 className="font-display text-lg text-ink mb-3">Upcoming Runs</h2>
       <ul className="space-y-2">
         {times.map((t, i) => (
-          <li key={i} className="flex items-center gap-2 text-sm text-[var(--dim)]">
+          <li key={i} className="flex items-center gap-2 text-sm text-dim">
             <Calendar className="h-3.5 w-3.5 shrink-0" />
-            <span className="font-mono text-[var(--ink)] text-xs">{t}</span>
+            <span className="font-mono text-ink text-xs">{t}</span>
           </li>
         ))}
       </ul>
@@ -540,7 +541,7 @@ export default function AutonomousPage() {
     return (
       <div className="max-w-5xl mx-auto space-y-6">
         {[...Array(3)].map((_, i) => (
-          <div key={i} className="h-40 rounded-xl bg-[var(--surface)] border border-[var(--border)] animate-pulse" />
+          <div key={i} className="h-40 rounded-xl bg-surface border border-border animate-pulse" />
         ))}
       </div>
     )
@@ -549,25 +550,18 @@ export default function AutonomousPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: SPRING }}
-      >
-        <h1 className="font-display text-2xl font-semibold text-[var(--ink)]">Autonomous Mode</h1>
-        <p className="text-sm text-[var(--dim)] mt-1">Scheduled recurring AI analysis</p>
-      </motion.div>
+      <PageHeader title="Autonomous Mode" subtitle="Scheduled recurring AI analysis" />
 
       {/* Master control card */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: SPRING, delay: 0.05 }}
-        className="rounded-2xl border border-[var(--border)] bg-white/70 p-6 mb-6 flex items-center justify-between"
+        transition={{ duration: 0.35, ease: SPRING_CURVE, delay: 0.05 }}
+        className="rounded-2xl border border-border bg-surface-raised p-6 mb-6 flex items-center justify-between"
       >
         <div>
-          <h2 className="font-display text-lg text-[var(--ink)]">Autonomous Analysis</h2>
-          <p className="text-sm text-[var(--dim)] mt-0.5">Enable to run analysis on your configured schedule automatically.</p>
+          <h2 className="font-display text-lg text-ink">Autonomous Analysis</h2>
+          <p className="text-sm text-dim mt-0.5">Enable to run analysis on your configured schedule automatically.</p>
         </div>
         <ToggleSwitch
           checked={enabled}
@@ -586,7 +580,7 @@ export default function AutonomousPage() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3, ease: SPRING }}
+            transition={{ duration: 0.3, ease: SPRING_CURVE }}
             className="overflow-hidden"
           >
             <ScheduleCard schedule={schedule} slug={slug} brandId={brandId} />

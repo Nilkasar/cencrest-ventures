@@ -3,21 +3,22 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const badgeVariants = cva(
-  'inline-flex items-center gap-1.5 font-sans font-medium rounded-full',
+  'inline-flex items-center gap-1 font-sans font-semibold rounded-full uppercase tracking-wide leading-none',
   {
     variants: {
       variant: {
-        default: 'bg-slate text-paper',
-        success: 'bg-success-muted text-success',
-        warning: 'bg-warning-muted text-warning',
-        danger: 'bg-danger-muted text-danger',
-        info: 'bg-info-muted text-info',
-        outline: 'border border-border text-ink bg-transparent',
-        ember: 'bg-ember text-paper',
+        default:  'bg-surface text-dim border border-border',
+        ember:    'bg-ember/10 text-ember border border-ember/20',
+        success:  'bg-success-muted text-success border border-success/20',
+        warning:  'bg-warning-muted text-warning border border-warning/20',
+        danger:   'bg-danger-muted text-danger border border-danger/20',
+        info:     'bg-info-muted text-info border border-info/20',
+        outline:  'border border-border-strong text-ink bg-transparent',
       },
       size: {
-        sm: 'px-2 py-0.5 text-xs',
-        md: 'px-2.5 py-1 text-sm',
+        sm: 'text-[10px] px-1.5 py-0.5',
+        md: 'text-[11px] px-2 py-0.5',
+        lg: 'text-[12px] px-2.5 py-1',
       },
     },
     defaultVariants: {
@@ -33,20 +34,31 @@ export interface BadgeProps
   dot?: boolean
 }
 
-export function Badge({ className, variant, size, dot = false, children, ...props }: BadgeProps) {
+const dotColor: Record<string, string> = {
+  default: 'bg-dim',
+  ember:   'bg-ember',
+  success: 'bg-success',
+  warning: 'bg-warning',
+  danger:  'bg-danger',
+  info:    'bg-info',
+  outline: 'bg-dim',
+}
+
+export function Badge({
+  className,
+  variant,
+  size,
+  dot = false,
+  children,
+  ...props
+}: BadgeProps) {
   return (
     <span className={cn(badgeVariants({ variant, size, className }))} {...props}>
       {dot && (
         <span
           className={cn(
             'inline-block w-1.5 h-1.5 rounded-full flex-shrink-0',
-            variant === 'success' && 'bg-success',
-            variant === 'warning' && 'bg-warning',
-            variant === 'danger' && 'bg-danger',
-            variant === 'info' && 'bg-info',
-            variant === 'ember' && 'bg-paper',
-            (!variant || variant === 'default') && 'bg-paper',
-            variant === 'outline' && 'bg-dim',
+            dotColor[variant ?? 'default'] ?? 'bg-dim'
           )}
           aria-hidden="true"
         />

@@ -24,6 +24,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
+import { PageHeader } from '@/components/layout/page-header'
+import { SPRING_CURVE } from '@/lib/motion'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -55,7 +57,6 @@ interface RunAction {
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
-const SPRING = [0.16, 1, 0.3, 1] as [number, number, number, number]
 
 const AGENTS: {
   type: AgentType
@@ -71,8 +72,8 @@ const AGENTS: {
     label: 'GEO Agent',
     description: 'Audits AI model citations, detects brand mentions, and maps generative visibility gaps across ChatGPT, Gemini, Claude, and Perplexity.',
     icon: Brain,
-    iconBg: 'bg-[var(--ember)]/10',
-    iconColor: 'text-[var(--ember)]',
+    iconBg: 'bg-ember/10',
+    iconColor: 'text-ember',
     routeKey: 'geoAgent',
   },
   {
@@ -80,8 +81,8 @@ const AGENTS: {
     label: 'SEO Agent',
     description: 'Crawls keyword rankings, identifies content gaps, and surfaces link opportunities to grow organic search authority.',
     icon: Search,
-    iconBg: 'bg-[var(--info)]/10',
-    iconColor: 'text-[var(--info)]',
+    iconBg: 'bg-info/10',
+    iconColor: 'text-info',
     routeKey: 'seoAgent',
   },
   {
@@ -89,8 +90,8 @@ const AGENTS: {
     label: 'Growth Agent',
     description: 'Analyses funnel conversion signals, competitive positioning, and recommends high-leverage growth experiments.',
     icon: Zap,
-    iconBg: 'bg-[var(--success)]/10',
-    iconColor: 'text-[var(--success)]',
+    iconBg: 'bg-success/10',
+    iconColor: 'text-success',
     routeKey: 'growthAgent',
   },
 ]
@@ -205,8 +206,8 @@ function AgentCard({
       layout
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: SPRING }}
-      className="relative rounded-2xl border border-[var(--border)] bg-white/70 p-6 flex flex-col overflow-hidden"
+      transition={{ duration: 0.35, ease: SPRING_CURVE }}
+      className="relative rounded-2xl border border-border bg-surface-raised p-6 flex flex-col overflow-hidden"
     >
       <SparkleOverlay active={justCompleted} />
 
@@ -216,10 +217,10 @@ function AgentCard({
       </div>
 
       {/* Name */}
-      <h3 className="font-display text-xl text-[var(--ink)]">{agentDef.label}</h3>
+      <h3 className="font-display text-xl text-ink">{agentDef.label}</h3>
 
       {/* Description */}
-      <p className="text-sm text-[var(--dim)] mt-1 leading-relaxed flex-1">{agentDef.description}</p>
+      <p className="text-sm text-dim mt-1 leading-relaxed flex-1">{agentDef.description}</p>
 
       {/* Status badge */}
       <div className="mt-3">
@@ -235,7 +236,7 @@ function AgentCard({
 
       {/* Last run */}
       {state?.last_run_at && (
-        <div className="flex items-center gap-1.5 text-xs text-[var(--dim)] mt-3">
+        <div className="flex items-center gap-1.5 text-xs text-dim mt-3">
           <Clock className="h-3 w-3 shrink-0" />
           <span>Last run {relativeTime(state.last_run_at)}</span>
         </div>
@@ -263,7 +264,7 @@ function AgentCard({
       {recentRuns.length > 0 && (
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="w-full flex items-center justify-between text-xs text-[var(--dim)] hover:text-[var(--ink)] transition-colors py-1 mt-3"
+          className="w-full flex items-center justify-between text-xs text-dim hover:text-ink transition-colors py-1 mt-3"
         >
           <span>Recent runs ({recentRuns.length})</span>
           {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -276,20 +277,20 @@ function AgentCard({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.28, ease: SPRING }}
+            transition={{ duration: 0.28, ease: SPRING_CURVE }}
             className="overflow-hidden"
           >
             <div className="space-y-2 pt-1">
               {recentRuns.slice(0, 5).map((run) => (
                 <div
                   key={run.id}
-                  className="flex items-center gap-2 text-xs py-2 border-b border-[var(--border)] last:border-0"
+                  className="flex items-center gap-2 text-xs py-2 border-b border-border last:border-0"
                 >
                   <StatusIcon status={run.status} />
                   <Badge variant={statusBadgeVariant(run.status)} size="sm">{run.status}</Badge>
-                  <span className="text-[var(--dim)] flex-1 text-right">{relativeTime(run.started_at)}</span>
+                  <span className="text-dim flex-1 text-right">{relativeTime(run.started_at)}</span>
                   {run.actions_generated != null && (
-                    <span className="font-mono text-[var(--dim)]">{run.actions_generated} actions</span>
+                    <span className="font-mono text-dim">{run.actions_generated} actions</span>
                   )}
                 </div>
               ))}
@@ -329,47 +330,47 @@ function RunDetailPanel({
       initial={{ opacity: 0, x: 40 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 40 }}
-      transition={{ duration: 0.32, ease: SPRING }}
+      transition={{ duration: 0.32, ease: SPRING_CURVE }}
       className="h-full flex flex-col overflow-hidden"
     >
-      <div className="flex items-start justify-between gap-3 p-5 border-b border-[var(--border)] shrink-0">
+      <div className="flex items-start justify-between gap-3 p-5 border-b border-border shrink-0">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Badge variant={statusBadgeVariant(run.status)} size="sm" dot>{run.status}</Badge>
-            <span className="text-xs font-mono text-[var(--dim)] uppercase">{run.agent_type} agent</span>
+            <span className="text-xs font-mono text-dim uppercase">{run.agent_type} agent</span>
           </div>
-          <h3 className="font-display text-lg font-semibold text-[var(--ink)]">Run Details</h3>
-          <p className="text-xs text-[var(--dim)] mt-0.5">{relativeTime(run.started_at)}</p>
+          <h3 className="font-display text-lg font-semibold text-ink">Run Details</h3>
+          <p className="text-xs text-dim mt-0.5">{relativeTime(run.started_at)}</p>
         </div>
         <button
           onClick={onClose}
-          className="p-1.5 rounded-md hover:bg-[var(--surface)] transition-colors text-[var(--dim)] hover:text-[var(--ink)] shrink-0"
+          className="p-1.5 rounded-md hover:bg-surface transition-colors text-dim hover:text-ink shrink-0"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 p-5 border-b border-[var(--border)] shrink-0">
-        <div className="bg-[var(--surface)] rounded-lg p-3 border border-[var(--border)]">
-          <p className="text-xs text-[var(--dim)] mb-1">Duration</p>
-          <p className="font-display text-xl font-semibold text-[var(--ink)]">{durationStr(run)}</p>
+      <div className="grid grid-cols-2 gap-6 p-5 border-b border-border shrink-0">
+        <div className="bg-surface-raised rounded-lg p-3 border border-border">
+          <p className="text-xs text-dim mb-1">Duration</p>
+          <p className="font-display text-xl font-semibold text-ink">{durationStr(run)}</p>
         </div>
-        <div className="bg-[var(--surface)] rounded-lg p-3 border border-[var(--border)]">
-          <p className="text-xs text-[var(--dim)] mb-1">Actions</p>
-          <p className="font-display text-xl font-semibold text-[var(--ink)]">{run.actions_generated ?? '—'}</p>
+        <div className="bg-surface-raised rounded-lg p-3 border border-border">
+          <p className="text-xs text-dim mb-1">Actions</p>
+          <p className="font-display text-xl font-semibold text-ink">{run.actions_generated ?? '—'}</p>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-5">
-        <p className="text-xs text-[var(--dim)] uppercase tracking-wide font-semibold mb-3">Generated Actions</p>
+        <p className="text-xs text-dim uppercase tracking-wide font-semibold mb-3">Generated Actions</p>
         {isLoading ? (
           <div className="space-y-2">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="h-12 bg-[var(--surface)] rounded-md animate-pulse" />
+              <div key={i} className="h-12 bg-surface rounded-md animate-pulse" />
             ))}
           </div>
         ) : actions.length === 0 ? (
-          <p className="text-sm text-[var(--dim)]">No actions recorded for this run.</p>
+          <p className="text-sm text-dim">No actions recorded for this run.</p>
         ) : (
           <motion.ul
             initial="hidden"
@@ -382,15 +383,15 @@ function RunDetailPanel({
                 key={action.id}
                 variants={{
                   hidden: { opacity: 0, x: 12 },
-                  visible: { opacity: 1, x: 0, transition: { duration: 0.25, ease: SPRING } },
+                  visible: { opacity: 1, x: 0, transition: { duration: 0.25, ease: SPRING_CURVE } },
                 }}
-                className="flex items-start gap-2.5 p-3 bg-[var(--surface)] rounded-lg border border-[var(--border)]"
+                className="flex items-start gap-2.5 p-3 bg-surface rounded-lg border border-border"
               >
-                <Zap className="h-4 w-4 text-[var(--ember)] shrink-0 mt-0.5" />
+                <Zap className="h-4 w-4 text-ember shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-[var(--ink)]">{action.title}</p>
+                  <p className="text-sm font-medium text-ink">{action.title}</p>
                   {action.description && (
-                    <p className="text-xs text-[var(--dim)] mt-0.5 leading-relaxed">{action.description}</p>
+                    <p className="text-xs text-dim mt-0.5 leading-relaxed">{action.description}</p>
                   )}
                 </div>
               </motion.li>
@@ -421,17 +422,17 @@ function RunHistoryTable({
 }) {
   if (runs.length === 0) {
     return (
-      <div className="flex items-center justify-center h-32 rounded-lg border border-dashed border-[var(--border)]">
-        <p className="text-sm text-[var(--dim)]">No runs yet. Fire an agent to get started.</p>
+      <div className="flex items-center justify-center h-32 rounded-lg border border-dashed border-border">
+        <p className="text-sm text-dim">No runs yet. Fire an agent to get started.</p>
       </div>
     )
   }
 
   return (
-    <div className="rounded-lg border border-[var(--border)] overflow-hidden">
-      <div className="grid grid-cols-[1fr_120px_120px_120px_80px_80px] gap-3 px-4 py-2.5 bg-[var(--surface)] border-b border-[var(--border)]">
+    <div className="rounded-lg border border-border overflow-hidden">
+      <div className="grid grid-cols-[1fr_120px_120px_120px_80px_80px] gap-3 px-4 py-2.5 bg-surface border-b border-border">
         {['Agent', 'Status', 'Started', 'Completed', 'Duration', 'Actions'].map((h) => (
-          <span key={h} className="text-xs font-semibold text-[var(--dim)] uppercase tracking-wide">{h}</span>
+          <span key={h} className="text-xs font-semibold text-dim uppercase tracking-wide">{h}</span>
         ))}
       </div>
 
@@ -445,15 +446,15 @@ function RunHistoryTable({
                 key={run.id}
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.25, ease: SPRING, delay: i * 0.04 }}
+                transition={{ duration: 0.25, ease: SPRING_CURVE, delay: i * 0.04 }}
                 onClick={() => onSelect(run)}
                 className={cn(
                   'w-full grid grid-cols-[1fr_120px_120px_120px_80px_80px] gap-3 px-4 py-3 text-left',
-                  'hover:bg-[var(--surface)]/70 transition-colors',
-                  isSelected && 'bg-[var(--surface)] ring-1 ring-inset ring-[var(--ember)]/30'
+                  'hover:bg-surface/70 transition-colors',
+                  isSelected && 'bg-surface ring-1 ring-inset ring-[var(--ember)]/30'
                 )}
               >
-                <span className="text-sm font-medium text-[var(--ink)]">{meta.label}</span>
+                <span className="text-sm font-medium text-ink">{meta.label}</span>
                 <div>
                   <Badge variant={statusBadgeVariant(run.status)} size="sm" dot={run.status !== 'running'}>
                     {run.status === 'running' ? (
@@ -464,10 +465,10 @@ function RunHistoryTable({
                     ) : run.status}
                   </Badge>
                 </div>
-                <span className="text-xs text-[var(--dim)] self-center">{relativeTime(run.started_at)}</span>
-                <span className="text-xs text-[var(--dim)] self-center">{run.completed_at ? relativeTime(run.completed_at) : '—'}</span>
-                <span className="text-xs font-mono text-[var(--dim)] self-center">{durationStr(run)}</span>
-                <span className="text-xs font-mono text-[var(--ink)] self-center">{run.actions_generated ?? '—'}</span>
+                <span className="text-xs text-dim self-center">{relativeTime(run.started_at)}</span>
+                <span className="text-xs text-dim self-center">{run.completed_at ? relativeTime(run.completed_at) : '—'}</span>
+                <span className="text-xs font-mono text-dim self-center">{durationStr(run)}</span>
+                <span className="text-xs font-mono text-ink self-center">{run.actions_generated ?? '—'}</span>
               </motion.button>
             )
           })}
@@ -549,14 +550,7 @@ export default function AgentsPage() {
   return (
     <div className="max-w-7xl mx-auto space-y-8">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.32, ease: SPRING }}
-      >
-        <h1 className="font-display text-3xl font-semibold text-[var(--ink)]">AI Agents</h1>
-        <p className="text-sm text-[var(--dim)] mt-1">Specialized intelligence modules</p>
-      </motion.div>
+      <PageHeader title="AI Agents" subtitle="Specialized intelligence modules" />
 
       {/* Agent cards */}
       {isLoading ? (
@@ -572,7 +566,7 @@ export default function AgentsPage() {
                 key={agentDef.type}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.35, ease: SPRING, delay: i * 0.08 }}
+                transition={{ duration: 0.35, ease: SPRING_CURVE, delay: i * 0.08 }}
               >
                 <AgentCard
                   agentDef={agentDef}
@@ -599,7 +593,7 @@ export default function AgentsPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
-          className="font-display text-xl font-semibold text-[var(--ink)] mb-4"
+          className="font-display text-xl font-semibold text-ink mb-4"
         >
           Run History
         </motion.h2>
@@ -624,8 +618,8 @@ export default function AgentsPage() {
                 initial={{ opacity: 0, width: 0 }}
                 animate={{ opacity: 1, width: '380px' }}
                 exit={{ opacity: 0, width: 0 }}
-                transition={{ duration: 0.32, ease: SPRING }}
-                className="shrink-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--paper)] shadow-md sticky top-4"
+                transition={{ duration: 0.32, ease: SPRING_CURVE }}
+                className="shrink-0 overflow-hidden rounded-xl border border-border bg-surface-raised shadow-md sticky top-4"
                 style={{ maxHeight: 'calc(100vh - 120px)' }}
               >
                 <RunDetailPanel

@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Modal, ModalContent, ModalHeader, ModalTitle, ModalBody, ModalFooter, ModalClose } from '@/components/ui/modal'
 import { Input } from '@/components/ui/input'
 import { SkeletonCard } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/layout/page-header'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -221,7 +222,7 @@ function StoryCard({ story, index, onRead }: { story: Story; index: number; onRe
       layout
       whileHover={{ y: -3, boxShadow: '0 8px 24px rgba(22,20,15,0.10)' }}
       transition={spring}
-      className="rounded-2xl border border-[var(--border)] bg-white/70 p-6 hover:shadow-md transition-shadow flex flex-col cursor-default"
+      className="rounded-2xl border border-border bg-surface-raised p-6 hover:shadow-[0_4px_16px_rgba(22,20,15,0.08),0_2px_4px_rgba(22,20,15,0.04)] hover:border-border-strong transition-all duration-200 flex flex-col cursor-default"
     >
       {/* Status badge float right */}
       <div className="flex justify-end mb-1">
@@ -231,14 +232,14 @@ function StoryCard({ story, index, onRead }: { story: Story; index: number; onRe
       </div>
 
       {/* Title */}
-      <h2 className="font-display text-xl text-[var(--ink)] mt-2 line-clamp-2 leading-snug">{story.title}</h2>
+      <h2 className="font-display text-xl text-ink mt-2 line-clamp-2 leading-snug">{story.title}</h2>
 
       {/* Excerpt */}
-      <p className="text-sm text-[var(--dim)] mt-2 line-clamp-3 leading-relaxed flex-1">{excerpt}</p>
+      <p className="text-sm text-dim mt-2 line-clamp-3 leading-relaxed flex-1">{excerpt}</p>
 
       {/* Footer */}
-      <div className="flex items-center justify-between mt-4 pt-4 border-t border-[var(--border)]">
-        <span className="text-xs text-[var(--dim)]">
+      <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
+        <span className="text-xs text-dim">
           {story.published_at ? relativeTime(story.published_at) : relativeTime(story.created_at)}
         </span>
         <Button size="sm" variant="ghost" onClick={onRead} className="gap-1.5">
@@ -357,31 +358,31 @@ export default function StoriesPage() {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={spring}
-        className="flex flex-col gap-6 p-6 max-w-6xl mx-auto"
+        className="flex flex-col gap-6 max-w-6xl mx-auto pb-16"
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="font-display text-3xl font-semibold text-ink leading-tight">Brand Stories</h1>
-            <p className="text-sm text-dim font-sans mt-1">Founder intelligence &amp; market narratives</p>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <Button variant="outline" size="sm" asChild>
-              <a href="/stories" target="_blank" rel="noopener noreferrer" className="gap-1.5 no-underline">
-                <ExternalLink className="h-3.5 w-3.5" />
-                Public stories
-              </a>
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => setModalOpen(true)}
-              className="bg-[var(--ember)] text-white hover:bg-[var(--ember)]/90"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              New Story
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          title="Brand Stories"
+          subtitle="Founder intelligence & market narratives"
+          actions={
+            <>
+              <Button variant="outline" size="sm" asChild>
+                <a href="/stories" target="_blank" rel="noopener noreferrer" className="gap-1.5 no-underline">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Public stories
+                </a>
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setModalOpen(true)}
+                className="bg-ember text-white hover:bg-ember/90"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                New Story
+              </Button>
+            </>
+          }
+        />
 
         {/* Stories grid */}
         {isLoading ? (
@@ -392,7 +393,7 @@ export default function StoriesPage() {
           <div className="flex flex-col items-center justify-center py-20 text-center gap-3 border border-dashed border-border rounded-xl">
             <BookOpen className="h-8 w-8 text-dim" />
             <p className="text-sm text-dim font-sans">No stories yet.</p>
-            <Button size="sm" onClick={() => setModalOpen(true)} className="bg-[var(--ember)] text-white hover:bg-[var(--ember)]/90">
+            <Button size="sm" onClick={() => setModalOpen(true)} className="bg-ember text-white hover:bg-ember/90">
               <Plus className="h-3.5 w-3.5" /> Write the first story
             </Button>
           </div>

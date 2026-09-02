@@ -33,6 +33,8 @@ import {
   ModalFooter,
   ModalClose,
 } from '@/components/ui/modal'
+import { PageHeader } from '@/components/layout/page-header'
+import { SPRING_CURVE } from '@/lib/motion'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -54,7 +56,6 @@ interface Job {
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
-const SPRING = [0.16, 1, 0.3, 1] as [number, number, number, number]
 
 const COLUMNS: { id: JobStatus; label: string; color: string; accent: string }[] = [
   { id: 'draft', label: 'Draft', color: 'text-dim', accent: 'bg-border' },
@@ -112,9 +113,9 @@ function JobCard({
       initial={{ opacity: 0, y: 12, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95, y: -8 }}
-      transition={{ duration: 0.32, ease: SPRING }}
+      transition={{ duration: 0.32, ease: SPRING_CURVE }}
       whileHover={{ y: -2, boxShadow: '0 8px 24px rgba(22,20,15,0.10)', scale: 1.015 }}
-      className="bg-paper border border-border rounded-lg p-4 cursor-default select-none"
+      className="bg-paper border border-border rounded-lg p-5 cursor-default select-none"
     >
       {/* Title & type */}
       <div className="flex items-start justify-between gap-2 mb-3">
@@ -478,30 +479,27 @@ export default function PublishingPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.32, ease: SPRING }}
-        className="flex items-center justify-between mb-6 shrink-0"
-      >
-        <div>
-          <h1 className="font-display text-3xl font-semibold text-ink">Publishing Queue</h1>
-          <p className="text-sm text-dim mt-1">Approval &amp; scheduling pipeline</p>
-        </div>
-        <Button
-          onClick={() => setNewJobOpen(true)}
-          className="bg-[var(--ember)] text-white hover:bg-[var(--ember)]/90"
-        >
-          <Plus className="h-4 w-4" />
-          Schedule Post
-        </Button>
-      </motion.div>
+      <div className="mb-6 shrink-0">
+        <PageHeader
+          title="Publishing Queue"
+          subtitle="Approval & scheduling pipeline"
+          actions={
+            <Button
+              onClick={() => setNewJobOpen(true)}
+              className="bg-ember text-white hover:bg-ember/90"
+            >
+              <Plus className="h-4 w-4" />
+              Schedule Post
+            </Button>
+          }
+        />
+      </div>
 
       {/* Summary bar */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, ease: SPRING, delay: 0.05 }}
+        transition={{ duration: 0.3, ease: SPRING_CURVE, delay: 0.05 }}
         className="flex items-center gap-6 mb-6 px-4 py-3 bg-surface border border-border rounded-lg shrink-0"
       >
         <div className="flex items-center gap-2">
@@ -530,7 +528,7 @@ export default function PublishingPage() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.3, ease: SPRING, delay: 0.1 }}
+            transition={{ duration: 0.3, ease: SPRING_CURVE, delay: 0.1 }}
             className="grid grid-cols-4 gap-4 flex-1 min-h-0"
           >
             {COLUMNS.map((col) => (

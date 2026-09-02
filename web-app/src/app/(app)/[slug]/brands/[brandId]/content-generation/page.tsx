@@ -27,6 +27,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useToast } from '@/components/ui/toast'
+import { PageHeader } from '@/components/layout/page-header'
 import { cn, relativeTime } from '@/lib/utils'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -129,7 +130,7 @@ function GenerationForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-2xl border border-[var(--border)] bg-white/70 p-6 space-y-4"
+      className="rounded-2xl border border-border bg-surface-raised p-6 space-y-6"
     >
       {/* Topic */}
       <Input
@@ -144,7 +145,7 @@ function GenerationForm({
       {/* Content Type + Tone row */}
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-[var(--ink)] font-sans">Content Type</label>
+          <label className="text-sm font-medium text-ink font-sans">Content Type</label>
           <Select value={form.content_type} onValueChange={(v) => patch('content_type', v as ContentTypeOption)}>
             <SelectTrigger>
               <SelectValue />
@@ -158,7 +159,7 @@ function GenerationForm({
           </Select>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-[var(--ink)] font-sans">Tone</label>
+          <label className="text-sm font-medium text-ink font-sans">Tone</label>
           <Select value={form.tone} onValueChange={(v) => patch('tone', v as Tone)}>
             <SelectTrigger>
               <SelectValue />
@@ -230,19 +231,19 @@ function GeneratedResultCard({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.35, ease: SPRING }}
-      className="rounded-2xl border border-[var(--border)] bg-white/70 p-6 space-y-4"
+      className="rounded-2xl border border-border bg-surface-raised p-6 space-y-6"
     >
       {/* Heading + copy */}
       <div className="flex items-center justify-between gap-2">
-        <h2 className="font-display text-lg text-[var(--ink)]">Generated Content</h2>
+        <h2 className="font-display text-lg text-ink">Generated Content</h2>
         <Button variant="outline" size="sm" onClick={copy}>
-          {copied ? <Check className="h-3.5 w-3.5 text-[var(--success)]" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
           {copied ? 'Copied!' : 'Copy'}
         </Button>
       </div>
 
       {/* Content */}
-      <div className="max-h-64 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--paper)] p-4 font-serif text-sm text-[var(--ink)] leading-relaxed whitespace-pre-wrap break-words">
+      <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-paper p-4 font-serif text-sm text-ink leading-relaxed whitespace-pre-wrap break-words">
         {draft.content}
       </div>
 
@@ -266,20 +267,20 @@ function RecentGenerations({ briefs }: { briefs: Brief[] }) {
   if (briefs.length === 0) return null
 
   return (
-    <div className="rounded-2xl border border-[var(--border)] bg-white/70 p-6">
-      <h2 className="font-display text-lg text-[var(--ink)] mb-4">Recent Generations</h2>
+    <div className="rounded-2xl border border-border bg-surface-raised p-6">
+      <h2 className="font-display text-lg text-ink mb-4">Recent Generations</h2>
       <div className="space-y-3">
         {briefs.slice(0, 8).map((brief) => (
           <div
             key={brief.id}
-            className="flex items-center gap-3 py-2 border-b border-[var(--border)] last:border-0"
+            className="flex items-center gap-3 py-2 border-b border-border last:border-0"
           >
-            <FileText className="h-4 w-4 text-[var(--dim)] shrink-0" />
-            <p className="text-sm text-[var(--ink)] flex-1 line-clamp-1">{brief.topic}</p>
+            <FileText className="h-4 w-4 text-dim shrink-0" />
+            <p className="text-sm text-ink flex-1 line-clamp-1">{brief.topic}</p>
             {brief.content_type && (
               <Badge variant="outline" size="sm">{typeLabel(brief.content_type as ContentTypeOption)}</Badge>
             )}
-            <span className="text-xs text-[var(--dim)] shrink-0">{relativeTime(brief.created_at)}</span>
+            <span className="text-xs text-dim shrink-0">{relativeTime(brief.created_at)}</span>
             <Badge variant={statusVariant(brief.status)} size="sm">{statusLabel(brief.status)}</Badge>
           </div>
         ))}
@@ -360,16 +361,12 @@ export default function ContentGenerationPage() {
   const isGenerating = createMutation.isPending || generateMutation.isPending
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-6 pb-16">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: SPRING }}
-      >
-        <h1 className="font-display text-3xl font-semibold text-[var(--ink)]">Content Generation</h1>
-        <p className="text-sm text-[var(--dim)] mt-1">AI-optimized content for recommendation engines</p>
-      </motion.div>
+      <PageHeader
+        title="Content Generation"
+        subtitle="AI-optimized content for recommendation engines"
+      />
 
       {/* Generation form */}
       <motion.div
