@@ -246,3 +246,16 @@ User's instruction: verifying an epic route-by-route or component-by-component i
 - Confirm the fix wave's results and whether a re-verify pass is warranted before marking Epics 1/2 `VERIFIED`.
 - Migration-folder numbering: Epic 1 and Epic 2 independently created `prisma/migrations/0001_*` concurrently; Epic 1 self-resolved by renumbering to `0002_crm` (confirmed on disk: `0000_init`, `0001_brand_intelligence`, `0002_crm` — no collision remains).
 - Still nothing run against a live database — that remains entirely the user's own step.
+
+### Fix wave landed (commit `481cc45`) — Epics 0, 1, 2, 6 all VERIFIED
+
+All three fixes confirmed correct by direct code inspection (not just the fix agents' own claims) before updating status:
+- **Epic 1**: `deals-board-view.tsx`'s kanban now opens a real shared reason-capture dialog before any "move to Lost" — spot-checked `handleMoveStage`/`applyStageChange`/`lostPromptDealId` state directly in the file.
+- **Epic 2**: `onboarding-client.ts` now calls the real API; every data-contract mismatch was resolved by reading the actual spec text and fixing whichever side deviated (backend's `brands` table had drifted from `docs/06-database/SCHEMA.md`'s `industries[]/categories[]/markets[]`, competitor priority reverted to the spec's literal `SMALLINT`, plan tiers completed to the full 7-tier list) — spot-checked `schema.prisma`'s `brands` model directly, matches exactly. The reported build-breaking TS error wasn't reproducible (already clean).
+- **Epic 0**: the flaky `@bebest/api` test (found incidentally by Epic 6's verify agent while running cross-package checks, not something anyone was looking for) was root-caused to `auth.test.ts` not restoring `NODE_ENV` in `afterEach` like every other env-mutating test file does — fixed, verified deterministic across 5 consecutive full-suite runs.
+
+Epics 0, 1, 2, 6 are now `VERIFIED` in `platform/EPICS.md`. Migration application is still entirely the user's own step — nothing was run against a database.
+
+### Wave 2 — next up
+
+Dependency-driven: Epic 3 (Website Intelligence/Crawler) and Epic 5 (Intent & Query Universe) both only depend on Epic 2 (done) and not on each other, so they build in parallel next. Epic 4 (SEO Intelligence) needs both Epic 2 and Epic 3's schema to exist, and Epic 7 (AI Visibility Engine) needs both Epic 5 and Epic 6 — both deferred to Wave 3 rather than risking a three-way concurrent schema edit in one wave.
