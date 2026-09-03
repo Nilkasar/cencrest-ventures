@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Sparkles } from "lucide-react";
-import { Button, Card, CardContent, EmptyState, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, useToast } from "@bebest/ui";
+import { Button, Card, CardContent, EmptyState, Pagination, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, useToast } from "@bebest/ui";
 import { PageHeader } from "@/components/patterns/page-header";
 import { ErrorPanel } from "@/components/patterns/error-panel";
 import { useAsyncData } from "@/lib/use-async-data";
@@ -36,15 +36,19 @@ function ListSkeleton() {
  * `PATCH /recommendations/:id` from the first line, no fixture layer.
  *
  * Sorted by `priorityRank` desc server-side, never re-sorted client-side.
- * Defaults to the top 10 (`show` below) — matching the journey doc's own
+ * Defaults to a page of 10 (`show` below) — matching the journey doc's own
  * framing of a short, prioritized list rather than an undifferentiated
- * backlog — with a "Show" control to widen the window when browsing
- * everything, not just the top slice.
+ * backlog — with a "per page" control to widen the window, and real
+ * Prev/Next paging (Epic 19 production-hardening item 2: the API caps at
+ * 100/page regardless of what's requested, so a brand with more than one
+ * page of recommendations needs a real way to reach the rest, not just a
+ * bigger single fetch).
  */
 export function RecommendationsView() {
   const [statusFilter, setStatusFilter] = useState<RecommendationStatus | "all">("all");
   const [actionTypeFilter, setActionTypeFilter] = useState<RecommendationActionType | "all">("all");
   const [show, setShow] = useState<(typeof SHOW_OPTIONS)[number]>(10);
+  const [page, setPage] = useState(1);
 
   const { reload, ...state } = useAsyncData(
     () =>
@@ -52,8 +56,9 @@ export function RecommendationsView() {
         status: statusFilter === "all" ? undefined : statusFilter,
         actionType: actionTypeFilter === "all" ? undefined : actionTypeFilter,
         limit: show,
+        offset: (page - 1) * show,
       }),
-    [statusFilter, actionTypeFilter, show],
+    [statusFilter, actionTypeFilter, show, page],
   );
 
   const { toast } = useToast();
@@ -87,6 +92,7 @@ export function RecommendationsView() {
   function clearFilters() {
     setStatusFilter("all");
     setActionTypeFilter("all");
+    setPage(1);
   }
 
   async function handleStatusChange(recommendation: Recommendation, status: RecommendationStatus) {
@@ -124,7 +130,13 @@ export function RecommendationsView() {
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <Select value={actionTypeFilter} onValueChange={(v) => setActionTypeFilter(v as RecommendationActionType | "all")}>
+              <Select
+                value={actionTypeFilter}
+                onValueChange={(v) => {
+                  setActionTypeFilter(v as RecommendationActionType | "all");
+                  setPage(1);
+                }}
+              >
                 <SelectTrigger className="w-40 h-8 text-[12.5px]" aria-label="Filter by action type">
                   <SelectValue />
                 </SelectTrigger>
@@ -136,7 +148,13 @@ export function RecommendationsView() {
                   ))}
                 </SelectContent>
               </Select>
-              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as RecommendationStatus | "all")}>
+              <Select
+                value={statusFilter}
+                onValueChange={(v) => {
+                  setStatusFilter(v as RecommendationStatus | "all");
+                  setPage(1);
+                }}
+              >
                 <SelectTrigger className="w-36 h-8 text-[12.5px]" aria-label="Filter by status">
                   <SelectValue />
                 </SelectTrigger>
@@ -148,14 +166,20 @@ export function RecommendationsView() {
                   ))}
                 </SelectContent>
               </Select>
-              <Select value={String(show)} onValueChange={(v) => setShow(Number(v) as (typeof SHOW_OPTIONS)[number])}>
-                <SelectTrigger className="w-32 h-8 text-[12.5px]" aria-label="Number to show">
+              <Select
+                value={String(show)}
+                onValueChange={(v) => {
+                  setShow(Number(v) as (typeof SHOW_OPTIONS)[number]);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-32 h-8 text-[12.5px]" aria-label="Number per page">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {SHOW_OPTIONS.map((value) => (
                     <SelectItem key={value} value={String(value)}>
-                      Top {value}
+                      {value} per page
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -206,6 +230,10 @@ export function RecommendationsView() {
                 );
               })}
             </div>
+          )}
+
+          {state.status === "success" && state.data.recommendations.length > 0 && (
+            <Pagination page={page} pageSize={show} total={state.data.pagination.total} onPageChange={setPage} itemLabel="recommendations" />
           )}
         </CardContent>
       </Card>

@@ -9,6 +9,7 @@ function matches(row: Record<string, unknown>, where: Record<string, unknown>): 
 let reportRows: Array<Record<string, unknown>> = [];
 
 const db = {
+  organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
   organizations: { findUnique: vi.fn() },
   memberships: { findFirst: vi.fn() },
   users: { findUnique: vi.fn() },
@@ -61,6 +62,7 @@ function makeReport(overrides: Record<string, unknown> = {}): Record<string, unk
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  db.organization_rate_limits.upsert.mockResolvedValue({ count: 1 });
   reportRows = [];
 
   const { __setKeysForTesting } = await import('../lib/jwt.js');

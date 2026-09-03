@@ -22,6 +22,7 @@
 import { Hono } from 'hono';
 import { withOrgContext, type brand_observations } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { getBrandForOrg, NO_BRAND_ERROR } from '../lib/brand-context.js';
@@ -112,7 +113,7 @@ async function findPreviousCompletedRun(organizationId: string, brandId: string,
 }
 
 // ── GET /competitive-gaps ─────────────────────────────────────────────────
-competitiveIntelligenceRoute.get('/competitive-gaps', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+competitiveIntelligenceRoute.get('/competitive-gaps', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const brand = await getBrandForOrg(org.organizationId);
   if (!brand) return c.json(NO_BRAND_ERROR, 404);
@@ -233,7 +234,7 @@ competitiveIntelligenceRoute.get('/competitive-gaps', requireAuth, requireOrgFro
 });
 
 // ── GET /share-of-voice ────────────────────────────────────────────────────
-competitiveIntelligenceRoute.get('/share-of-voice', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+competitiveIntelligenceRoute.get('/share-of-voice', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const brand = await getBrandForOrg(org.organizationId);
   if (!brand) return c.json(NO_BRAND_ERROR, 404);
@@ -282,6 +283,7 @@ competitiveIntelligenceRoute.get('/share-of-voice', requireAuth, requireOrgFromT
 competitiveIntelligenceRoute.get(
   '/competitors/:competitorId/movement',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(VIEW),
   async (c) => {

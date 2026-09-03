@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog, writeManualAuditEvent } from '../middleware/audit-log.js';
@@ -28,6 +29,7 @@ function serialize(row: use_cases) {
 useCasesRoute.get(
   '/',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission('view_intelligence'),
   async (c) => {
@@ -35,10 +37,13 @@ useCasesRoute.get(
     const brand = await getBrandForOrg(org.organizationId);
     if (!brand) return c.json(NO_BRAND_ERROR, 404);
 
+    // Epic 19 (Production Hardening), item 6 — capped server-side (this
+    // call had no cap at all before this epic).
     const rows = await withOrgContext(org.organizationId, (tx) =>
       tx.use_cases.findMany({
         where: { organization_id: org.organizationId, brand_id: brand.id, deleted_at: null },
         orderBy: { created_at: 'asc' },
+        take: 100,
       }),
     );
     return c.json(rows.map(serialize));
@@ -60,6 +65,7 @@ const createSchema = z.object({
 useCasesRoute.post(
   '/',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission('create_brand_profile'),
   async (c) => {
@@ -104,6 +110,7 @@ const updateSchema = createSchema.partial();
 useCasesRoute.patch(
   '/:id',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission('create_brand_profile'),
   auditLog({ action: 'use_case.updated', entityType: 'use_case' }),
@@ -145,6 +152,7 @@ useCasesRoute.patch(
 useCasesRoute.delete(
   '/:id',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission('create_brand_profile'),
   auditLog({ action: 'use_case.deleted', entityType: 'use_case' }),

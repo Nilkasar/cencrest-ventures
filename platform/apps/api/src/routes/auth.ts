@@ -10,7 +10,7 @@ import {
 import { generateOpaqueToken } from '../lib/tokens.js';
 import type { EmailSender } from '../lib/email.js';
 import { requireAuth } from '../middleware/auth.js';
-import { authRateLimit } from '../middleware/rate-limit.js';
+import { authRateLimit, authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { auditLog } from '../middleware/audit-log.js';
 import { resolveAgencyAccess } from '../lib/agency-access.js';
 import type { AppEnv } from '../types/context.js';
@@ -191,7 +191,7 @@ export function createAuthRoutes(emailSender: EmailSender) {
   // fresh) by `resolveOrgContext` on every subsequent request — minting a
   // token here grants nothing by itself, and a link revoked a moment later
   // blocks the very next request regardless of what this token claims.
-  auth.post('/select-org', requireAuth, async (c) => {
+  auth.post('/select-org', requireAuth, authenticatedRateLimit, async (c) => {
     const body = await c.req.json().catch(() => null);
     const parsed = z.object({ slug: z.string().min(1) }).safeParse(body);
     if (!parsed.success) return c.json({ error: 'Organization slug required' }, 400);
@@ -228,15 +228,20 @@ export function createAuthRoutes(emailSender: EmailSender) {
   });
 
   // ── /me ───────────────────────────────────────────────────────────────────
-  auth.get('/me', requireAuth, async (c) => {
+  auth.get('/me', requireAuth, authenticatedRateLimit, async (c) => {
     const authUser = c.get('user');
 
+    // Epic 19 (Production Hardening), item 6 — capped server-side for
+    // consistency with every other list endpoint in this codebase, though
+    // this one is naturally small (memberships for a single user), same as
+    // routes/orgs.ts's GET / list.
     const memberships = await withUserContext(authUser.id, (tx) =>
       tx.memberships.findMany({
         where: { user_id: authUser.id },
         include: {
           organizations: { select: { id: true, name: true, slug: true, deleted_at: true } },
         },
+        take: 100,
       }),
     );
 

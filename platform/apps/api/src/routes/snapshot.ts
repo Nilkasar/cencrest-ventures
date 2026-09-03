@@ -7,8 +7,17 @@ import { getInternalOrgId } from '../lib/internal-org.js';
 import { freeSnapshotRateLimit } from '../middleware/rate-limit.js';
 import { writeManualAuditEvent } from '../middleware/audit-log.js';
 import { runFreeSnapshotPipeline, type FreeSnapshotInput } from '../lib/free-snapshot/orchestrator.js';
+import { getDefaultJobQueue } from '../lib/queue/default-job-queue.js';
 import type { EmailSender } from '../lib/email.js';
 import type { AppEnv } from '../types/context.js';
+
+interface FreeSnapshotJobPayload {
+  snapshotRequestId: string;
+  token: string;
+  input: FreeSnapshotInput;
+}
+
+const FREE_SNAPSHOT_JOB_TYPE = 'free_snapshot_pipeline';
 
 function clientIp(c: Context<AppEnv>): string | null {
   const ip = c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip');
@@ -49,6 +58,29 @@ const CONFIRMATION_MESSAGE = "Your snapshot is being prepared. We'll email you w
 
 export function createSnapshotRoutes(emailSender: EmailSender) {
   const snapshot = new Hono<AppEnv>();
+
+  // Epic 19 (Production Hardening), item 1 — registered once per
+  // `createSnapshotRoutes` call (this factory has exactly one call site,
+  // `app.ts`, so this runs once per process) rather than a raw
+  // `setImmediate` call. See `lib/queue/job-queue.ts`'s header comment for
+  // the full design; behaviorally unchanged in this build (default queue
+  // is `InMemoryJobQueue`, still fires via `setImmediate` under the hood).
+  getDefaultJobQueue().register<FreeSnapshotJobPayload>(FREE_SNAPSHOT_JOB_TYPE, async ({ snapshotRequestId, token, input }) => {
+    await runFreeSnapshotPipeline(snapshotRequestId, token, input, { emailSender }).catch((err: unknown) => {
+      // runFreeSnapshotPipeline already catches everything internally and
+      // marks the row `failed` — this is a final backstop in case
+      // something outside that try/catch (e.g. a synchronous throw before
+      // its own try block) escapes.
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          msg: 'free_snapshot_pipeline_uncaught',
+          snapshotRequestId,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    });
+  });
 
   // ── POST /snapshot — public, unauthenticated, rate-limited ──────────────
   // Order matches docs/epics/17-free-snapshot.md's explicit "IN THIS ORDER"
@@ -121,25 +153,14 @@ export function createSnapshotRoutes(emailSender: EmailSender) {
     const pipelineInput: FreeSnapshotInput = { name, email, company, website, category, biggestCompetitor };
 
     // Steps 2b-2f + step 4 (the "ready" email) — see
-    // lib/free-snapshot/orchestrator.ts. Scheduled via `setImmediate`, same
-    // "create the row synchronously, run the real work in the background"
-    // shape as routes/crawl.ts/routes/ai-runs.ts (no durable queue exists
-    // yet in this monorepo — same documented TODO those routes carry).
-    setImmediate(() => {
-      void runFreeSnapshotPipeline(snapshotRequest.id, token, pipelineInput, { emailSender }).catch((err: unknown) => {
-        // runFreeSnapshotPipeline already catches everything internally and
-        // marks the row `failed` — this is a final backstop in case
-        // something outside that try/catch (e.g. a synchronous throw
-        // before its own try block) escapes.
-        console.error(
-          JSON.stringify({
-            level: 'error',
-            msg: 'free_snapshot_pipeline_uncaught',
-            snapshotRequestId: snapshotRequest.id,
-            error: err instanceof Error ? err.message : String(err),
-          }),
-        );
-      });
+    // lib/free-snapshot/orchestrator.ts. Scheduled via `JobQueue` (see the
+    // registration above), same "create the row synchronously, run the
+    // real work in the background" shape as routes/crawl.ts/routes/
+    // ai-runs.ts.
+    void getDefaultJobQueue().enqueue<FreeSnapshotJobPayload>(FREE_SNAPSHOT_JOB_TYPE, {
+      snapshotRequestId: snapshotRequest.id,
+      token,
+      input: pipelineInput,
     });
 
     const appUrl = process.env.APP_URL ?? 'http://localhost:3000';

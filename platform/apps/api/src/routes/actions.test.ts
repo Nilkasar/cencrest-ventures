@@ -16,6 +16,7 @@ function matches(row: Record<string, unknown>, where: Record<string, unknown>): 
 const BRAND = { id: 'brand-1', organization_id: 'org-1', name: 'Acme', created_at: new Date('2025-01-01'), deleted_at: null };
 
 const db = {
+  organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
   organizations: { findUnique: vi.fn() },
   memberships: { findFirst: vi.fn() },
   users: { findUnique: vi.fn() },
@@ -82,6 +83,7 @@ function makeAction(overrides: Record<string, unknown>): Record<string, unknown>
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  db.organization_rate_limits.upsert.mockResolvedValue({ count: 1 });
   actRows = [];
   cdRows = [];
   cbRows = [];
@@ -127,6 +129,17 @@ describe('GET /brands/me/actions', () => {
     const app = await buildApp();
     const res = await app.request('/brands/me/actions', { headers: await authHeader('user-1', 'org-1') });
     expect(res.status).toBe(404);
+  });
+
+  it('Epic 19 (Production Hardening) item 6: caps every section server-side — none of the four findMany calls is unbounded', async () => {
+    actRows = [makeAction({ id: 'a-1' })];
+    const app = await buildApp();
+    await app.request('/brands/me/actions', { headers: await authHeader('user-1', 'org-1') });
+
+    expect(db.actions.findMany).toHaveBeenCalledTimes(4);
+    for (const call of db.actions.findMany.mock.calls) {
+      expect(call[0]).toMatchObject({ take: 100 });
+    }
   });
 
   it('a pending action carries the underlying content draft/brief inline, not just a title', async () => {

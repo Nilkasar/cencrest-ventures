@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog, writeManualAuditEvent } from '../middleware/audit-log.js';
@@ -31,6 +32,7 @@ function serializeCompetitor(row: competitors) {
 competitorsRoute.get(
   '/',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission('view_intelligence'),
   async (c) => {
@@ -38,10 +40,16 @@ competitorsRoute.get(
     const brand = await getBrandForOrg(org.organizationId);
     if (!brand) return c.json(NO_BRAND_ERROR, 404);
 
+    // Epic 19 (Production Hardening), item 6 — capped server-side, defense
+    // in depth on top of (never instead of) the `competitors_tracked`
+    // entitlement limit that already bounds how many rows can exist per
+    // org (see the POST handler below) — a plan limit changing later
+    // should never turn this read into an unbounded one.
     const rows = await withOrgContext(org.organizationId, (tx) =>
       tx.competitors.findMany({
         where: { organization_id: org.organizationId, brand_id: brand.id, deleted_at: null },
         orderBy: { created_at: 'asc' },
+        take: 100,
       }),
     );
 
@@ -67,6 +75,7 @@ const createCompetitorSchema = z.object({
 competitorsRoute.post(
   '/',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission('create_brand_profile'),
   async (c) => {
@@ -147,6 +156,7 @@ const updateCompetitorSchema = createCompetitorSchema.partial();
 competitorsRoute.patch(
   '/:id',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission('create_brand_profile'),
   auditLog({ action: 'competitor.updated', entityType: 'competitor' }),
@@ -191,6 +201,7 @@ competitorsRoute.patch(
 competitorsRoute.delete(
   '/:id',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission('create_brand_profile'),
   auditLog({ action: 'competitor.deleted', entityType: 'competitor' }),

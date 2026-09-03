@@ -5,13 +5,27 @@
  * mechanism exists, setImmediate-based placeholder acceptable with the
  * same honest `// TODO: durable queue` marker every prior epic used)."
  *
- * TODO: durable queue (pg-boss) — same documented, no-queue-package-in-
- * this-monorepo placeholder every prior epic's background job uses
- * (`lib/ai-visibility/schedule-run.ts`, `lib/crawler/engine.ts`'s own
- * scheduler, `routes/crawl.ts`/`routes/snapshot.ts`). A process restart
- * loses every pending re-measurement timer currently — a real queue with a
- * durable "fire at this timestamp" job is the fix, tracked in this epic's
- * backend doc's "not done" list, not solved here.
+ * TODO: durable queue (pg-boss) — still accurate as of Epic 19 (Production
+ * Hardening). That epic introduced `lib/queue/job-queue.ts` and migrated
+ * every OTHER background job (`lib/ai-visibility/schedule-run.ts`,
+ * `routes/crawl.ts`, `lib/agents/runner.ts`, `routes/snapshot.ts`) onto it,
+ * but deliberately left THIS scheduler's `deps.schedule` closure-based
+ * design (`(fn: () => void, delayMs: number) => unknown`) as-is rather than
+ * force-fitting it onto `JobQueue.enqueue(jobType, payload, {delayMs})`:
+ * `JobQueue` jobs are a `(jobType, serializable payload)` pair precisely so
+ * they can survive a process restart once a durable backend
+ * (`PgBossJobQueue`) is actually wired in — a raw closure can't be
+ * serialized, so routing it through `enqueue()` unchanged would make the
+ * eventual durable swap no more durable than today for this one caller,
+ * while still risking its own 8 already-passing tests (exact timing
+ * behavior around the 32-bit `setTimeout` ceiling) for no real gain. The
+ * honest fix is to give this trigger its own `jobType` with a
+ * `{ actionId, organizationId }` payload and a registered handler calling
+ * `runMeasurementForAction`, then enqueue with `{ delayMs }` — real,
+ * valuable follow-up work, explicitly tracked in this epic's backend
+ * completion doc rather than done as a last-minute API break here. A
+ * process restart still loses every pending re-measurement timer, exactly
+ * as this comment said before Epic 19.
  *
  * Unlike every prior epic's `setImmediate` (fire essentially now, in the
  * background, after an HTTP response already went out), THIS trigger has a

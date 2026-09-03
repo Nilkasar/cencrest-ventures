@@ -9,6 +9,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { auditLog } from '../middleware/audit-log.js';
 import { resolvePlanLimits } from '../lib/entitlements.js';
@@ -37,7 +38,7 @@ const patchSchema = z.object({
 
 // ── GET — any member (viewer+) can see their own org's current setting;
 // always 200, defaulting shape when nothing has been configured yet. ──────
-whiteLabel.get('/', requireAuth, requireOrgFromToken('viewer'), async (c) => {
+whiteLabel.get('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), async (c) => {
   const org = c.get('org');
   const row = await withOrgContext(org.organizationId, (tx) =>
     tx.white_label_configs.findUnique({ where: { organization_id: org.organizationId } }),
@@ -52,6 +53,7 @@ whiteLabel.get('/', requireAuth, requireOrgFromToken('viewer'), async (c) => {
 whiteLabel.patch(
   '/',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('admin'),
   auditLog({ action: 'settings.changed', entityType: 'white_label_configs' }),
   async (c) => {

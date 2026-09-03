@@ -15,6 +15,7 @@
 import { Hono } from 'hono';
 import { withOrgContext, type Prisma } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import {
@@ -44,6 +45,7 @@ const NOT_FOUND_ERROR = { error: 'Recommendation not found' } as const;
 contentBriefGenerateRoute.post(
   '/:id/content-brief',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MUTATE),
   async (c) => {

@@ -9,6 +9,7 @@
 import { Hono } from 'hono';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { getBrandForOrg, NO_BRAND_ERROR } from '../lib/brand-context.js';
@@ -19,7 +20,7 @@ const measurementsRoute = new Hono<AppEnv>();
 
 const VIEW = 'view_intelligence' as const;
 
-measurementsRoute.get('/', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+measurementsRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const brand = await getBrandForOrg(org.organizationId);
   if (!brand) return c.json(NO_BRAND_ERROR, 404);

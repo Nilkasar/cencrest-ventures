@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { db, withOrgContext, type Prisma } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireCrmAccess } from '../middleware/crm-access.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { getInternalOrgId } from '../lib/internal-org.js';
@@ -29,6 +30,7 @@ const createActivitySchema = z
 activities.post(
   '/',
   requireAuth,
+  authenticatedRateLimit,
   requireCrmAccess('viewer'),
   requirePermission('log_crm_activities'),
   async (c) => {
@@ -85,7 +87,7 @@ activities.post(
 );
 
 // ── List (by lead, deal, or org — time-ordered) ─────────────────────────
-activities.get('/', requireAuth, requireCrmAccess('viewer'), async (c) => {
+activities.get('/', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'), async (c) => {
   const internalOrgId = getInternalOrgId();
   const query = z
     .object({

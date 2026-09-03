@@ -9,6 +9,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog } from '../middleware/audit-log.js';
@@ -36,7 +37,7 @@ async function getOpportunity(organizationId: string, id: string) {
 }
 
 // ── GET /:id — full detail, evidence trail inlined ───────────────────────
-opportunityDetailsRoute.get('/:id', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+opportunityDetailsRoute.get('/:id', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const row = await getOpportunity(org.organizationId, c.req.param('id'));
   if (!row) return c.json(NOT_FOUND_ERROR, 404);
@@ -64,6 +65,7 @@ const patchSchema = z
 opportunityDetailsRoute.patch(
   '/:id',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MUTATE),
   auditLog({ action: 'opportunity.status_changed', entityType: 'unified_opportunity' }),

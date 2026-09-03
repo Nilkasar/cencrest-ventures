@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { db, withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireCrmAccess } from '../middleware/crm-access.js';
 import { getInternalOrgId } from '../lib/internal-org.js';
 import type { AppEnv } from '../types/context.js';
@@ -20,7 +21,7 @@ const accounts = new Hono<AppEnv>();
  */
 
 // ── List accounts (orgs with a converted lead) ──────────────────────────
-accounts.get('/', requireAuth, requireCrmAccess('viewer'), async (c) => {
+accounts.get('/', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'), async (c) => {
   const internalOrgId = getInternalOrgId();
   const query = z
     .object({
@@ -73,7 +74,7 @@ accounts.get('/', requireAuth, requireCrmAccess('viewer'), async (c) => {
 });
 
 // ── Get one account (org + its converted lead + deals + activity timeline) ──
-accounts.get('/:orgId', requireAuth, requireCrmAccess('viewer'), async (c) => {
+accounts.get('/:orgId', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'), async (c) => {
   const internalOrgId = getInternalOrgId();
   const orgId = c.req.param('orgId');
 
@@ -98,6 +99,12 @@ accounts.get('/:orgId', requireAuth, requireCrmAccess('viewer'), async (c) => {
           OR: [{ account_organization_id: orgId }, { lead_id: lead.id }],
         },
         orderBy: { created_at: 'desc' },
+        // Epic 19 (Production Hardening), item 6 — this call had no
+        // server-side cap (its sibling `activities.findMany` right below
+        // it already caps at 50); an account with an unbounded number of
+        // deals could return an unbounded response. Same cap as
+        // `activities` for consistency on this one detail view.
+        take: 50,
       }),
       tx.activities.findMany({
         where: { OR: [{ account_organization_id: orgId }, { lead_id: lead.id }] },

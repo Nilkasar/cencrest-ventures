@@ -61,6 +61,7 @@ let aiRunRows: Record<string, unknown>[] = [];
 let reportRows: Record<string, unknown>[] = [];
 
 const db = {
+  organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
   organizations: { findUnique: vi.fn() },
   memberships: { findFirst: vi.fn() },
   users: { findUnique: vi.fn() },
@@ -129,6 +130,7 @@ function liveAiRun(score: number, completedAt: string): Record<string, unknown> 
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  db.organization_rate_limits.upsert.mockResolvedValue({ count: 1 });
   aiRunRows = [];
   reportRows = [];
 

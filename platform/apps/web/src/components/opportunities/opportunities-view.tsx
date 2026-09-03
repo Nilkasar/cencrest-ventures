@@ -8,6 +8,7 @@ import {
   Card,
   CardContent,
   EmptyState,
+  Pagination,
   Select,
   SelectContent,
   SelectItem,
@@ -66,12 +67,15 @@ function ListSkeleton() {
  * known limitation in this epic's frontend completion doc: narrows only the
  * current page (`limit` below), not the server-side total.
  */
+const PAGE_SIZE = 25;
+
 export function OpportunitiesView() {
   const [statusFilter, setStatusFilter] = useState<OpportunityStatus | "all">("all");
   const [typeFilter, setTypeFilter] = useState<OpportunityType | "all">("all");
   const [priorityFilter, setPriorityFilter] = useState<OpportunityPriority | "all">("all");
   const [impactFilter, setImpactFilter] = useState<ScoreBand | "all">("all");
   const [effortFilter, setEffortFilter] = useState<ScoreBand | "all">("all");
+  const [page, setPage] = useState(1);
 
   const { reload, ...state } = useAsyncData(
     () =>
@@ -79,9 +83,10 @@ export function OpportunitiesView() {
         status: statusFilter === "all" ? undefined : statusFilter,
         type: typeFilter === "all" ? undefined : typeFilter,
         priority: priorityFilter === "all" ? undefined : priorityFilter,
-        limit: 100,
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
       }),
-    [statusFilter, typeFilter, priorityFilter],
+    [statusFilter, typeFilter, priorityFilter, page],
   );
 
   const { toast } = useToast();
@@ -149,6 +154,7 @@ export function OpportunitiesView() {
     setPriorityFilter("all");
     setImpactFilter("all");
     setEffortFilter("all");
+    setPage(1);
   }
 
   async function handleRecompute() {
@@ -283,7 +289,13 @@ export function OpportunitiesView() {
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as OpportunityType | "all")}>
+              <Select
+                value={typeFilter}
+                onValueChange={(v) => {
+                  setTypeFilter(v as OpportunityType | "all");
+                  setPage(1);
+                }}
+              >
                 <SelectTrigger className="w-36 h-8 text-[12.5px]" aria-label="Filter by type">
                   <SelectValue />
                 </SelectTrigger>
@@ -295,7 +307,13 @@ export function OpportunitiesView() {
                   ))}
                 </SelectContent>
               </Select>
-              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as OpportunityStatus | "all")}>
+              <Select
+                value={statusFilter}
+                onValueChange={(v) => {
+                  setStatusFilter(v as OpportunityStatus | "all");
+                  setPage(1);
+                }}
+              >
                 <SelectTrigger className="w-36 h-8 text-[12.5px]" aria-label="Filter by status">
                   <SelectValue />
                 </SelectTrigger>
@@ -309,7 +327,10 @@ export function OpportunitiesView() {
               </Select>
               <Select
                 value={String(priorityFilter)}
-                onValueChange={(v) => setPriorityFilter(v === "all" ? "all" : (Number(v) as OpportunityPriority))}
+                onValueChange={(v) => {
+                  setPriorityFilter(v === "all" ? "all" : (Number(v) as OpportunityPriority));
+                  setPage(1);
+                }}
               >
                 <SelectTrigger className="w-32 h-8 text-[12.5px]" aria-label="Filter by priority">
                   <SelectValue />
@@ -400,6 +421,10 @@ export function OpportunitiesView() {
                 );
               })}
             </div>
+          )}
+
+          {state.status === "success" && state.data.opportunities.length > 0 && (
+            <Pagination page={page} pageSize={PAGE_SIZE} total={state.data.pagination.total} onPageChange={setPage} itemLabel="opportunities" />
           )}
         </CardContent>
       </Card>

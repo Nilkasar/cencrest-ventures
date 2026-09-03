@@ -21,6 +21,7 @@
 import { Hono } from 'hono';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { getBrandForOrg, NO_BRAND_ERROR } from '../lib/brand-context.js';
@@ -53,19 +54,27 @@ function serializeActionWithContext(row: Parameters<typeof serializeAction>[0] &
 // ── GET / — the Action Center's four sections, matching CUSTOMER_JOURNEY.md
 // exactly: pending approvals, in-progress (approved, awaiting execution),
 // completed (executed), rolled-back. ───────────────────────────────────────
-actionsRoute.get('/', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+actionsRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const brand = await getBrandForOrg(org.organizationId);
   if (!brand) return c.json(NO_BRAND_ERROR, 404);
 
   const baseWhere = { organization_id: org.organizationId, brand_id: brand.id, deleted_at: null };
 
+  // Epic 19 (Production Hardening), item 6 — none of these four had a
+  // server-side cap; a brand with a large enough action history (this
+  // table only ever grows — actions/content_drafts are soft-deleted, never
+  // purged) could return an unbounded response. Capped at 100 per section,
+  // same `.max(100)` ceiling every other list endpoint in this codebase
+  // uses, newest-first per section so the cap never hides the rows a
+  // caller most needs to see.
+  const PER_SECTION_CAP = 100;
   const [pending, inProgress, completed, rolledBack] = await withOrgContext(org.organizationId, (tx) =>
     Promise.all([
-      tx.actions.findMany({ where: { ...baseWhere, status: 'pending' }, include: ACTION_INCLUDE, orderBy: { created_at: 'desc' } }),
-      tx.actions.findMany({ where: { ...baseWhere, status: 'approved' }, include: ACTION_INCLUDE, orderBy: { approved_at: 'desc' } }),
-      tx.actions.findMany({ where: { ...baseWhere, status: 'completed' }, include: ACTION_INCLUDE, orderBy: { executed_at: 'desc' } }),
-      tx.actions.findMany({ where: { ...baseWhere, status: 'rolled_back' }, include: ACTION_INCLUDE, orderBy: { rolled_back_at: 'desc' } }),
+      tx.actions.findMany({ where: { ...baseWhere, status: 'pending' }, include: ACTION_INCLUDE, orderBy: { created_at: 'desc' }, take: PER_SECTION_CAP }),
+      tx.actions.findMany({ where: { ...baseWhere, status: 'approved' }, include: ACTION_INCLUDE, orderBy: { approved_at: 'desc' }, take: PER_SECTION_CAP }),
+      tx.actions.findMany({ where: { ...baseWhere, status: 'completed' }, include: ACTION_INCLUDE, orderBy: { executed_at: 'desc' }, take: PER_SECTION_CAP }),
+      tx.actions.findMany({ where: { ...baseWhere, status: 'rolled_back' }, include: ACTION_INCLUDE, orderBy: { rolled_back_at: 'desc' }, take: PER_SECTION_CAP }),
     ]),
   );
 

@@ -5,6 +5,7 @@ import { generateKeyPair } from 'jose';
 const INTERNAL_ORG_ID = '11111111-1111-1111-1111-111111111111';
 
 const db = {
+  organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
   organizations: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), create: vi.fn() },
   memberships: { findFirst: vi.fn() },
   users: { findUnique: vi.fn() },
@@ -46,6 +47,7 @@ const ORIGINAL_INTERNAL_ORG_ID = process.env.CRM_INTERNAL_ORG_ID;
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  db.organization_rate_limits.upsert.mockResolvedValue({ count: 1 });
   process.env.CRM_INTERNAL_ORG_ID = INTERNAL_ORG_ID;
   db.audit_events.create.mockResolvedValue({});
 

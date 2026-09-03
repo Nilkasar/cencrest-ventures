@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { serializeAiRun, serializeAiRunResponse, serializeAiRunScore } from '../lib/ai-visibility/serialize.js';
@@ -21,7 +22,7 @@ async function getAiRun(organizationId: string, id: string) {
 }
 
 // ── GET /:id — status/progress ──────────────────────────────────────────
-aiRunDetailsRoute.get('/:id', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+aiRunDetailsRoute.get('/:id', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const run = await getAiRun(org.organizationId, c.req.param('id'));
   if (!run) return c.json(NOT_FOUND_ERROR, 404);
@@ -33,7 +34,7 @@ aiRunDetailsRoute.get('/:id', requireAuth, requireOrgFromToken('viewer'), requir
 // Always 200, even before AGGREGATE finishes (`computed: false`, all score
 // fields null) — a frontend can poll this exactly like it polls run
 // status, never needing to distinguish "not ready yet" from a real error.
-aiRunDetailsRoute.get('/:id/score', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+aiRunDetailsRoute.get('/:id/score', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const run = await getAiRun(org.organizationId, c.req.param('id'));
   if (!run) return c.json(NOT_FOUND_ERROR, 404);
@@ -46,7 +47,7 @@ aiRunDetailsRoute.get('/:id/score', requireAuth, requireOrgFromToken('viewer'), 
 // `brand_observations` row inline, so a UI can walk
 // score -> observation -> raw response in a single request per page,
 // per the epic's UI-surface requirement.
-aiRunDetailsRoute.get('/:id/responses', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+aiRunDetailsRoute.get('/:id/responses', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const run = await getAiRun(org.organizationId, c.req.param('id'));
   if (!run) return c.json(NOT_FOUND_ERROR, 404);

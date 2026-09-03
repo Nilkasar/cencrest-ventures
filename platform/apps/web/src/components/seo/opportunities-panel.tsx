@@ -6,6 +6,7 @@ import {
   Card,
   CardContent,
   EmptyState,
+  Pagination,
   Select,
   SelectContent,
   SelectItem,
@@ -22,6 +23,7 @@ import { OPPORTUNITY_STATUS_LABEL } from "@/data/seo/labels";
 import { OpportunityRow } from "./opportunity-row";
 
 const STATUS_FILTERS: Array<OpportunityStatus | "all"> = ["all", "new", "in_progress", "completed", "dismissed"];
+const PAGE_SIZE = 25;
 
 function RowsSkeleton() {
   return (
@@ -43,9 +45,15 @@ function RowsSkeleton() {
  */
 export function OpportunitiesPanel({ refreshKey }: { refreshKey: number }) {
   const [statusFilter, setStatusFilter] = useState<OpportunityStatus | "all">("all");
+  const [page, setPage] = useState(1);
   const { reload, ...state } = useAsyncData(
-    () => listOpportunities({ status: statusFilter === "all" ? undefined : statusFilter, limit: 50 }),
-    [statusFilter, refreshKey],
+    () =>
+      listOpportunities({
+        status: statusFilter === "all" ? undefined : statusFilter,
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
+      }),
+    [statusFilter, page, refreshKey],
   );
   const { toast } = useToast();
   const [dismissingId, setDismissingId] = useState<string | null>(null);
@@ -72,7 +80,13 @@ export function OpportunitiesPanel({ refreshKey }: { refreshKey: number }) {
               Sorted by opportunity score{state.status === "success" ? ` — ${state.data.pagination.total} total` : ""}.
             </p>
           </div>
-          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as OpportunityStatus | "all")}>
+          <Select
+            value={statusFilter}
+            onValueChange={(v) => {
+              setStatusFilter(v as OpportunityStatus | "all");
+              setPage(1);
+            }}
+          >
             <SelectTrigger className="w-44" aria-label="Filter by status">
               <SelectValue />
             </SelectTrigger>
@@ -114,6 +128,10 @@ export function OpportunitiesPanel({ refreshKey }: { refreshKey: number }) {
               />
             ))}
           </div>
+        )}
+
+        {state.status === "success" && state.data.opportunities.length > 0 && (
+          <Pagination page={page} pageSize={PAGE_SIZE} total={state.data.pagination.total} onPageChange={setPage} itemLabel="opportunities" />
         )}
       </CardContent>
     </Card>

@@ -8,10 +8,11 @@
  * `routes/snapshot.ts` already created (step 2a — the `leads` row and this
  * row are both written by the ROUTE, synchronously, before this function is
  * ever scheduled — see that file for why). It is invoked the same
- * `setImmediate`-after-the-DB-row-exists way `routes/crawl.ts` schedules
- * `runCrawlJob` and `routes/ai-runs.ts` schedules `runAiVisibilityRun` — the
- * established pattern in this codebase for "no durable queue exists yet
- * (`// TODO: durable queue`), so run the background step in-process."
+ * `JobQueue`-after-the-DB-row-exists way `routes/crawl.ts` schedules
+ * `runCrawlJob` and `routes/ai-runs.ts` schedules `runAiVisibilityRun` (see
+ * `lib/queue/job-queue.ts`) — the default `InMemoryJobQueue` still runs the
+ * background step in-process, functionally equivalent to the raw
+ * `setImmediate` this epic (19, Production Hardening) replaced it with.
  *
  * Every sub-step below is FREE-TIER-SCOPED, never the paid-tier pipeline:
  * `maxPages`/`maxQueries` default to `PLAN_CATALOG.free.limits`
@@ -120,9 +121,9 @@ async function markFailed(snapshotRequestId: string, message: string): Promise<v
  * against an ALREADY-CREATED `snapshot_requests` row, then attempts step 4
  * (the "your snapshot is ready" email). Never throws — every failure mode
  * is caught and turned into `status: 'failed'` on the row, so the caller
- * (the route's `setImmediate` callback) can fire-and-forget this the same
- * way `routes/crawl.ts`/`routes/ai-runs.ts` do for their own background
- * steps.
+ * (the `JobQueue`-registered handler in routes/snapshot.ts) can
+ * fire-and-forget this the same way `routes/crawl.ts`/`routes/ai-runs.ts`
+ * do for their own background steps.
  *
  * `rawToken` is the UNHASHED report token the route generated when it
  * created the row (only its SHA-256 hash — `token_hash` — was persisted,

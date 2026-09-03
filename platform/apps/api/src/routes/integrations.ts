@@ -18,6 +18,7 @@ import { Hono } from 'hono';
 import { randomUUID } from 'node:crypto';
 import { withOrgContext, type integration_type } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog } from '../middleware/audit-log.js';
@@ -61,12 +62,16 @@ function serializeIntegration(row: {
 
 // ── GET /integrations — list this org's connections. Never returns
 // `config_enc` (the "encrypted at rest, never logged" token blob). ────────
-integrationsRoute.get('/', requireAuth, requireOrgFromToken('viewer'), async (c) => {
+integrationsRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), async (c) => {
   const org = c.get('org');
+  // Epic 19 (Production Hardening), item 6 — capped server-side for
+  // consistency with every other list endpoint in this codebase, though
+  // this one is naturally small (one row per provider type per org).
   const rows = await withOrgContext(org.organizationId, (tx) =>
     tx.integrations.findMany({
       where: { organization_id: org.organizationId, deleted_at: null },
       orderBy: { created_at: 'asc' },
+      take: 100,
     }),
   );
   return c.json(rows.map(serializeIntegration));
@@ -80,6 +85,7 @@ integrationsRoute.get('/', requireAuth, requireOrgFromToken('viewer'), async (c)
 integrationsRoute.post(
   '/:provider/connect',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('admin'),
   requirePermission(MANAGE),
   auditLog({ action: 'integration.connected', entityType: 'integrations' }),
@@ -141,6 +147,7 @@ integrationsRoute.post(
 integrationsRoute.post(
   '/:provider/disconnect',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('admin'),
   requirePermission(MANAGE),
   auditLog({ action: 'integration.disconnected', entityType: 'integrations' }),

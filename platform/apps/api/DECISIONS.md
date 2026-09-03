@@ -144,6 +144,81 @@ Port source: `api/src/{lib,middleware,routes}/*` (specifically `jwt.ts`,
   line in `app.ts`. (`routes/orgs.ts`'s invitation email was NOT converted
   to this pattern yet — see README.md's "not done" list.)
 
+## Job queue (Epic 19 — Production Hardening)
+
+- **`setImmediate` → `JobQueue` interface.** Every background job this
+  codebase scheduled with a raw `setImmediate` call (Epic 3's crawler,
+  Epic 7/8's AI-visibility pipeline, Epic 12's agent runner, Epic 17's
+  free-snapshot pipeline) now goes through `lib/queue/job-queue.ts`'s
+  `JobQueue` interface instead. `InMemoryJobQueue` (the default, via
+  `lib/queue/default-job-queue.ts`'s process-lifetime singleton) is
+  functionally equivalent to the `setImmediate` it replaces — still fires
+  via `setImmediate` under the hood, still loses in-flight work on a
+  process restart, same honestly-documented gap every one of those four
+  `// TODO: durable queue` comments already named, now centralized in one
+  place. `PgBossJobQueue` is a real, complete implementation on the
+  `pg-boss` package (added as a dependency in this epic) — correct code,
+  never constructed or `.start()`-ed anywhere in this build (same
+  `NullXProvider` discipline `lib/billing/payment-provider.ts`'s
+  `NullPaymentProvider` and `lib/email.ts`'s `ConsoleEmailSender`
+  establish). Swapping to durable execution is a one-line change in
+  `default-job-queue.ts` (construct `PgBossJobQueue` with a real connection
+  string, call `.start()` once at server boot) — no call-site changes,
+  because every call site already goes through the interface, never a
+  concrete class.
+- **`lib/measurement/schedule-remeasurement.ts` deliberately NOT migrated**
+  onto `JobQueue` in this pass — see that file's own header comment. It
+  solves a different problem (a real 4-week-delayed trigger with an
+  injectable closure-based clock, already tested 8 ways) than the other
+  four call sites (fire essentially now, in the background). Its
+  `deps.schedule` API takes a raw closure, which can't be serialized into
+  a `JobQueue` payload without a real redesign (a dedicated job type +
+  `{actionId, organizationId}` payload + registered handler) — attempting
+  that as a drive-by rename risked its existing tests for no durability
+  gain (a raw closure was never going to survive a process restart via
+  `InMemoryJobQueue` either way). Tracked as real follow-up work, not
+  silently dropped.
+
+## Error tracking (Epic 19 — Production Hardening)
+
+- **Bare inline `console.error` → `ErrorTracker` interface.** `app.ts`'s
+  global `onError` handler now calls `lib/observability/
+  default-error-tracker.ts`'s `getDefaultErrorTracker().captureException`
+  instead of building and logging the JSON line inline. `ConsoleErrorTracker`
+  (the default) writes the exact same structured-JSON shape the inline code
+  wrote before this epic — no observable behavior change. `SentryErrorTracker`
+  is a real, complete implementation on `@sentry/node` (added as a
+  dependency in this epic) — correct code, `Sentry.init()` only runs inside
+  its own `.init()` method, which nothing in this codebase calls (same
+  never-actually-connected discipline as `PgBossJobQueue` above). D-O14
+  ("Error tracking") in the root `DECISIONS.md`'s Open Decisions table is
+  NOT closed by this — Sentry is this epic's spec's named choice to make
+  concretely implementable, not a formal sign-off with a real account/DSN.
+- **`ErrorContext` is a narrow identifier allowlist** (`requestId`,
+  `method`, `path`, `organizationId`, `userId`) — never the raw Hono
+  `Context`, headers, or request/response bodies. Both implementations are
+  structurally unable to leak an `Authorization` header or a magic-link/
+  refresh token into whatever's logged/tracked, because the type callers
+  pass has no field to carry one. `SentryErrorTracker` additionally sets
+  `sendDefaultPii: false` on `Sentry.init()` as defense in depth against
+  Sentry's own default request-data capture.
+
+## Rate limiting (Epic 19 follow-up — `authenticatedRateLimit` wiring)
+
+- **`authenticatedRateLimit` (120/min) had zero call sites** anywhere in
+  this codebase before this epic, despite being fully implemented in
+  `middleware/rate-limit.ts` since Epic 0 — every `requireAuth`-gated route
+  (all of them) was silently running on the baseline `publicRateLimit`
+  (30/min) applied app-wide in `app.ts`, far tighter than SECURITY.md's own
+  "Authenticated (general): 120 requests / 1 minute" row promises. Fixed by
+  adding `authenticatedRateLimit` immediately after `requireAuth` in every
+  handler chain that has it, across every route file (~41 files, ~90 call
+  sites) — `publicRateLimit` remains the ONLY limiter on genuinely public/
+  unauthenticated routes (`snapshot`, `apply`, `auth`'s magic-link/verify/
+  refresh endpoints). The already-real Postgres-backed limiter
+  (`lib/rate-limiter.ts`, `organization_rate_limits`) needed no changes —
+  this was purely a wiring gap, not a durability gap.
+
 ## Scope cuts vs. the old `api/` app (by design, not oversight)
 
 The old `api/src/routes/` directory has ~35 route files (brands, crawl,

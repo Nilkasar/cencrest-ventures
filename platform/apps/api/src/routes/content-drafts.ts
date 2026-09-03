@@ -28,6 +28,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { hasPermission } from '../lib/rbac.js';
@@ -40,7 +41,7 @@ const contentDraftsRoute = new Hono<AppEnv>();
 const VIEW = 'view_intelligence' as const;
 const NOT_FOUND_ERROR = { error: 'Content draft not found' } as const;
 
-contentDraftsRoute.get('/:id', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+contentDraftsRoute.get('/:id', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const draft = await withOrgContext(org.organizationId, (tx) =>
     tx.content_drafts.findFirst({ where: { id: c.req.param('id'), organization_id: org.organizationId }, include: { content_briefs: true } }),
@@ -54,15 +55,19 @@ contentDraftsRoute.get('/:id', requireAuth, requireOrgFromToken('viewer'), requi
   return c.json({ draft: serializeDraft(draft), brief: serializeBrief(draft.content_briefs) });
 });
 
-contentDraftsRoute.get('/:id/quality-checks', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+contentDraftsRoute.get('/:id/quality-checks', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const draftId = c.req.param('id');
 
   const draft = await withOrgContext(org.organizationId, (tx) => tx.content_drafts.findFirst({ where: { id: draftId, organization_id: org.organizationId } }));
   if (!draft) return c.json(NOT_FOUND_ERROR, 404);
 
+  // Epic 19 (Production Hardening), item 6 — capped server-side for
+  // consistency with every other list endpoint in this codebase, though
+  // this one is naturally small (quality checks run once per draft
+  // generation).
   const checks = await withOrgContext(org.organizationId, (tx) =>
-    tx.content_quality_checks.findMany({ where: { draft_id: draftId, organization_id: org.organizationId }, orderBy: { created_at: 'asc' } }),
+    tx.content_quality_checks.findMany({ where: { draft_id: draftId, organization_id: org.organizationId }, orderBy: { created_at: 'asc' }, take: 100 }),
   );
 
   return c.json({ draftId, checks: checks.map(serializeQualityCheck) });
@@ -79,7 +84,7 @@ const approveBodySchema = z.object({ notes: z.string().max(2000).optional() });
 // then calls `hasPermission` directly once the draft (and hence its
 // `created_by`) is actually in hand — same underlying SECURITY.md matrix,
 // just evaluated at the point its inputs exist, never skipped or weakened.
-contentDraftsRoute.post('/:id/approve', requireAuth, requireOrgFromToken('viewer'), async (c) => {
+contentDraftsRoute.post('/:id/approve', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), async (c) => {
   const org = c.get('org');
   const user = c.get('user');
   const draftId = c.req.param('id');

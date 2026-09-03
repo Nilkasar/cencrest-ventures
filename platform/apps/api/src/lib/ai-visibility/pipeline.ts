@@ -4,8 +4,8 @@
  * happen in `routes/ai-runs.ts`, same split as Epic 3's crawler: the
  * `ai_runs` row is created, entitlement-checked, and scheduled
  * synchronously in the route; this file is what the scheduled background
- * job (`setImmediate` — see that route, `// TODO: durable queue`) actually
- * runs).
+ * job (routed through `JobQueue` — see `lib/ai-visibility/schedule-run.ts`
+ * and `lib/queue/job-queue.ts`) actually runs).
  *
  * **The evidence-preservation guarantee, by construction.** Each
  * (query x provider) job makes TWO independent provider calls, never one:
@@ -230,8 +230,9 @@ async function bumpFailedJobs(organizationId: string, runId: string): Promise<vo
  * Runs one `ai_runs` row to completion. Must be called only after the row
  * (status `queued`, `total_jobs` already set) exists — see
  * `routes/ai-runs.ts`'s PREPARE step. Never throws by itself for a
- * per-job failure (see `runOneJob`); a caller (the route's `setImmediate`
- * callback) should still `.catch()` this for the case where a whole-run
+ * per-job failure (see `runOneJob`); a caller (the `JobQueue`-registered
+ * handler in `lib/ai-visibility/schedule-run.ts`) should still `.catch()`
+ * this for the case where a whole-run
  * setup step fails (e.g. the query_set was deleted between PREPARE and
  * EXECUTE) and mark the run `failed`, same pattern as
  * `lib/crawler/engine.ts` / `routes/crawl.ts`.

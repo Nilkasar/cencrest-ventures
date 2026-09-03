@@ -17,6 +17,7 @@
 import { Hono } from 'hono';
 import { withOrgContext, type brand_claims, type Prisma } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { getDefaultAiProviderRegistry } from '../lib/ai-visibility/provider-registry.js';
@@ -32,14 +33,18 @@ const VIEW = 'view_intelligence' as const;
 const MUTATE = 'create_content_draft' as const;
 const NOT_FOUND_ERROR = { error: 'Content brief not found' } as const;
 
-contentBriefDetailsRoute.get('/:id', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+contentBriefDetailsRoute.get('/:id', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const briefId = c.req.param('id');
 
   const result = await withOrgContext(org.organizationId, async (tx) => {
     const brief = await tx.content_briefs.findFirst({ where: { id: briefId, organization_id: org.organizationId, deleted_at: null } });
     if (!brief) return null;
-    const drafts = await tx.content_drafts.findMany({ where: { brief_id: brief.id, organization_id: org.organizationId }, orderBy: { version: 'desc' } });
+    // Epic 19 (Production Hardening), item 6 — capped server-side (this
+    // call had no cap at all before this epic); a brief that's been
+    // regenerated many times (drafts are versioned, never overwritten —
+    // see this epic's ADR-007 note) only ever grows.
+    const drafts = await tx.content_drafts.findMany({ where: { brief_id: brief.id, organization_id: org.organizationId }, orderBy: { version: 'desc' }, take: 100 });
     return { brief, drafts };
   });
   if (!result) return c.json(NOT_FOUND_ERROR, 404);
@@ -54,7 +59,7 @@ function claimsFromResearchNotes(researchNotes: unknown): BrandClaimForBrief[] {
   return claims.filter((c): c is BrandClaimForBrief => typeof c === 'object' && c !== null && typeof (c as brand_claims).claim === 'string');
 }
 
-contentBriefDetailsRoute.post('/:id/draft', requireAuth, requireOrgFromToken('viewer'), requirePermission(MUTATE), async (c) => {
+contentBriefDetailsRoute.post('/:id/draft', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(MUTATE), async (c) => {
   const org = c.get('org');
   const user = c.get('user');
   const briefId = c.req.param('id');

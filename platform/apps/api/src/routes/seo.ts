@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { withOrgContext, type Prisma } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog, writeManualAuditEvent } from '../middleware/audit-log.js';
@@ -135,7 +136,7 @@ function normalizeUrlForComparison(url: string): string {
 // codebase's established single-brand-per-org convention (see app.ts).
 const analyzeSchema = z.object({ crawlJobId: z.string().uuid().optional() });
 
-seoRoute.post('/analyze', requireAuth, requireOrgFromToken('viewer'), requirePermission(MUTATE), async (c) => {
+seoRoute.post('/analyze', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(MUTATE), async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const parsed = analyzeSchema.safeParse(body ?? {});
   if (!parsed.success) return c.json({ error: 'Validation failed', issues: parsed.error.issues }, 422);
@@ -261,16 +262,19 @@ seoRoute.post('/analyze', requireAuth, requireOrgFromToken('viewer'), requirePer
 
 // ── keyword_groups CRUD ──────────────────────────────────────────────────
 
-seoRoute.get('/keyword-groups', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+seoRoute.get('/keyword-groups', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const brand = await getBrandForOrg(org.organizationId);
   if (!brand) return c.json(NO_BRAND_ERROR, 404);
 
+  // Epic 19 (Production Hardening), item 6 — capped server-side (this call
+  // had no cap at all before this epic).
   const rows = await withOrgContext(org.organizationId, (tx) =>
     tx.keyword_groups.findMany({
       where: { organization_id: org.organizationId, brand_id: brand.id, deleted_at: null },
       include: { _count: { select: { seo_keywords: { where: { deleted_at: null } } } } },
       orderBy: { created_at: 'desc' },
+      take: 100,
     }),
   );
 
@@ -279,7 +283,7 @@ seoRoute.get('/keyword-groups', requireAuth, requireOrgFromToken('viewer'), requ
 
 const groupCreateSchema = z.object({ name: z.string().trim().min(1).max(255) });
 
-seoRoute.post('/keyword-groups', requireAuth, requireOrgFromToken('viewer'), requirePermission(MUTATE), async (c) => {
+seoRoute.post('/keyword-groups', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(MUTATE), async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = groupCreateSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Validation failed', issues: parsed.error.issues }, 422);
@@ -308,6 +312,7 @@ seoRoute.post('/keyword-groups', requireAuth, requireOrgFromToken('viewer'), req
 seoRoute.patch(
   '/keyword-groups/:id',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MUTATE),
   auditLog({ action: 'keyword_group.updated', entityType: 'keyword_group' }),
@@ -338,6 +343,7 @@ seoRoute.patch(
 seoRoute.delete(
   '/keyword-groups/:id',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MUTATE),
   auditLog({ action: 'keyword_group.deleted', entityType: 'keyword_group' }),
@@ -368,6 +374,7 @@ const generateGroupSchema = z.object({ name: z.string().trim().min(1).max(255).o
 seoRoute.post(
   '/keyword-groups/generate',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MUTATE),
   async (c) => {
@@ -504,6 +511,7 @@ seoRoute.post(
 seoRoute.get(
   '/keyword-groups/:id/keywords',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(VIEW),
   async (c) => {
@@ -514,10 +522,13 @@ seoRoute.get(
     const group = await getKeywordGroup(org.organizationId, brand.id, c.req.param('id'));
     if (!group) return c.json(NO_KEYWORD_GROUP_ERROR, 404);
 
+    // Epic 19 (Production Hardening), item 6 — capped server-side (this
+    // call had no cap at all before this epic).
     const rows = await withOrgContext(org.organizationId, (tx) =>
       tx.seo_keywords.findMany({
         where: { keyword_group_id: group.id, organization_id: org.organizationId, deleted_at: null },
         orderBy: { created_at: 'asc' },
+        take: 1000,
       }),
     );
 
@@ -540,6 +551,7 @@ const keywordCreateSchema = z.object({
 seoRoute.post(
   '/keyword-groups/:id/keywords',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MUTATE),
   async (c) => {
@@ -583,6 +595,7 @@ const keywordUpdateSchema = keywordCreateSchema.partial();
 seoRoute.patch(
   '/keyword-groups/:id/keywords/:keywordId',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MUTATE),
   auditLog({ action: 'keyword.updated', entityType: 'seo_keyword', getEntityId: (c) => c.req.param('keywordId') ?? 'unknown' }),
@@ -630,6 +643,7 @@ seoRoute.patch(
 seoRoute.delete(
   '/keyword-groups/:id/keywords/:keywordId',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MUTATE),
   auditLog({ action: 'keyword.deleted', entityType: 'seo_keyword', getEntityId: (c) => c.req.param('keywordId') ?? 'unknown' }),
@@ -669,7 +683,7 @@ const opportunityListQuerySchema = z.object({
 // key breaks ties deterministically) so the UI never needs to re-sort
 // client-side in a way that could drift from what's actually stored (the
 // epic's end-to-end flow step 4's explicit requirement).
-seoRoute.get('/opportunities', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+seoRoute.get('/opportunities', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const parsed = opportunityListQuerySchema.safeParse(c.req.query());
   if (!parsed.success) return c.json({ error: 'Validation failed', issues: parsed.error.issues }, 422);
   const { status, limit, offset } = parsed.data;
@@ -702,7 +716,7 @@ seoRoute.get('/opportunities', requireAuth, requireOrgFromToken('viewer'), requi
   });
 });
 
-seoRoute.get('/opportunities/:id', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+seoRoute.get('/opportunities/:id', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const brand = await getBrandForOrg(org.organizationId);
   if (!brand) return c.json(NO_BRAND_ERROR, 404);
@@ -720,6 +734,7 @@ seoRoute.get('/opportunities/:id', requireAuth, requireOrgFromToken('viewer'), r
 seoRoute.patch(
   '/opportunities/:id/dismiss',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MUTATE),
   auditLog({ action: 'opportunity.dismissed', entityType: 'seo_opportunity' }),

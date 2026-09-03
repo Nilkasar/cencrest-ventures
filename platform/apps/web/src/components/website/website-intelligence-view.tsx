@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { Button, Card, CardContent, CardHeader, CardTitle, Skeleton } from "@bebest/ui";
+import { Button, Card, CardContent, CardHeader, CardTitle, Pagination, Skeleton } from "@bebest/ui";
 import { PageHeader } from "@/components/patterns/page-header";
 import { ErrorPanel } from "@/components/patterns/error-panel";
 import { CrawlEmptyState } from "@/components/website/crawl-empty-state";
@@ -16,6 +16,8 @@ import { listCrawlJobs } from "@/data/website/client";
 import { useBrandProfile } from "@/hooks/use-brand-profile";
 import { currentOrganization } from "@/data/fixtures";
 import { formatDateTime } from "@/lib/format";
+
+const HISTORY_PAGE_SIZE = 10;
 
 function OverviewSkeleton() {
   return (
@@ -53,12 +55,17 @@ export function WebsiteIntelligenceView() {
   const { profile, loading: profileLoading } = useBrandProfile(organizationId);
   const { state, starting, start, reload } = useCrawlJob(organizationId);
   const [viewingJobId, setViewingJobId] = useState<string | null>(null);
+  const [historyPage, setHistoryPage] = useState(1);
 
   const historyDep = state.status === "ready" ? state.job.status : state.status;
-  const history = useAsyncData(() => listCrawlJobs(organizationId), [organizationId, historyDep]);
+  const history = useAsyncData(
+    () => listCrawlJobs({ limit: HISTORY_PAGE_SIZE, offset: (historyPage - 1) * HISTORY_PAGE_SIZE }),
+    [organizationId, historyDep, historyPage],
+  );
 
   async function handleStart() {
     setViewingJobId(null);
+    setHistoryPage(1);
     await start();
   }
 
@@ -123,16 +130,23 @@ export function WebsiteIntelligenceView() {
 
           {showIssuesList && effectiveViewingJobId && <PageIssuesList jobId={effectiveViewingJobId} />}
 
-          {history.status === "success" && history.data.length > 0 && (
+          {history.status === "success" && history.data.crawlJobs.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle>Crawl history</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex flex-col gap-4">
                 <CrawlHistoryTable
-                  jobs={history.data}
+                  jobs={history.data.crawlJobs}
                   viewingJobId={effectiveViewingJobId ?? ""}
                   onView={(jobId) => setViewingJobId(jobId)}
+                />
+                <Pagination
+                  page={historyPage}
+                  pageSize={HISTORY_PAGE_SIZE}
+                  total={history.data.pagination.total}
+                  onPageChange={setHistoryPage}
+                  itemLabel="past crawls"
                 />
               </CardContent>
             </Card>

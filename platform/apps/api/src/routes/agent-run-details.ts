@@ -21,6 +21,7 @@
 import { Hono } from 'hono';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { writeManualAuditEvent } from '../middleware/audit-log.js';
@@ -47,15 +48,22 @@ async function getAgentRun(organizationId: string, id: string) {
 // Level-3 actions this run produced. This IS the "customers can see what
 // the agent did, step-by-step" transparency AGENT_ARCHITECTURE.md calls a
 // trust differentiator. ────────────────────────────────────────────────
-agentRunDetailsRoute.get('/:id', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+agentRunDetailsRoute.get('/:id', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const run = await getAgentRun(org.organizationId, c.req.param('id'));
   if (!run) return c.json(NOT_FOUND_ERROR, 404);
 
+  // Epic 19 (Production Hardening), item 6 — capped server-side. This is
+  // the "full append-only event log" transparency view this route's own
+  // header comment promises, for a SINGLE bounded agent run (not a
+  // collection that grows across an org's lifetime the way `agent_runs`
+  // itself does — see routes/agents.ts's GET / list), so the cap here is a
+  // generous technical safety ceiling, not a page size meant to bite in
+  // normal use.
   const [events, pendingActions] = await withOrgContext(org.organizationId, (tx) =>
     Promise.all([
-      tx.agent_events.findMany({ where: { agent_run_id: run.id, organization_id: org.organizationId }, orderBy: { created_at: 'asc' } }),
-      tx.agent_pending_actions.findMany({ where: { agent_run_id: run.id, organization_id: org.organizationId }, orderBy: { created_at: 'asc' } }),
+      tx.agent_events.findMany({ where: { agent_run_id: run.id, organization_id: org.organizationId }, orderBy: { created_at: 'asc' }, take: 1000 }),
+      tx.agent_pending_actions.findMany({ where: { agent_run_id: run.id, organization_id: org.organizationId }, orderBy: { created_at: 'asc' }, take: 1000 }),
     ]),
   );
 
@@ -76,7 +84,7 @@ const NO_PENDING_ACTION_ERROR = {
 // ALWAYS_AUDITED_ACTIONS list — see lib/audit.ts). Sets a 30-day rollback
 // window; NEVER executes/publishes anything — this epic stops at
 // "approved, ready for Epic 13 to execute" (its own explicit brief). ─────
-agentRunDetailsRoute.post('/:id/approve', requireAuth, requireOrgFromToken('viewer'), requirePermission(APPROVE), async (c) => {
+agentRunDetailsRoute.post('/:id/approve', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(APPROVE), async (c) => {
   const org = c.get('org');
   const user = c.get('user');
   const run = await getAgentRun(org.organizationId, c.req.param('id'));

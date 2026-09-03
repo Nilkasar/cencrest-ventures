@@ -19,6 +19,7 @@
 import { Hono } from 'hono';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { writeManualAuditEvent } from '../middleware/audit-log.js';
@@ -59,6 +60,7 @@ async function getCompetitorForBrand(organizationId: string, brandId: string, co
 competitorAiRunsRoute.get(
   '/:competitorId/ai-runs',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(VIEW),
   async (c) => {
@@ -69,10 +71,13 @@ competitorAiRunsRoute.get(
     const competitor = await getCompetitorForBrand(org.organizationId, brand.id, c.req.param('competitorId'));
     if (!competitor) return c.json(COMPETITOR_NOT_FOUND_ERROR, 404);
 
+    // Epic 19 (Production Hardening), item 6 — capped server-side (this
+    // call had no cap at all before this epic).
     const rows = await withOrgContext(org.organizationId, (tx) =>
       tx.ai_runs.findMany({
         where: { organization_id: org.organizationId, brand_id: brand.id, competitor_id: competitor.id },
         orderBy: { created_at: 'desc' },
+        take: 100,
       }),
     );
 
@@ -84,6 +89,7 @@ competitorAiRunsRoute.get(
 competitorAiRunsRoute.post(
   '/:competitorId/ai-runs',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(RUN),
   async (c) => {

@@ -1,15 +1,45 @@
 import { Hono } from 'hono';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { writeManualAuditEvent } from '../middleware/audit-log.js';
 import { getBrandForOrg, NO_BRAND_ERROR } from '../lib/brand-context.js';
 import { runCrawlJob } from '../lib/crawler/engine.js';
+import { getDefaultJobQueue } from '../lib/queue/default-job-queue.js';
 import type { AppEnv } from '../types/context.js';
 import type { crawl_jobs } from '@bebest/database';
 
 const crawlRoute = new Hono<AppEnv>();
+
+interface CrawlJobPayload {
+  jobId: string;
+  organizationId: string;
+  brandId: string;
+  rootUrl: string;
+}
+
+const CRAWL_JOB_TYPE = 'crawl_job';
+
+// Epic 19 (Production Hardening), item 1 — registered once at module load,
+// routed through `JobQueue` instead of a raw `setImmediate` call. See
+// `lib/queue/job-queue.ts`'s header comment for the full design;
+// behaviorally unchanged in this build (default queue is
+// `InMemoryJobQueue`, still fires via `setImmediate` under the hood).
+getDefaultJobQueue().register<CrawlJobPayload>(CRAWL_JOB_TYPE, async ({ jobId, organizationId, brandId, rootUrl }) => {
+  await runCrawlJob(jobId, organizationId, brandId, rootUrl).catch(async (err) => {
+    await withOrgContext(organizationId, (tx) =>
+      tx.crawl_jobs.update({
+        where: { id: jobId },
+        data: { status: 'failed', error: String((err as Error)?.message ?? err), completed_at: new Date() },
+      }),
+    ).catch(() => {
+      // Best-effort — if even this write fails, the job is left in
+      // whatever state runCrawlJob last successfully wrote.
+    });
+  });
+});
 
 function serializeCrawlJob(job: crawl_jobs) {
   return {
@@ -36,7 +66,7 @@ function serializeCrawlJob(job: crawl_jobs) {
 // same as every other brand-child resource. Followed here for consistency
 // rather than the spec's literal path — see
 // docs/epics/03-website-intelligence-backend.md.
-crawlRoute.post('/', requireAuth, requireOrgFromToken('viewer'), requirePermission('create_brand_profile'), async (c) => {
+crawlRoute.post('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission('create_brand_profile'), async (c) => {
   const org = c.get('org');
   const user = c.get('user');
 
@@ -89,24 +119,17 @@ crawlRoute.post('/', requireAuth, requireOrgFromToken('viewer'), requirePermissi
 
   await writeManualAuditEvent(c, { action: 'crawl_job.created', entityType: 'crawl_job', entityId: job.id });
 
-  // TODO: replace with durable queue (pg-boss) — see docs/epics/
-  // 03-website-intelligence-backend.md. No queue package (pg-boss, bullmq,
-  // etc.) is a dependency anywhere in this monorepo as of this epic
-  // (checked before choosing this placeholder, per the task brief). A
-  // process restart between `queued` and `completed` currently strands the
-  // job in `running` forever with no retry — documented, not solved here.
-  setImmediate(() => {
-    void runCrawlJob(job.id, org.organizationId, brand.id, job.root_url).catch(async (err) => {
-      await withOrgContext(org.organizationId, (tx) =>
-        tx.crawl_jobs.update({
-          where: { id: job.id },
-          data: { status: 'failed', error: String((err as Error)?.message ?? err), completed_at: new Date() },
-        }),
-      ).catch(() => {
-        // Best-effort — if even this write fails, the job is left in
-        // whatever state runCrawlJob last successfully wrote.
-      });
-    });
+  // A process restart between `queued` and `completed` currently strands
+  // the job in `running` forever with no retry — `InMemoryJobQueue` (the
+  // default `JobQueue`, see `lib/queue/default-job-queue.ts`) is not
+  // durable, same gap the `setImmediate` it replaces had. Documented, not
+  // solved here; solved by pointing `default-job-queue.ts` at
+  // `PgBossJobQueue` with a real connection string.
+  void getDefaultJobQueue().enqueue<CrawlJobPayload>(CRAWL_JOB_TYPE, {
+    jobId: job.id,
+    organizationId: org.organizationId,
+    brandId: brand.id,
+    rootUrl: job.root_url,
   });
 
   return c.json(serializeCrawlJob(job), 202);

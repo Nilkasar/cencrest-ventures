@@ -14,6 +14,7 @@
 import { Hono } from 'hono';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { serializeReport } from '../lib/reporting/serialize.js';
@@ -27,7 +28,7 @@ const NOT_FOUND_ERROR = { error: 'Report not found' } as const;
 // Same belt-and-suspenders scoping (`withOrgContext` RLS + explicit WHERE)
 // every id-addressed route in this codebase uses — a foreign id 404s,
 // never a 403 that would confirm it exists (tenant isolation).
-reportDetailsRoute.get('/:id', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+reportDetailsRoute.get('/:id', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const reportId = c.req.param('id');
 

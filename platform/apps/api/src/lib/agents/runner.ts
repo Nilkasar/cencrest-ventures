@@ -17,17 +17,19 @@
  *   differentiator") and creating a Level-3 `agent_pending_actions` row for
  *   every `action_required` event.
  *
- * Mirrors `routes/crawl.ts`/`routes/ai-runs.ts`'s PREPARE-then-`setImmediate`
- * shape: `triggerAgentRun` creates the `agent_runs` row synchronously (so a
- * caller can poll `GET /agent-runs/:id` immediately) and schedules the
- * actual execution in the background — same documented "TODO: durable
- * queue (pg-boss)" placeholder every other background job in this codebase
- * uses, not a new pattern invented for this epic.
+ * Mirrors `routes/crawl.ts`/`routes/ai-runs.ts`'s PREPARE-then-queue shape:
+ * `triggerAgentRun` creates the `agent_runs` row synchronously (so a caller
+ * can poll `GET /agent-runs/:id` immediately) and schedules the actual
+ * execution in the background via `JobQueue` (Epic 19, Production
+ * Hardening item 1 — see `lib/queue/job-queue.ts`'s header comment),
+ * behaviorally unchanged from the `setImmediate` it replaces since the
+ * default queue is `InMemoryJobQueue`.
  */
 import { withOrgContext, type agent_runs, type Prisma } from '@bebest/database';
 import { checkUsageLimit, resolvePlanLimits } from '../entitlements.js';
 import { getDefaultAiProviderRegistry } from '../ai-visibility/provider-registry.js';
 import { notify } from '../notifications/notify.js';
+import { getDefaultJobQueue } from '../queue/default-job-queue.js';
 import { countAgentRunsThisMonth } from './usage.js';
 import { resolveRequestedAutonomyLevel } from './autonomy.js';
 import { createAgent } from './registry.js';
@@ -100,19 +102,31 @@ export async function triggerAgentRun(params: TriggerAgentRunParams): Promise<Tr
   return { run };
 }
 
-function scheduleAgentRun(runId: string, params: TriggerAgentRunParams, autonomyLevel: AutonomyLevel): void {
-  setImmediate(() => {
-    void executeAgentRun(runId, params, autonomyLevel).catch(async (err) => {
-      await withOrgContext(params.organizationId, (tx) =>
-        tx.agent_runs.update({
-          where: { id: runId },
-          data: { status: 'failed', error: String((err as Error)?.message ?? err), completed_at: new Date() },
-        }),
-      ).catch(() => {
-        // Best-effort — same convention as crawl.ts/schedule-run.ts.
-      });
+interface AgentRunJobPayload {
+  runId: string;
+  params: TriggerAgentRunParams;
+  autonomyLevel: AutonomyLevel;
+}
+
+const AGENT_RUN_JOB_TYPE = 'agent_run';
+
+// Registered once at module load — see `lib/queue/job-queue.ts`'s header
+// comment for the full design.
+getDefaultJobQueue().register<AgentRunJobPayload>(AGENT_RUN_JOB_TYPE, async ({ runId, params, autonomyLevel }) => {
+  await executeAgentRun(runId, params, autonomyLevel).catch(async (err) => {
+    await withOrgContext(params.organizationId, (tx) =>
+      tx.agent_runs.update({
+        where: { id: runId },
+        data: { status: 'failed', error: String((err as Error)?.message ?? err), completed_at: new Date() },
+      }),
+    ).catch(() => {
+      // Best-effort — same convention as crawl.ts/schedule-run.ts.
     });
   });
+});
+
+function scheduleAgentRun(runId: string, params: TriggerAgentRunParams, autonomyLevel: AutonomyLevel): void {
+  void getDefaultJobQueue().enqueue<AgentRunJobPayload>(AGENT_RUN_JOB_TYPE, { runId, params, autonomyLevel });
 }
 
 function decomposeEvent(event: AgentEvent): {

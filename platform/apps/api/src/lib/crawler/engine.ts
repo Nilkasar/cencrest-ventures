@@ -23,14 +23,14 @@
  * exercises the same thing end to end via a same-origin page that
  * redirects off-site).
  *
- * Runs via `setImmediate` today (see routes/crawl.ts) — there is no durable
- * queue wired into apps/api yet (grepped for pg-boss/bullmq at spec time:
- * neither is a dependency anywhere in the monorepo). This is the same
- * documented, honest placeholder Epic 0 used for `background_jobs`:
- * `// TODO: replace with durable queue (pg-boss)`. A process crash mid-crawl
- * currently loses that job's progress (it stays `running` forever) — a real
- * queue with a heartbeat/retry is the fix, tracked in the backend doc's
- * "not done" list, not solved here.
+ * Runs via `JobQueue` (`lib/queue/job-queue.ts`, registered in
+ * routes/crawl.ts) today — the default `InMemoryJobQueue` implementation is
+ * functionally equivalent to the raw `setImmediate` this epic (19,
+ * Production Hardening) replaced it with, so a process crash mid-crawl
+ * still loses that job's progress (it stays `running` forever) until
+ * `default-job-queue.ts` is pointed at the real `PgBossJobQueue` with a
+ * durable Postgres connection — that swap is a config change, not a code
+ * change, tracked in this epic's backend completion doc, not solved here.
  */
 
 import { withOrgContext, type issue_severity, type issue_type } from '@bebest/database';

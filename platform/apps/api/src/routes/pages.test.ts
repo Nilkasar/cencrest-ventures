@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { generateKeyPair } from 'jose';
 
 const db = {
+  organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
   organizations: { findUnique: vi.fn() },
   memberships: { findFirst: vi.fn() },
   users: { findUnique: vi.fn() },
@@ -61,6 +62,7 @@ const SAMPLE_PAGE = {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  db.organization_rate_limits.upsert.mockResolvedValue({ count: 1 });
   const { __setKeysForTesting } = await import('../lib/jwt.js');
   const { privateKey, publicKey } = await generateKeyPair('RS256');
   __setKeysForTesting(privateKey, publicKey);

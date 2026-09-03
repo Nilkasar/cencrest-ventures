@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { db, withOrgContext, type PrismaTransactionClient } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireCrmAccess } from '../middleware/crm-access.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog } from '../middleware/audit-log.js';
@@ -38,6 +39,7 @@ const createLeadSchema = z.object({
 leads.post(
   '/',
   requireAuth,
+  authenticatedRateLimit,
   requireCrmAccess('viewer'),
   requirePermission('manage_leads'),
   async (c) => {
@@ -74,7 +76,7 @@ leads.post(
 );
 
 // ── List (paginated, filterable) ────────────────────────────────────────
-leads.get('/', requireAuth, requireCrmAccess('viewer'), async (c) => {
+leads.get('/', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'), async (c) => {
   const internalOrgId = getInternalOrgId();
   const query = z
     .object({
@@ -114,7 +116,7 @@ leads.get('/', requireAuth, requireCrmAccess('viewer'), async (c) => {
 });
 
 // ── Get one ──────────────────────────────────────────────────────────────
-leads.get('/:id', requireAuth, requireCrmAccess('viewer'), async (c) => {
+leads.get('/:id', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'), async (c) => {
   const internalOrgId = getInternalOrgId();
   const id = c.req.param('id');
 
@@ -146,6 +148,7 @@ const updateLeadSchema = z
 leads.patch(
   '/:id',
   requireAuth,
+  authenticatedRateLimit,
   requireCrmAccess('viewer'),
   requirePermission('manage_leads'),
   async (c) => {
@@ -194,6 +197,7 @@ const convertLeadSchema = z
 leads.post(
   '/:id/convert',
   requireAuth,
+  authenticatedRateLimit,
   requireCrmAccess('viewer'),
   requirePermission('manage_leads'),
   auditLog({ action: 'lead.converted', entityType: 'lead' }),

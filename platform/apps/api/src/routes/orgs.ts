@@ -5,6 +5,7 @@ import { toSlug } from '../lib/slug.js';
 import { generateOpaqueToken } from '../lib/tokens.js';
 import { hashToken } from '../lib/jwt.js';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgBySlug } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog } from '../middleware/audit-log.js';
@@ -15,12 +16,16 @@ const orgs = new Hono<AppEnv>();
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // ── List orgs for the current user ─────────────────────────────────────────
-orgs.get('/', requireAuth, async (c) => {
+orgs.get('/', requireAuth, authenticatedRateLimit, async (c) => {
   const user = c.get('user');
+  // Epic 19 (Production Hardening), item 6 — capped server-side for
+  // consistency with every other list endpoint in this codebase, though
+  // this one is naturally small (memberships for a single user).
   const memberships = await withUserContext(user.id, (tx) =>
     tx.memberships.findMany({
       where: { user_id: user.id },
       include: { organizations: { select: { id: true, name: true, slug: true } } },
+      take: 100,
     }),
   );
 
@@ -37,7 +42,7 @@ orgs.get('/', requireAuth, async (c) => {
 // ── Create org (the creator becomes owner) ──────────────────────────────────
 const createOrgSchema = z.object({ name: z.string().min(2).max(100) });
 
-orgs.post('/', requireAuth, async (c) => {
+orgs.post('/', requireAuth, authenticatedRateLimit, async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = createOrgSchema.safeParse(body);
   if (!parsed.success) {
@@ -69,7 +74,7 @@ orgs.post('/', requireAuth, async (c) => {
 });
 
 // ── Get org ──────────────────────────────────────────────────────────────────
-orgs.get('/:slug', requireAuth, requireOrgBySlug('viewer'), (c) => {
+orgs.get('/:slug', requireAuth, authenticatedRateLimit, requireOrgBySlug('viewer'), (c) => {
   const org = c.get('org');
   return c.json({ id: org.organizationId, name: org.name, slug: org.slug, role: org.role });
 });
@@ -80,6 +85,7 @@ const updateOrgSchema = z.object({ name: z.string().min(2).max(100).optional() }
 orgs.patch(
   '/:slug',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgBySlug('admin'),
   auditLog({ action: 'settings.changed', entityType: 'organization' }),
   async (c) => {
@@ -103,6 +109,7 @@ orgs.patch(
 orgs.delete(
   '/:slug',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgBySlug('viewer'),
   requirePermission('delete_organization'),
   auditLog({ action: 'organization.deleted', entityType: 'organization' }),
@@ -117,17 +124,20 @@ orgs.delete(
 );
 
 // ── List members ──────────────────────────────────────────────────────────
-orgs.get('/:slug/members', requireAuth, requireOrgBySlug('viewer'), async (c) => {
+orgs.get('/:slug/members', requireAuth, authenticatedRateLimit, requireOrgBySlug('viewer'), async (c) => {
   const org = c.get('org');
   // memberships' RLS policy is an OR of user-scoped and org-scoped
   // clauses (see @bebest/database rls.sql) — reading every member of this
   // org (not just the caller's own row) requires `withOrgContext`, not
   // `withUserContext`. See @bebest/database DECISIONS.md §7a.
+  // Epic 19 (Production Hardening), item 6 — capped server-side (this call
+  // had no cap at all before this epic).
   const members = await withOrgContext(org.organizationId, (tx) =>
     tx.memberships.findMany({
       where: { organization_id: org.organizationId },
       include: { users: { select: { id: true, email: true, name: true } } },
       orderBy: { created_at: 'asc' },
+      take: 200,
     }),
   );
 
@@ -150,6 +160,7 @@ const changeRoleSchema = z.object({
 orgs.patch(
   '/:slug/members/:userId',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgBySlug('viewer'),
   requirePermission('manage_team'),
   auditLog({ action: 'membership.role_changed', entityType: 'membership' }),
@@ -186,6 +197,7 @@ orgs.patch(
 orgs.delete(
   '/:slug/members/:userId',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgBySlug('viewer'),
   requirePermission('manage_team'),
   auditLog({ action: 'membership.removed', entityType: 'membership' }),
@@ -215,6 +227,7 @@ const inviteSchema = z.object({
 orgs.post(
   '/:slug/invitations',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgBySlug('viewer'),
   requirePermission('manage_team'),
   async (c) => {
@@ -262,7 +275,7 @@ orgs.post(
 );
 
 // ── Accept invitation ─────────────────────────────────────────────────────
-orgs.post('/invitations/accept', requireAuth, async (c) => {
+orgs.post('/invitations/accept', requireAuth, authenticatedRateLimit, async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = z.object({ token: z.string().min(1) }).safeParse(body);
   if (!parsed.success) return c.json({ error: 'Invalid token' }, 400);

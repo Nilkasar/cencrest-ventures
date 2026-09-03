@@ -6,6 +6,7 @@ const INTERNAL_ORG_ID = '11111111-1111-1111-1111-111111111111';
 const ACCOUNT_ORG_ID = '44444444-4444-4444-4444-444444444444';
 
 const db = {
+  organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
   organizations: { findUnique: vi.fn(), findMany: vi.fn() },
   memberships: { findFirst: vi.fn() },
   users: { findUnique: vi.fn() },
@@ -46,6 +47,7 @@ const ORIGINAL_INTERNAL_ORG_ID = process.env.CRM_INTERNAL_ORG_ID;
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  db.organization_rate_limits.upsert.mockResolvedValue({ count: 1 });
   process.env.CRM_INTERNAL_ORG_ID = INTERNAL_ORG_ID;
 
   const { __setKeysForTesting } = await import('../lib/jwt.js');
@@ -163,5 +165,22 @@ describe('GET /accounts/:orgId', () => {
     expect(body.lead.id).toBe('lead-1');
     expect(body.deals).toHaveLength(1);
     expect(body.activities).toHaveLength(1);
+  });
+
+  it('Epic 19 (Production Hardening) item 6: caps the deals list server-side, same as the activities list next to it', async () => {
+    db.organizations.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => {
+      if (where.id === INTERNAL_ORG_ID) {
+        return { id: INTERNAL_ORG_ID, slug: 'bebest-internal', name: 'BeBest Internal', deleted_at: null };
+      }
+      return { id: ACCOUNT_ORG_ID, name: 'Acme Corp', slug: 'acme-corp', deleted_at: null, created_at: new Date() };
+    });
+    db.leads.findFirst.mockResolvedValue({ id: 'lead-1', email: 'lead@acme.com', name: 'Lead One', company: 'Acme Corp', source: 'apply_form', converted_at: new Date() });
+    db.deals.findMany.mockResolvedValue([]);
+    db.activities.findMany.mockResolvedValue([]);
+
+    const app = await buildApp();
+    await app.request(`/accounts/${ACCOUNT_ORG_ID}`, { headers: await authHeader('user-1', INTERNAL_ORG_ID) });
+
+    expect(db.deals.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 50 }));
   });
 });

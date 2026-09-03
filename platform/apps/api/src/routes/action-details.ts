@@ -22,6 +22,7 @@
 import { Hono } from 'hono';
 import { withOrgContext, type actions, type Prisma } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { writeManualAuditEvent } from '../middleware/audit-log.js';
@@ -66,7 +67,7 @@ async function getAction(organizationId: string, id: string, include?: { content
 // can never execute has no meaningful "approved" state to enter; this is
 // additional hardening on top of this epic's own required guarantee (the
 // execute-path rejection below), not a substitute for it.
-actionDetailsRoute.post('/:id/approve', requireAuth, requireOrgFromToken('viewer'), requirePermission(PUBLISH), async (c) => {
+actionDetailsRoute.post('/:id/approve', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(PUBLISH), async (c) => {
   const org = c.get('org');
   const user = c.get('user');
   const action = await getAction(org.organizationId, c.req.param('id'));
@@ -141,7 +142,7 @@ function resolvePublishContent(action: actions & { content_drafts?: { title: str
 //      exists that publishes without a prior approved_at timestamp set by
 //      a real user action" (this epic's Non-negotiable section, verbatim).
 // Only past both does a `published_content` row ever get created.
-actionDetailsRoute.post('/:id/execute', requireAuth, requireOrgFromToken('viewer'), requirePermission(PUBLISH), async (c) => {
+actionDetailsRoute.post('/:id/execute', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(PUBLISH), async (c) => {
   const org = c.get('org');
   const action = await getAction(org.organizationId, c.req.param('id'), { content_drafts: true });
   if (!action) return c.json(NOT_FOUND_ERROR, 404);
@@ -232,7 +233,7 @@ const ROLLBACK_WINDOW_EXPIRED_ERROR = {
 // window measured from `executed_at` (lib/actions/rollback-window.ts — a
 // resolved ambiguity, see that file's own header comment). Rejects with a
 // SPECIFIC error after 30 days, never silently allowing it.
-actionDetailsRoute.post('/:id/rollback', requireAuth, requireOrgFromToken('viewer'), requirePermission(PUBLISH), async (c) => {
+actionDetailsRoute.post('/:id/rollback', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(PUBLISH), async (c) => {
   const org = c.get('org');
   const user = c.get('user');
   const action = await getAction(org.organizationId, c.req.param('id'));

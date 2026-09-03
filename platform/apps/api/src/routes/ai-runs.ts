@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { writeManualAuditEvent } from '../middleware/audit-log.js';
@@ -23,7 +24,7 @@ const RUN = 'run_ai_analysis' as const;
 // ── GET / — list the brand's AI runs, newest first (history preserved —
 // re-running the same query_set creates a NEW row, never overwrites one;
 // see the epic's end-to-end flow step 6) ────────────────────────────────
-aiRunsRoute.get('/', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+aiRunsRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const brand = await getBrandForOrg(org.organizationId);
   if (!brand) return c.json(NO_BRAND_ERROR, 404);
@@ -31,10 +32,14 @@ aiRunsRoute.get('/', requireAuth, requireOrgFromToken('viewer'), requirePermissi
   // Epic 8 addition: `competitor_id: null` — this list is "the brand's own"
   // AI-visibility history, never mixed with competitor runs (see
   // routes/competitor-ai-runs.ts for those, listed per-competitor).
+  // Epic 19 (Production Hardening), item 6 — capped server-side (this call
+  // had no cap at all before this epic; a brand's run history only ever
+  // grows).
   const rows = await withOrgContext(org.organizationId, (tx) =>
     tx.ai_runs.findMany({
       where: { organization_id: org.organizationId, brand_id: brand.id, competitor_id: null },
       orderBy: { created_at: 'desc' },
+      take: 100,
     }),
   );
 
@@ -47,9 +52,10 @@ const NO_ACTIVE_QUERY_SET_ERROR = {
 } as const;
 
 // ── POST / — PREPARE + QUEUE: entitlement-check, create the ai_runs row,
-// schedule EXECUTE/AGGREGATE in the background. Mirrors routes/crawl.ts's
-// synchronous-row-then-setImmediate shape exactly. ──────────────────────
-aiRunsRoute.post('/', requireAuth, requireOrgFromToken('viewer'), requirePermission(RUN), async (c) => {
+// schedule EXECUTE/AGGREGATE in the background via `JobQueue` (see
+// lib/ai-visibility/schedule-run.ts). Mirrors routes/crawl.ts's
+// synchronous-row-then-enqueue shape exactly. ──────────────────────
+aiRunsRoute.post('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(RUN), async (c) => {
   const org = c.get('org');
   const user = c.get('user');
 

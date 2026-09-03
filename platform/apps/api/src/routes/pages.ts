@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { withOrgContext, type issue_severity } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { getBrandForOrg, NO_BRAND_ERROR } from '../lib/brand-context.js';
@@ -58,7 +59,7 @@ const listQuerySchema = z.object({
 // end-to-end flow step 5) but a plain "show me my pages" call should show
 // what's true now, not an ever-growing union of every past crawl. Pass
 // `crawlJobId` explicitly to inspect an older crawl.
-pagesRoute.get('/', requireAuth, requireOrgFromToken('viewer'), requirePermission('view_intelligence'), async (c) => {
+pagesRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission('view_intelligence'), async (c) => {
   const parsed = listQuerySchema.safeParse(c.req.query());
   if (!parsed.success) {
     return c.json({ error: 'Validation failed', issues: parsed.error.issues }, 422);

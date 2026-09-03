@@ -5,7 +5,7 @@
  * `lib/ai-visibility/pipeline.ts`'s single-call pattern, simplified: one
  * (brief) job needs exactly one `complete()` call, not a (query x provider)
  * fan-out, so this runs synchronously inside the route handler rather than
- * `setImmediate`-scheduled.
+ * scheduled through the `JobQueue` (`lib/queue/job-queue.ts`).
  */
 import path from 'node:path';
 import {

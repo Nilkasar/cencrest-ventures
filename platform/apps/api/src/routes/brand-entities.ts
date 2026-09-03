@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog, writeManualAuditEvent } from '../middleware/audit-log.js';
@@ -25,6 +26,7 @@ function serialize(row: brand_entities) {
 brandEntitiesRoute.get(
   '/',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission('view_intelligence'),
   async (c) => {
@@ -32,10 +34,13 @@ brandEntitiesRoute.get(
     const brand = await getBrandForOrg(org.organizationId);
     if (!brand) return c.json(NO_BRAND_ERROR, 404);
 
+    // Epic 19 (Production Hardening), item 6 — capped server-side (this
+    // call had no cap at all before this epic).
     const rows = await withOrgContext(org.organizationId, (tx) =>
       tx.brand_entities.findMany({
         where: { organization_id: org.organizationId, brand_id: brand.id, deleted_at: null },
         orderBy: { created_at: 'asc' },
+        take: 100,
       }),
     );
     return c.json(rows.map(serialize));
@@ -51,6 +56,7 @@ const createSchema = z.object({
 brandEntitiesRoute.post(
   '/',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission('create_brand_profile'),
   async (c) => {
@@ -92,6 +98,7 @@ const updateSchema = createSchema.partial();
 brandEntitiesRoute.patch(
   '/:id',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission('create_brand_profile'),
   auditLog({ action: 'brand_entity.updated', entityType: 'brand_entity' }),
@@ -130,6 +137,7 @@ brandEntitiesRoute.patch(
 brandEntitiesRoute.delete(
   '/:id',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission('create_brand_profile'),
   auditLog({ action: 'brand_entity.deleted', entityType: 'brand_entity' }),

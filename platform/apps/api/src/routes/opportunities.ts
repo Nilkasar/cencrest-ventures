@@ -36,6 +36,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { writeManualAuditEvent } from '../middleware/audit-log.js';
@@ -62,7 +63,7 @@ const NO_ACTIVE_QUERY_SET_ERROR = {
 // unchanged) so Epic 12's agents can call the exact same function instead
 // of reimplementing it; see that file's header comment.
 
-opportunitiesRoute.post('/recompute', requireAuth, requireOrgFromToken('viewer'), requirePermission(MUTATE), async (c) => {
+opportunitiesRoute.post('/recompute', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(MUTATE), async (c) => {
   const org = c.get('org');
   const brand = await getBrandForOrg(org.organizationId);
   if (!brand) return c.json(NO_BRAND_ERROR, 404);
@@ -90,7 +91,7 @@ const listQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
-opportunitiesRoute.get('/', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+opportunitiesRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const parsed = listQuerySchema.safeParse(c.req.query());
   if (!parsed.success) return c.json({ error: 'Validation failed', issues: parsed.error.issues }, 422);
   const { status, type, priority, limit, offset } = parsed.data;

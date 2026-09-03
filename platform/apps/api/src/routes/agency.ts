@@ -29,6 +29,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { db, withOrgContext, type agency_clients } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog, writeManualAuditEvent } from '../middleware/audit-log.js';
@@ -80,6 +81,7 @@ const inviteSchema = z.object({
 agency.post(
   '/clients',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MANAGE),
   async (c) => {
@@ -177,13 +179,16 @@ agency.post(
 
 // ── GET /agency/clients — list (agency side), with a real per-client
 // summary (AVS + open-opportunity count) reusing Epic 7/9's own tables. ────
-agency.get('/clients', requireAuth, requireOrgFromToken('viewer'), async (c) => {
+agency.get('/clients', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), async (c) => {
   const org = c.get('org');
 
+  // Epic 19 (Production Hardening), item 6 — capped server-side (this call
+  // had no cap at all before this epic).
   const links = await withOrgContext(org.organizationId, (tx) =>
     tx.agency_clients.findMany({
       where: { agency_org_id: org.organizationId, deleted_at: null },
       orderBy: { created_at: 'desc' },
+      take: 100,
     }),
   );
 
@@ -236,7 +241,7 @@ agency.get('/clients', requireAuth, requireOrgFromToken('viewer'), async (c) => 
 // ── GET /agency/clients/incoming — the narrow client-side read path
 // (see this file's header comment): "which agencies are inviting/managing
 // us," never a blanket RLS grant on this table's client side. ─────────────
-agency.get('/clients/incoming', requireAuth, requireOrgFromToken('admin'), async (c) => {
+agency.get('/clients/incoming', requireAuth, authenticatedRateLimit, requireOrgFromToken('admin'), async (c) => {
   const org = c.get('org');
 
   // Plain `db`, filtered explicitly by client_org_id — this table's RLS
@@ -246,9 +251,12 @@ agency.get('/clients/incoming', requireAuth, requireOrgFromToken('admin'), async
   // "fix" by widening RLS (the epic brief: RLS itself must never be
   // relaxed) but the documented reason this one path uses `db` + an
   // explicit WHERE, exactly like `routes/orgs.ts`'s invitation accept flow.
+  // Epic 19 (Production Hardening), item 6 — capped server-side (this call
+  // had no cap at all before this epic).
   const links = await db.agency_clients.findMany({
     where: { client_org_id: org.organizationId, deleted_at: null },
     orderBy: { created_at: 'desc' },
+    take: 100,
   });
 
   const results = await Promise.all(
@@ -278,6 +286,7 @@ agency.get('/clients/incoming', requireAuth, requireOrgFromToken('admin'), async
 agency.post(
   '/clients/:id/accept',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('admin'),
   auditLog({ action: 'agency_client.consented', entityType: 'agency_clients' }),
   async (c) => {
@@ -313,6 +322,7 @@ agency.post(
 agency.post(
   '/clients/:id/revoke',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('admin'),
   auditLog({ action: 'agency_client.revoked', entityType: 'agency_clients' }),
   async (c) => {

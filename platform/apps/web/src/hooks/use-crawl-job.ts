@@ -51,7 +51,7 @@ export function useCrawlJob(organizationId: string): UseCrawlJobResult {
 
     async function load() {
       try {
-        const job = await getLatestCrawlJob(organizationId);
+        const job = await getLatestCrawlJob();
         if (cancelled) return;
         setState(job ? { status: "ready", job } : { status: "empty" });
       } catch (error) {
@@ -94,14 +94,14 @@ export function useCrawlJob(organizationId: string): UseCrawlJobResult {
   const start = useCallback(async () => {
     setStarting(true);
     try {
-      const job = await startCrawl(organizationId);
+      const job = await startCrawl();
       setState({ status: "ready", job });
     } catch (error) {
       setState({ status: "error", error: error instanceof Error ? error : new Error(String(error)) });
     } finally {
       setStarting(false);
     }
-  }, [organizationId]);
+  }, []);
 
   const reload = useCallback(() => setReloadToken((t) => t + 1), []);
 

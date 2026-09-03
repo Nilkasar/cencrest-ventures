@@ -15,6 +15,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { writeManualAuditEvent } from '../middleware/audit-log.js';
@@ -50,7 +51,7 @@ function isAgentName(value: string): value is AgentName {
 }
 
 // ── POST /:agentName/run — trigger, entitlement-checked ──────────────────
-agentsRoute.post('/:agentName/run', requireAuth, requireOrgFromToken('viewer'), requirePermission(RUN_AGENT), async (c) => {
+agentsRoute.post('/:agentName/run', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(RUN_AGENT), async (c) => {
   const agentNameParam = c.req.param('agentName');
   if (!isAgentName(agentNameParam)) {
     return c.json({ error: 'unknown_agent', message: `Unknown agent "${agentNameParam}". Valid agents: ${AGENT_NAMES.join(', ')}.` }, 404);
@@ -115,15 +116,19 @@ agentsRoute.post('/:agentName/run', requireAuth, requireOrgFromToken('viewer'), 
 
 // ── GET / — this brand's agent-run history, newest first (UI surface:
 // "an agent-runs history list per brand") ────────────────────────────────
-agentsRoute.get('/', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+agentsRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const brand = await getBrandForOrg(org.organizationId);
   if (!brand) return c.json(NO_BRAND_ERROR, 404);
 
+  // Epic 19 (Production Hardening), item 6 — capped server-side (this call
+  // had no cap at all before this epic; a brand's run history only ever
+  // grows).
   const rows = await withOrgContext(org.organizationId, (tx) =>
     tx.agent_runs.findMany({
       where: { organization_id: org.organizationId, brand_id: brand.id },
       orderBy: { created_at: 'desc' },
+      take: 100,
     }),
   );
 

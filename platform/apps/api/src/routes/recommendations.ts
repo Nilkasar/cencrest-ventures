@@ -8,6 +8,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { getBrandForOrg, NO_BRAND_ERROR } from '../lib/brand-context.js';
@@ -30,7 +31,7 @@ const listQuerySchema = z.object({
 // "rank first," same convention `unified_opportunities.opportunity_score`
 // itself already uses — see lib/recommendations/generator.ts's header
 // comment). ─────────────────────────────────────────────────────────────
-recommendationsRoute.get('/', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+recommendationsRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const parsed = listQuerySchema.safeParse(c.req.query());
   if (!parsed.success) return c.json({ error: 'Validation failed', issues: parsed.error.issues }, 422);
   const { status, actionType, limit, offset } = parsed.data;

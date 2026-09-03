@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireCrmAccess } from '../middleware/crm-access.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog } from '../middleware/audit-log.js';
@@ -29,6 +30,7 @@ const createDealSchema = z.object({
 deals.post(
   '/',
   requireAuth,
+  authenticatedRateLimit,
   requireCrmAccess('viewer'),
   requirePermission('manage_deals'),
   async (c) => {
@@ -84,7 +86,7 @@ deals.post(
 );
 
 // ── List (paginated, filterable by stage/owner) ─────────────────────────
-deals.get('/', requireAuth, requireCrmAccess('viewer'), async (c) => {
+deals.get('/', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'), async (c) => {
   const internalOrgId = getInternalOrgId();
   const query = z
     .object({
@@ -122,7 +124,7 @@ deals.get('/', requireAuth, requireCrmAccess('viewer'), async (c) => {
 });
 
 // ── Get one ──────────────────────────────────────────────────────────────
-deals.get('/:id', requireAuth, requireCrmAccess('viewer'), async (c) => {
+deals.get('/:id', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'), async (c) => {
   const internalOrgId = getInternalOrgId();
   const id = c.req.param('id');
 
@@ -158,6 +160,7 @@ const updateDealSchema = z
 deals.patch(
   '/:id',
   requireAuth,
+  authenticatedRateLimit,
   requireCrmAccess('viewer'),
   requirePermission('manage_deals'),
   async (c) => {
@@ -211,6 +214,7 @@ const stageTransitionSchema = z
 deals.post(
   '/:id/stage',
   requireAuth,
+  authenticatedRateLimit,
   requireCrmAccess('viewer'),
   requirePermission('manage_deals'),
   auditLog({ action: 'deal.stage_changed', entityType: 'deal' }),

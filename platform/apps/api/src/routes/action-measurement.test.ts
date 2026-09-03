@@ -10,6 +10,7 @@ let actRows: Array<Record<string, unknown>> = [];
 let measurementRows: Array<Record<string, unknown>> = [];
 
 const db = {
+  organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
   organizations: { findUnique: vi.fn() },
   memberships: { findFirst: vi.fn() },
   users: { findUnique: vi.fn() },
@@ -84,6 +85,7 @@ function makeMeasurement(overrides: Record<string, unknown> = {}): Record<string
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  db.organization_rate_limits.upsert.mockResolvedValue({ count: 1 });
   actRows = [];
   measurementRows = [];
 

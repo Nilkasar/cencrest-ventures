@@ -15,6 +15,7 @@
  */
 import { Hono } from 'hono';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { writeManualAuditEvent } from '../middleware/audit-log.js';
@@ -34,6 +35,7 @@ const NOT_FOUND_ERROR = { error: 'Opportunity not found' } as const;
 opportunityRecommendationsRoute.post(
   '/:id/recommendations/generate',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MUTATE),
   async (c) => {

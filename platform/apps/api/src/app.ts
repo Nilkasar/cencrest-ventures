@@ -18,7 +18,7 @@ import useCases from './routes/use-cases.js';
 import brandClaims from './routes/brand-claims.js';
 import querySets from './routes/query-sets.js';
 import crawl from './routes/crawl.js';
-import crawlJobs from './routes/crawl-jobs.js';
+import crawlJobs, { crawlJobsListRoute } from './routes/crawl-jobs.js';
 import pages from './routes/pages.js';
 import seo from './routes/seo.js';
 import aiRuns from './routes/ai-runs.js';
@@ -52,6 +52,7 @@ import agency from './routes/agency.js';
 import whiteLabel from './routes/white-label.js';
 import integrations from './routes/integrations.js';
 import { ConsoleEmailSender } from './lib/email.js';
+import { getDefaultErrorTracker } from './lib/observability/default-error-tracker.js';
 import type { AppEnv } from './types/context.js';
 
 const app = new Hono<AppEnv>();
@@ -143,7 +144,16 @@ app.route('/api/brands/me/query-sets', querySets);
 // literal `/brands/:id/crawl` and `/brands/:id/pages` are adapted to
 // `/brands/me/...`. `/api/crawl-jobs/:id` matches the spec exactly (a
 // crawl_jobs row is addressed by its own id, not a brand's).
+//
+// `/api/brands/me/crawl-jobs` (Epic 19, Production Hardening item 5) is a
+// SECOND router exported from `routes/crawl-jobs.ts` (`crawlJobsListRoute`,
+// alongside that file's existing default-exported `:id` router) — same
+// "two routers, one resource, two base paths" split `routes/actions.ts`
+// (list, `/brands/me/actions`) / `routes/action-details.ts` (`:id`,
+// `/api/actions`) already establishes, applied here to a resource whose
+// list and detail routes happen to live in the same file rather than two.
 app.route('/api/brands/me/crawl', crawl);
+app.route('/api/brands/me/crawl-jobs', crawlJobsListRoute);
 app.route('/api/crawl-jobs', crawlJobs);
 app.route('/api/brands/me/pages', pages);
 
@@ -314,6 +324,14 @@ app.route('/api/integrations', integrations);
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 
+// Epic 19 (Production Hardening), item 3 — routed through `ErrorTracker`
+// (`lib/observability/error-tracker.ts`) instead of a bare inline
+// `console.error`. Behaviorally unchanged in this build: the default
+// tracker is `ConsoleErrorTracker`, which writes the exact same
+// structured-JSON line this handler wrote before this epic. Only
+// non-sensitive identifiers are ever read off `c` and forwarded — never
+// headers, cookies, or the request/response bodies (see
+// `error-tracker.ts`'s `ErrorContext` doc comment for why).
 app.onError((err, c) => {
   const requestIdValue = (() => {
     try {
@@ -322,14 +340,29 @@ app.onError((err, c) => {
       return undefined;
     }
   })();
-  console.error(
-    JSON.stringify({
-      level: 'error',
-      requestId: requestIdValue,
-      msg: err.message,
-      stack: err.stack,
-    }),
-  );
+  const organizationId = (() => {
+    try {
+      return c.get('org')?.organizationId;
+    } catch {
+      return undefined;
+    }
+  })();
+  const userId = (() => {
+    try {
+      return c.get('user')?.id;
+    } catch {
+      return undefined;
+    }
+  })();
+
+  getDefaultErrorTracker().captureException(err, {
+    requestId: requestIdValue,
+    method: c.req.method,
+    path: c.req.path,
+    organizationId,
+    userId,
+  });
+
   return c.json({ error: 'Internal server error' }, 500);
 });
 

@@ -22,6 +22,7 @@
 import { Hono } from 'hono';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { serializeNotification } from '../lib/notifications/serialize.js';
@@ -32,7 +33,7 @@ const notificationsRoute = new Hono<AppEnv>();
 const VIEW = 'view_intelligence' as const;
 const NOT_FOUND_ERROR = { error: 'Notification not found' } as const;
 
-notificationsRoute.get('/', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+notificationsRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const user = c.get('user');
 
@@ -51,7 +52,7 @@ notificationsRoute.get('/', requireAuth, requireOrgFromToken('viewer'), requireP
   return c.json({ items: rows.map(serializeNotification), total, limit, offset });
 });
 
-notificationsRoute.post('/:id/read', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+notificationsRoute.post('/:id/read', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const user = c.get('user');
   const notificationId = c.req.param('id');

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { MiddlewareHandler } from 'hono';
 import { db, withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog } from '../middleware/audit-log.js';
@@ -83,7 +84,7 @@ async function buildUsageSummary(organizationId: string) {
 
 // ── GET /api/orgs/me/subscription — any member (viewer+) can view the
 // org's own plan/usage; only mutating it is owner-only (epic spec). ────────
-subscriptionRoute.get('/', requireAuth, requireOrgFromToken('viewer'), async (c) => {
+subscriptionRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), async (c) => {
   const org = c.get('org');
   const subscription = await getOrCreateSubscription(org.organizationId);
   const usage = await buildUsageSummary(org.organizationId);
@@ -98,7 +99,7 @@ subscriptionRoute.get('/', requireAuth, requireOrgFromToken('viewer'), async (c)
 // never went through upgrade/downgrade has no `external_customer_id` yet —
 // same as a real Stripe customer that was never created — so it gets an
 // honest empty list, not a fabricated invoice. ─────────────────────────────
-subscriptionRoute.get('/invoices', requireAuth, requireOrgFromToken('viewer'), async (c) => {
+subscriptionRoute.get('/invoices', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), async (c) => {
   const org = c.get('org');
   const current = await getOrCreateSubscription(org.organizationId);
   if (!current.external_customer_id) return c.json({ invoices: [] });
@@ -169,6 +170,7 @@ async function changePlan(
 subscriptionRoute.post(
   '/upgrade',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MANAGE_BILLING),
   auditLog({ action: 'billing.changed', entityType: ENTITY_TYPE, getEntityId }),
@@ -202,6 +204,7 @@ subscriptionRoute.post(
 subscriptionRoute.post(
   '/downgrade',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MANAGE_BILLING),
   auditLog({ action: 'billing.changed', entityType: ENTITY_TYPE, getEntityId }),
@@ -238,6 +241,7 @@ subscriptionRoute.post(
 subscriptionRoute.post(
   '/cancel',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MANAGE_BILLING),
   auditLog({ action: 'billing.changed', entityType: ENTITY_TYPE, getEntityId }),

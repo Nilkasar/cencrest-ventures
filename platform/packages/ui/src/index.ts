@@ -22,3 +22,4 @@ export * from "./components/table";
 export * from "./components/toast";
 export * from "./components/empty-state";
 export * from "./components/skeleton";
+export * from "./components/pagination";

@@ -5,8 +5,8 @@
  * the `ai_runs` row) and then calls Epic 7's own `runAiVisibilityRun`
  * DIRECTLY — the identical EXECUTE/AGGREGATE pipeline every other caller
  * uses, never reimplemented. The one deliberate difference from the route:
- * `runAiVisibilityRun` is `await`ed in-line rather than scheduled via
- * `setImmediate` — an agent run is ALREADY executing in the background (see
+ * `runAiVisibilityRun` is `await`ed in-line rather than scheduled via the
+ * `JobQueue` (`lib/queue/job-queue.ts`) — an agent run is ALREADY executing in the background (see
  * `runner.ts`), so there is no HTTP response to unblock by returning early,
  * and awaiting it directly is what lets this step's caller yield real
  * `progress`/`observation` events keyed off the run's ACTUAL completed

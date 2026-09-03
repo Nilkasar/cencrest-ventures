@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
+import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog, writeManualAuditEvent } from '../middleware/audit-log.js';
@@ -86,15 +87,18 @@ const NOT_DRAFT_ERROR = {
 } as const;
 
 // ── GET / — list the brand's query sets ─────────────────────────────────────
-querySetsRoute.get('/', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+querySetsRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const brand = await getBrandForOrg(org.organizationId);
   if (!brand) return c.json(NO_BRAND_ERROR, 404);
 
+  // Epic 19 (Production Hardening), item 6 — capped server-side (this call
+  // had no cap at all before this epic).
   const rows = await withOrgContext(org.organizationId, (tx) =>
     tx.query_sets.findMany({
       where: { organization_id: org.organizationId, brand_id: brand.id, deleted_at: null },
       orderBy: { created_at: 'desc' },
+      take: 100,
     }),
   );
 
@@ -102,7 +106,7 @@ querySetsRoute.get('/', requireAuth, requireOrgFromToken('viewer'), requirePermi
 });
 
 // ── GET /:id — get one query set ────────────────────────────────────────────
-querySetsRoute.get('/:id', requireAuth, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+querySetsRoute.get('/:id', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
   const org = c.get('org');
   const querySet = await getQuerySet(org.organizationId, c.req.param('id'));
   if (!querySet) return c.json(NO_QUERY_SET_ERROR, 404);
@@ -116,7 +120,7 @@ const generateSchema = z.object({
   description: z.string().trim().max(5000).nullable().optional(),
 });
 
-querySetsRoute.post('/generate', requireAuth, requireOrgFromToken('viewer'), requirePermission(MUTATE), async (c) => {
+querySetsRoute.post('/generate', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(MUTATE), async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const parsed = generateSchema.safeParse(body ?? {});
   if (!parsed.success) return c.json({ error: 'Validation failed', issues: parsed.error.issues }, 422);
@@ -146,6 +150,7 @@ querySetsRoute.post('/generate', requireAuth, requireOrgFromToken('viewer'), req
 querySetsRoute.patch(
   '/:id/activate',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MUTATE),
   auditLog({ action: 'query_set.activated', entityType: 'query_set' }),
@@ -181,6 +186,7 @@ querySetsRoute.patch(
 querySetsRoute.patch(
   '/:id/archive',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MUTATE),
   auditLog({ action: 'query_set.archived', entityType: 'query_set' }),
@@ -211,6 +217,7 @@ querySetsRoute.patch(
 querySetsRoute.get(
   '/:id/queries',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(VIEW),
   async (c) => {
@@ -221,6 +228,24 @@ querySetsRoute.get(
     const intentType = c.req.query('intentType');
     const category = c.req.query('category');
 
+    // Epic 19 (Production Hardening), item 6 — capped server-side. Unlike
+    // this codebase's other list routes, a flat numeric cap here can't
+    // just be `100`: `lib/billing/plan-catalog.ts`'s `queries_per_query_set`
+    // entitlement (already enforced at generation time — see
+    // `POST /:id/queries/generate`) legitimately allows up to 5,000 on the
+    // top finite-limited plan, and `null` (uncapped) on two others; this
+    // route's response is also a flat array (`apps/web/data/query-universe/
+    // client.ts` calls it expecting `ApiQuery[]`, not a paginated
+    // `{items, pagination}` envelope), so adding real offset pagination
+    // here is a breaking API-shape change for the frontend, out of scope
+    // for this pass. `5000` is a genuine technical safety ceiling, not a
+    // page size: it matches the highest real finite entitlement so no
+    // legitimate customer's list is ever silently truncated, while a
+    // pathological/abusive value (millions of rows) still can't turn this
+    // into an unbounded query. Real pagination for the `null`-limit plans
+    // is real, valuable follow-up work if that ever becomes the bottleneck
+    // in practice — tracked in this epic's completion doc, not invented
+    // here.
     const rows = await withOrgContext(org.organizationId, (tx) =>
       tx.queries.findMany({
         where: {
@@ -230,6 +255,7 @@ querySetsRoute.get(
           ...(category ? { category } : {}),
         },
         orderBy: { created_at: 'asc' },
+        take: 5000,
       }),
     );
 
@@ -264,6 +290,7 @@ function defaultIntentTypeFor(category: string): 'informational' | 'commercial' 
 querySetsRoute.post(
   '/:id/queries',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MUTATE),
   async (c) => {
@@ -351,6 +378,7 @@ const queryUpdateSchema = queryInputSchema.partial();
 querySetsRoute.patch(
   '/:id/queries/:queryId',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MUTATE),
   auditLog({ action: 'query.updated', entityType: 'query', getEntityId: (c) => c.req.param('queryId') ?? 'unknown' }),
@@ -397,6 +425,7 @@ querySetsRoute.patch(
 querySetsRoute.delete(
   '/:id/queries/:queryId',
   requireAuth,
+  authenticatedRateLimit,
   requireOrgFromToken('viewer'),
   requirePermission(MUTATE),
   auditLog({ action: 'query.deleted', entityType: 'query', getEntityId: (c) => c.req.param('queryId') ?? 'unknown' }),

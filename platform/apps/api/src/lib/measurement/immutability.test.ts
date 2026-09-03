@@ -33,6 +33,7 @@ function matches(row: Record<string, unknown>, where: Record<string, unknown>): 
 }
 
 const db = {
+  organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
   organizations: { findUnique: vi.fn() },
   memberships: { findFirst: vi.fn() },
   users: { findUnique: vi.fn() },
@@ -95,6 +96,7 @@ function liveAiRun(score: number) {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  db.organization_rate_limits.upsert.mockResolvedValue({ count: 1 });
   actRows = [];
   db.query_sets.findFirst.mockResolvedValue(null); // no active query set -> no fresh GEO re-run needed for this proof
   db.crawl_jobs.findFirst.mockResolvedValue(null);

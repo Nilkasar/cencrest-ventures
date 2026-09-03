@@ -3,28 +3,43 @@
  * runs) and `routes/competitor-ai-runs.ts` (Epic 8 competitor runs) —
  * factored out here so both routes schedule the identical fire-and-forget
  * background job with identical failure handling, rather than two copies of
- * the same `setImmediate`/`.catch()` block drifting apart over time.
+ * the same job-queue-enqueue/`.catch()` block drifting apart over time.
  *
- * TODO: replace with a durable queue (pg-boss) — same documented,
- * no-queue-package-in-this-monorepo placeholder `routes/crawl.ts` already
- * uses (checked again at this epic's spec time: still true). A process
- * restart mid-run currently strands it in `running` forever with no retry.
+ * Epic 19 (Production Hardening), item 1: routed through `JobQueue`
+ * (`lib/queue/job-queue.ts`) instead of a raw `setImmediate` call — see
+ * that module's header comment for the full design. Behaviorally
+ * unchanged in this build (the default queue is `InMemoryJobQueue`, which
+ * still fires via `setImmediate` under the hood); a process restart
+ * mid-run still strands the run in `running` forever with no retry until
+ * `default-job-queue.ts` is pointed at `PgBossJobQueue` with a real
+ * connection string.
  */
 import { withOrgContext } from '@bebest/database';
+import { getDefaultJobQueue } from '../queue/default-job-queue.js';
 import { runAiVisibilityRun } from './pipeline.js';
 
-export function scheduleAiVisibilityRun(runId: string, organizationId: string, brandId: string): void {
-  setImmediate(() => {
-    void runAiVisibilityRun(runId, organizationId, brandId).catch(async (err) => {
-      await withOrgContext(organizationId, (tx) =>
-        tx.ai_runs.update({
-          where: { id: runId },
-          data: { status: 'failed', error: String((err as Error)?.message ?? err), completed_at: new Date() },
-        }),
-      ).catch(() => {
-        // Best-effort — if even this write fails, the run is left in
-        // whatever state runAiVisibilityRun last successfully wrote.
-      });
+interface AiVisibilityRunJobPayload {
+  runId: string;
+  organizationId: string;
+  brandId: string;
+}
+
+const JOB_TYPE = 'ai_visibility_run';
+
+getDefaultJobQueue().register<AiVisibilityRunJobPayload>(JOB_TYPE, async ({ runId, organizationId, brandId }) => {
+  await runAiVisibilityRun(runId, organizationId, brandId).catch(async (err) => {
+    await withOrgContext(organizationId, (tx) =>
+      tx.ai_runs.update({
+        where: { id: runId },
+        data: { status: 'failed', error: String((err as Error)?.message ?? err), completed_at: new Date() },
+      }),
+    ).catch(() => {
+      // Best-effort — if even this write fails, the run is left in
+      // whatever state runAiVisibilityRun last successfully wrote.
     });
   });
+});
+
+export function scheduleAiVisibilityRun(runId: string, organizationId: string, brandId: string): void {
+  void getDefaultJobQueue().enqueue<AiVisibilityRunJobPayload>(JOB_TYPE, { runId, organizationId, brandId });
 }

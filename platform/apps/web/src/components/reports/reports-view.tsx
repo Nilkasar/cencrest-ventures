@@ -9,6 +9,7 @@ import {
   Card,
   CardContent,
   EmptyState,
+  Pagination,
   Select,
   SelectContent,
   SelectItem,
@@ -27,6 +28,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { GenerateReportDialog } from "./generate-report-dialog";
 
 const TYPE_FILTERS: Array<ReportType | "all"> = ["all", "weekly", "monthly", "custom", "baseline_comparison"];
+const PAGE_SIZE = 25;
 
 function ListSkeleton() {
   return (
@@ -70,9 +72,10 @@ function ReportRow({ report }: { report: ReportSummary }) {
  */
 export function ReportsView() {
   const [typeFilter, setTypeFilter] = useState<ReportType | "all">("all");
+  const [page, setPage] = useState(1);
   const { reload, ...state } = useAsyncData(
-    () => listReports({ type: typeFilter === "all" ? undefined : typeFilter, limit: 50 }),
-    [typeFilter],
+    () => listReports({ type: typeFilter === "all" ? undefined : typeFilter, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    [typeFilter, page],
   );
 
   const { toast } = useToast();
@@ -121,7 +124,13 @@ export function ReportsView() {
                 Sorted by most recently generated{state.status === "success" ? ` — ${state.data.total} total` : ""}.
               </p>
             </div>
-            <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as ReportType | "all")}>
+            <Select
+              value={typeFilter}
+              onValueChange={(v) => {
+                setTypeFilter(v as ReportType | "all");
+                setPage(1);
+              }}
+            >
               <SelectTrigger className="w-44 h-8 text-[12.5px]" aria-label="Filter by report type">
                 <SelectValue />
               </SelectTrigger>
@@ -155,6 +164,10 @@ export function ReportsView() {
                 <ReportRow key={report.id} report={report} />
               ))}
             </div>
+          )}
+
+          {state.status === "success" && state.data.items.length > 0 && (
+            <Pagination page={page} pageSize={PAGE_SIZE} total={state.data.total} onPageChange={setPage} itemLabel="reports" />
           )}
         </CardContent>
       </Card>
