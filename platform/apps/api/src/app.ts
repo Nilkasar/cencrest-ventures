@@ -36,6 +36,8 @@ import contentBriefDetails from './routes/content-brief-details.js';
 import contentDrafts from './routes/content-drafts.js';
 import agents from './routes/agents.js';
 import agentRunDetails from './routes/agent-run-details.js';
+import actions from './routes/actions.js';
+import actionDetails from './routes/action-details.js';
 import plans from './routes/plans.js';
 import subscription from './routes/subscription.js';
 import billingWebhooks from './routes/billing-webhooks.js';
@@ -211,6 +213,20 @@ app.route('/api/content-drafts', contentDrafts);
 // routing layer.
 app.route('/api/brands/me/agents', agents);
 app.route('/api/agent-runs', agentRunDetails);
+
+// Epic 13 — Action Center & Controlled Publishing. ADR-007's enforcement
+// point: ONLY `routes/action-details.ts`'s `POST /actions/:id/execute` ever
+// creates a `published_content` row, and only past its own approved_at/
+// Level-4 guard clauses. Spec's literal `GET /brands/:id/actions` is
+// adapted to `/brands/me/actions`, same single-brand-per-org convention as
+// every route above; `/api/actions/:id/...` matches the spec exactly — an
+// `actions` row is addressed by its own id, not a brand's, same convention
+// `/api/ai-runs/:id`/`/api/agent-runs/:id` already use. Two cross-epic
+// handoffs feed this table: Epic 11's `routes/content-drafts.ts` approve
+// handler and Epic 12's `routes/agent-run-details.ts` approve handler (see
+// each file's own header comment / @bebest/database DECISIONS.md §27).
+app.route('/api/brands/me/actions', actions);
+app.route('/api/actions', actionDetails);
 
 // Epic 16 — Billing. `plans` is public reference data (no auth) for a
 // pricing/upgrade UI. `/api/orgs/me/subscription` follows the same

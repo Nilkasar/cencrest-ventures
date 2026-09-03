@@ -216,8 +216,13 @@ export function ContentView() {
                 <EmptyState
                   compact
                   icon={<CheckCircle2 size={18} />}
-                  title="Nothing published yet"
-                  description="Approved drafts are ready to publish, but this product never publishes anything automatically (ADR-007). Epic 13 owns actual publishing — approved content will appear here once it does."
+                  title="Published content lives in Actions"
+                  description="This product never marks a draft itself as “published” (ADR-007) — approving one creates a pending action in the Action Center instead, where a human approves the actual publish. See what's published, where, and when there."
+                  action={
+                    <Button asChild variant="secondary" size="sm">
+                      <Link href="/actions">Go to Actions</Link>
+                    </Button>
+                  }
                 />
               </CardContent>
             </Card>

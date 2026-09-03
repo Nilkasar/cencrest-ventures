@@ -93,4 +93,7 @@ export {
   type integrations,
   type integration_type,
   type integration_status,
+  // Epic 13 (Action Center & Controlled Publishing)
+  type actions,
+  type published_content,
 } from './client.js';

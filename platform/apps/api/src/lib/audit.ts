@@ -118,4 +118,17 @@ export const ALWAYS_AUDITED_ACTIONS = [
   // draft is the privileged decision this epic's whole ADR-007 gate exists
   // to record, distinct from (and a prerequisite to) the eventual publish.
   'content.approved',
+  // Epic 13 (Action Center & Controlled Publishing) additions —
+  // `content.published` above IS this epic's `POST /actions/:id/execute`
+  // event (SECURITY.md's literal "Publishing content" entry, reused
+  // verbatim, see routes/action-details.ts). `action.approved` records the
+  // owner/admin decision that GATES that publish (this epic's own
+  // non-negotiable: "no code path exists that publishes without a prior
+  // approved_at timestamp set by a real user action" — that timestamp's
+  // own setting is exactly the privileged event this list exists to
+  // capture). `action.rolled_back` records reverting an already-published
+  // record within the 30-day window — undoing a "Publishing content" event
+  // is the same class of security-relevant action as the event itself.
+  'action.approved',
+  'action.rolled_back',
 ] as const;

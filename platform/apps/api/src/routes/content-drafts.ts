@@ -11,6 +11,18 @@
  * this table's own CHECK constraint (`chk_content_drafts_status`) limits to
  * `'generated'|'approved'`, so a `'published'` status is not even
  * representable here, let alone reachable by this route.
+ *
+ * Epic 13 (Action Center & Controlled Publishing) addition: right after a
+ * draft is approved, this route also creates the pending `actions` row
+ * that hands the draft off to Epic 13's own approve -> execute -> rollback
+ * lifecycle (`actions.content_draft_id`, a real FK, never a re-typed copy —
+ * see `@bebest/database` DECISIONS.md §27's "Handoff wiring" section for
+ * why THIS is the insertion point). This is still not a publish action —
+ * it creates a `pending` Action Center entry, nothing more; ADR-007's
+ * boundary above is unchanged. Relies on this handler's OWN idempotency
+ * short-circuit (below) for its idempotency, backed up by
+ * `actions.content_draft_id`'s DB-level `@unique` as a second line of
+ * defense.
  */
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -76,7 +88,12 @@ contentDraftsRoute.post('/:id/approve', requireAuth, requireOrgFromToken('viewer
   const parsed = approveBodySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Validation failed', issues: parsed.error.issues }, 422);
 
-  const draft = await withOrgContext(org.organizationId, (tx) => tx.content_drafts.findFirst({ where: { id: draftId, organization_id: org.organizationId } }));
+  // `include: content_briefs` — needed below to populate the Epic 13
+  // handoff's `recommendation_id`/`title`/`evidence_summary` from the
+  // draft's own brief, without a second round trip.
+  const draft = await withOrgContext(org.organizationId, (tx) =>
+    tx.content_drafts.findFirst({ where: { id: draftId, organization_id: org.organizationId }, include: { content_briefs: true } }),
+  );
   if (!draft) return c.json(NOT_FOUND_ERROR, 404);
 
   const isOwnResource = draft.created_by !== null && draft.created_by === user.id;
@@ -108,9 +125,31 @@ contentDraftsRoute.post('/:id/approve', requireAuth, requireOrgFromToken('viewer
 
   // "approved, ready to publish" — never 'published' (ADR-007; see this
   // file's own header comment). Epic 13 is the only future code that ever
-  // moves a draft past this point, and it does so through its OWN table,
-  // never by mutating this one further.
+  // moves a draft past this point, and it does so through its OWN table
+  // (`actions`, created just below) — never by mutating THIS row further.
   const updatedDraft = await withOrgContext(org.organizationId, (tx) => tx.content_drafts.update({ where: { id: draft.id }, data: { status: 'approved', updated_at: new Date() } }));
+
+  // Epic 13 handoff — real FK (`content_draft_id`), never a re-typed copy
+  // of the draft's own fields. Not itself audit-logged: the privileged
+  // decision it follows (`content.approved`, just below) already is, and
+  // this is bookkeeping for that same decision, not a second one. See this
+  // file's own header comment.
+  await withOrgContext(org.organizationId, (tx) =>
+    tx.actions.create({
+      data: {
+        organization_id: org.organizationId,
+        brand_id: draft.brand_id,
+        action_type: 'publish_content',
+        title: `Publish: ${updatedDraft.title ?? draft.content_briefs.title}`,
+        description: draft.content_briefs.evidence_summary,
+        status: 'pending',
+        autonomy_level: 1,
+        recommendation_id: draft.content_briefs.recommendation_id,
+        content_draft_id: draft.id,
+        created_by: user.id,
+      },
+    }),
+  );
 
   await writeManualAuditEvent(c, { action: 'content.approved', entityType: 'content_draft', entityId: draft.id });
 

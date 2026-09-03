@@ -121,6 +121,8 @@ model organizations {
   content_drafts            content_drafts[]
   content_quality_checks    content_quality_checks[]
   content_approvals         content_approvals[]
+  // Epic 13 (Action Center & Controlled Publishing) addition
+  published_content         published_content[]
   crawl_jobs                crawl_jobs[]
   crm_contacts              crm_contacts[]
   crm_notes                 crm_notes[]
@@ -299,6 +301,13 @@ model users {
   // action.
   agent_runs_triggered      agent_runs[]     @relation("agent_runs_triggered_by")
   agent_pending_actions_approved agent_pending_actions[] @relation("agent_pending_actions_approved_by")
+  // Epic 13 (Action Center & Controlled Publishing) additions — who
+  // approved an `actions` row (owner/admin only, SECURITY.md's "Publish
+  // content" matrix row) and who published/rolled back the resulting
+  // `published_content` record.
+  actions_approved              actions[]            @relation("actions_approved_by")
+  published_content_published   published_content[]  @relation("published_content_published_by")
+  published_content_rolled_back published_content[]  @relation("published_content_rolled_back_by")
   // Epic 18 (Agency / White Label / Integrations) additions — the
   // consent/invitation lifecycle `agency_clients` gained (see that model's
   // own comment + DECISIONS.md): who on the agency side sent the
@@ -1322,6 +1331,8 @@ model brands {
   content_briefs          content_briefs[]
   // Epic 11 (Content Intelligence & Generation) additions
   content_drafts          content_drafts[]
+  // Epic 13 (Action Center & Controlled Publishing) addition
+  published_content       published_content[]
   content_quality_checks  content_quality_checks[]
   content_approvals       content_approvals[]
   crawl_jobs              crawl_jobs[]
@@ -3357,6 +3368,10 @@ model opportunity_recommendations {
   // is generated FROM one approved, content-type recommendation (real FK,
   // not a copy of its fields).
   content_briefs        content_briefs[]
+  // Epic 13 (Action Center & Controlled Publishing) addition — an `actions`
+  // row may trace back to the recommendation it ultimately came from (real
+  // FK, nullable — a Level 1-3 agent-originated action has none).
+  actions                actions[]
 
   // The idempotency key this epic's DoD explicitly tests (step 3: re-run
   // generation, confirm no duplicate row): one recommendation per
@@ -3527,6 +3542,11 @@ model content_drafts {
   created_by_user        users?                   @relation("content_drafts_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
   content_quality_checks content_quality_checks[]
   content_approvals      content_approvals?
+  // Epic 13 (Action Center & Controlled Publishing) addition — the real FK
+  // Epic 11 -> Epic 13 handoff: an approved draft becomes AT MOST one
+  // pending `actions` row (`actions.content_draft_id` is `@unique`), never
+  // a re-typed copy. See routes/content-drafts.ts's approve handler.
+  actions                actions?
 
   @@unique([brief_id, version], map: "uq_content_drafts_brief_version")
   @@index([organization_id, brand_id], map: "idx_content_drafts_brand")
@@ -3675,6 +3695,22 @@ model publish_jobs {
 // ACTION CENTER
 // ============================================================================
 
+// Epic 13 (Action Center & Controlled Publishing) — `actions` already existed
+// (ported in Epic 0 from `docs/06-database/SCHEMA.md`'s Opportunity section)
+// but as a generic, never-consumed "action item" shape (title/priority/
+// source/source_id/assigned_to/due_date) with zero application code touching
+// it anywhere (confirmed by grep before this epic's first edit) — not the
+// approve -> execute -> rollback lifecycle SCHEMA.md's own literal `actions`
+// DDL (§4) actually specifies (`recommendation_id`/`autonomy_level`/
+// `approved_by`/`approved_at`/`executed_at`/`rolled_back_at`/`result`). Same
+// "already-ported table missing the fields this epic needs, extend it"
+// resolution §25 already used for `content_briefs`' missing
+// `recommendation_id` — every pre-existing column is kept (harmless,
+// orthogonal, zero risk since nothing reads/writes them yet); this epic adds
+// exactly the domain-model columns it needs. `status`'s vocabulary is
+// widened from Epic 0's placeholder set to this epic's real lifecycle — see
+// checks.sql; safe because, again, zero rows/callers exist yet. Full
+// reasoning: DECISIONS.md §27.
 model actions {
   id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organization_id  String         @db.Uuid
@@ -3683,7 +3719,12 @@ model actions {
   title            String         @db.VarChar(500)
   description      String?
   priority         String         @default("medium") @db.VarChar(20) // low, medium, high, critical — see checks.sql
-  status           String         @default("pending") @db.VarChar(50) // pending, in_progress, completed, dismissed — see checks.sql
+  // pending -> approved -> completed (executed), or rolled_back — this
+  // epic's real approve/execute/rollback lifecycle (`docs/epics/
+  // 13-action-center-publishing.md`'s literal domain model). Widened from
+  // Epic 0's placeholder {pending, in_progress, completed, dismissed} — see
+  // checks.sql / DECISIONS.md §27.
+  status           String         @default("pending") @db.VarChar(50)
   source           String?        @db.VarChar(100)
   source_id        String?        @db.Uuid
   assigned_to      String?        @db.Uuid
@@ -3695,17 +3736,147 @@ model actions {
   created_at       DateTime       @default(now()) @db.Timestamptz(6)
   updated_at       DateTime       @default(now()) @db.Timestamptz(6)
   deleted_at       DateTime?      @db.Timestamptz(6)
-  assigned_to_user users?         @relation("actions_assigned_to", fields: [assigned_to], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  created_by_user  users?         @relation("actions_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  updated_by_user  users?         @relation("actions_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  brands           brands         @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  organizations    organizations  @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  publish_jobs     publish_jobs[]
+
+  // ── Epic 13 additions ─────────────────────────────────────────────────
+  // The SOURCE recommendation, when this action traces back to one (real
+  // FK, never required — a Level 1-3 agent-originated action has no
+  // recommendation of its own). Restrict: this row is a durable
+  // approve/execute/rollback audit trail once it exists; the source
+  // recommendation being later dismissed must never cascade-delete it —
+  // same reasoning `content_briefs.recommendation_id` (§25) already uses.
+  recommendation_id String? @db.Uuid
+  // 1-4, `docs/06-database/SCHEMA.md`'s literal domain model ("1=recommend,
+  // 2=draft, 3=approve+exec, 4=autonomous"). Deliberately NOT narrowed to
+  // 1-3 at the DB layer the way `agent_runs.autonomy_level` is (0014's
+  // `chk_agent_runs_autonomy_level`) — this epic's own non-negotiable is
+  // that the Level 4 block be "enforceable by reading the execute
+  // function's guard clause," i.e. proven even when a row legitimately
+  // holds 4 (a manually-crafted/corrupted row), not merely prevented from
+  // existing. See `chk_actions_level4_never_executes` (checks.sql) for the
+  // DB-level belt-and-suspenders on top of that application guard.
+  autonomy_level Int @default(1) @db.SmallInt
+  // Set ONLY by `POST /actions/:id/approve`, from the real authenticated
+  // caller (`c.get('user').id`) — never client-supplied. This IS the
+  // "prior approved_at timestamp set by a real user action" this epic's
+  // whole non-negotiable exists to guarantee.
+  approved_by String?   @db.Uuid
+  approved_at DateTime? @db.Timestamptz(6)
+  // Set ONLY by `POST /actions/:id/execute`, and only once (`executed_at`
+  // being already-set makes a second execute idempotent, never a second
+  // publish — see routes/action-details.ts).
+  executed_at DateTime? @db.Timestamptz(6)
+  // Set ONLY by `POST /actions/:id/rollback`, only within the 30-day
+  // window measured from `executed_at` (see `lib/actions/rollback-
+  // window.ts` — a resolved ambiguity, documented in this epic's backend
+  // doc, over which of `approved_at`/`executed_at` the spec's "30-day
+  // rollback window" is measured from).
+  rolled_back_at DateTime? @db.Timestamptz(6)
+  // Open pointer to what execute/rollback actually did (e.g.
+  // `{ publishedContentId, destinationRef }`) — same "small summary
+  // pointer, not the full record" reasoning `agent_runs.result_id` already
+  // uses; the FULL `PublishTarget` result lives on `published_content.
+  // result` below, this is a convenience summary on the action itself.
+  result Json?
+  // The two handoff sources this epic's spec names by name (end-to-end
+  // flow step 1): an approved `content_drafts` row (Epic 11) or an
+  // approved `agent_pending_actions` row (Epic 12). Real FKs, never a
+  // re-typed copy of the source row's own fields — mutually exclusive per
+  // row (`chk_actions_single_handoff_source`, checks.sql): a given action
+  // has exactly one real origin, or neither (a directly-created action,
+  // not exercised by this build but not precluded by the schema either).
+  // `@unique` on each: idempotent handoff — a given draft/pending-action
+  // can only ever spawn ONE actions row, ever.
+  content_draft_id        String? @unique @db.Uuid
+  agent_pending_action_id String? @unique @db.Uuid
+
+  assigned_to_user     users?                 @relation("actions_assigned_to", fields: [assigned_to], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  created_by_user      users?                 @relation("actions_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  updated_by_user      users?                 @relation("actions_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  approved_by_user     users?                 @relation("actions_approved_by", fields: [approved_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  brands               brands                 @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  organizations        organizations          @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  opportunity_recommendations opportunity_recommendations? @relation(fields: [recommendation_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  content_drafts       content_drafts?        @relation(fields: [content_draft_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  agent_pending_actions agent_pending_actions? @relation(fields: [agent_pending_action_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  publish_jobs         publish_jobs[]
+  published_content    published_content?
 
   @@index([brand_id], map: "idx_actions_brand")
   @@index([priority], map: "idx_actions_priority")
   @@index([status], map: "idx_actions_status")
   @@index([status, priority], map: "idx_actions_status_priority")
+  @@index([recommendation_id], map: "idx_actions_recommendation")
+}
+
+// Epic 13 (Action Center & Controlled Publishing) — the internal, real
+// record of "what was published and where" (spec's literal domain-model
+// bullet; `docs/06-database/SCHEMA.md`'s Content schema group's 4th table,
+// listed there but never actually given a DDL body — this epic writes the
+// first one). A NEW table, deliberately NOT a reuse of the pre-existing
+// `publish_jobs` (also ported in Epic 0) — `publish_jobs` is shaped for a
+// real, multi-destination external-CMS publish workflow this epic
+// explicitly does not build (`destination_config`/`scheduled_at`/
+// `rejection_reason`/`publish_log`, none of which this epic's
+// `NullPublishTarget` would ever populate) — same "a different, wrong-
+// shaped table for a concern this epic doesn't own, left alone" resolution
+// DECISIONS.md already applies repeatedly (§22/§24/§25's own treatment of
+// `generated_content` vs. `content_drafts`). Full reasoning: DECISIONS.md
+// §27. `publish_jobs` itself is untouched by this epic.
+model published_content {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String @db.Uuid
+  brand_id        String @db.Uuid
+  // The action this row is the execution RESULT of. Restrict (never
+  // Cascade): a published record must survive even if something else tried
+  // to remove its parent action — same durable-artifact reasoning
+  // `content_briefs.recommendation_id` already documents. `@unique`:
+  // exactly one publish record per action, ever (`POST .../execute`'s own
+  // guard clause makes a second call on an already-executed action
+  // idempotent rather than a second create — see routes/action-details.ts).
+  action_id String @unique @db.Uuid
+  // `PublishTarget.name` (`lib/actions/publish-target.ts`) — which
+  // implementation actually wrote this row, e.g. `internal_record` for the
+  // shipped `NullPublishTarget`. Real, not a hardcoded literal, so a future
+  // genuine CMS integration is traceable per row without a schema change.
+  publish_target String @db.VarChar(100)
+  // Where the content now "lives," per the `PublishTarget`'s own result.
+  // For `NullPublishTarget` this is always an internal locator
+  // (`internal://...`) — NEVER a real external URL, this epic's explicit,
+  // documented scope boundary (no real CMS integration exists yet).
+  destination_ref String
+  // Snapshot of what was actually published — from `content_drafts` when
+  // the parent action originated from one (`actions.content_draft_id`);
+  // null for a Level 1-3 agent-originated action with no draft of its own.
+  // Same "snapshot, don't re-read live" reasoning `content_briefs.
+  // evidence_summary` (§25) already uses: a later edit to the source draft
+  // must never retroactively change what this record says was published.
+  title String? @db.VarChar(500)
+  body  String?
+  // published | rolled_back — see checks.sql.
+  status       String   @default("published") @db.VarChar(20)
+  published_at DateTime @default(now()) @db.Timestamptz(6)
+  // Snapshot of `actions.approved_by` — the real, human, owner/admin
+  // approver who authorized this specific publish. Copied from the parent
+  // action's own already-verified column at execute time, never re-derived
+  // or client-supplied here.
+  published_by   String?   @db.Uuid
+  rolled_back_at DateTime? @db.Timestamptz(6)
+  rolled_back_by String?   @db.Uuid
+  // The raw `PublishTarget` result payload — never discarded once a status
+  // is derived from it, same "keep the check's own evidence" reasoning
+  // `content_quality_checks.details` already uses.
+  result     Json     @default("{}")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  organizations       organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands              brands        @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  actions             actions       @relation(fields: [action_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  published_by_user   users?        @relation("published_content_published_by", fields: [published_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  rolled_back_by_user users?        @relation("published_content_rolled_back_by", fields: [rolled_back_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([organization_id, brand_id], map: "idx_published_content_brand")
+  @@index([status], map: "idx_published_content_status")
 }
 
 // ============================================================================
@@ -4105,6 +4276,12 @@ model agent_pending_actions {
   agent_runs        agent_runs    @relation(fields: [agent_run_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   agent_events      agent_events  @relation(fields: [agent_event_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   approved_by_user  users?        @relation("agent_pending_actions_approved_by", fields: [approved_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  // Epic 13 (Action Center & Controlled Publishing) addition — the real FK
+  // Epic 12 -> Epic 13 handoff: a Level-3 pending action, once approved at
+  // THIS table's own layer, becomes AT MOST one pending `actions` row
+  // (`actions.agent_pending_action_id` is `@unique`). See
+  // routes/agent-run-details.ts's approve handler.
+  actions           actions?
 
   @@index([agent_run_id], map: "idx_agent_pending_actions_run")
   @@index([organization_id, status], map: "idx_agent_pending_actions_org_status")

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { CheckCircle2, ShieldCheck } from "lucide-react";
 import { Badge, Button } from "@bebest/ui";
 import type { AgentPendingAction } from "@/data/agents/types";
@@ -76,10 +77,15 @@ export function PendingActionPanel({
         </div>
       ) : (
         pendingAction.approvedAt && (
-          <p className="text-[11.5px] text-subtle-foreground">
-            Approved {formatDate(pendingAction.approvedAt)}
-            {pendingAction.rollbackUntil ? ` · rollback available until ${formatDate(pendingAction.rollbackUntil)}` : ""}
-          </p>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-[11.5px] text-subtle-foreground">
+              Approved {formatDate(pendingAction.approvedAt)}
+              {pendingAction.rollbackUntil ? ` · rollback available until ${formatDate(pendingAction.rollbackUntil)}` : ""}
+            </p>
+            <Link href="/actions" className="text-[11.5px] font-medium text-accent hover:underline shrink-0">
+              View in Actions →
+            </Link>
+          </div>
         )
       )}
     </div>

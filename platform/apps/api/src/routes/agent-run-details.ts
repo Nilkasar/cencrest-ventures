@@ -5,6 +5,18 @@
  * addressed by its own id, not a brand's — same precedent
  * `/api/ai-runs/:id`/`/api/crawl-jobs/:id` already set for exactly this
  * "id-addressed sibling of a brand-scoped list route" shape.
+ *
+ * Epic 13 (Action Center & Controlled Publishing) addition: right after a
+ * pending action is approved here, this route also creates the pending
+ * `actions` row that hands it off to Epic 13's own approve -> execute ->
+ * rollback lifecycle (`actions.agent_pending_action_id`, a real FK). This
+ * epic's own spec line ("a Level-3-approved agent action... becomes an
+ * actions row, status: pending") is read as naming exactly this event —
+ * `agent_pending_actions.status` flipping to `'approved'` IS what
+ * "Level-3-approved" means. See `@bebest/database` DECISIONS.md §27's
+ * "Handoff wiring" section for the full reasoning, including why this
+ * still does not execute/publish anything (unchanged from this route's own
+ * original scope, see the approve handler's own comment below).
  */
 import { Hono } from 'hono';
 import { withOrgContext } from '@bebest/database';
@@ -85,6 +97,29 @@ agentRunDetailsRoute.post('/:id/approve', requireAuth, requireOrgFromToken('view
     tx.agent_pending_actions.update({
       where: { id: pending.id },
       data: { status: 'approved', approved_by: user.id, approved_at: now, rollback_until: rollbackUntil },
+    }),
+  );
+
+  // Epic 13 handoff — real FK (`agent_pending_action_id`), never a
+  // re-typed copy of this row's own fields. Not itself audit-logged: the
+  // privileged decision it follows (`agent.action`, just below) already
+  // is, and this is bookkeeping for that same decision, not a second one.
+  // Still does not execute/publish anything — this route's own original
+  // scope (see this file's header comment) is unchanged: it creates a
+  // `pending` Action Center entry, nothing more.
+  await withOrgContext(org.organizationId, (tx) =>
+    tx.actions.create({
+      data: {
+        organization_id: org.organizationId,
+        brand_id: run.brand_id,
+        action_type: updated.action_type,
+        title: updated.title,
+        description: updated.description,
+        status: 'pending',
+        autonomy_level: run.autonomy_level,
+        agent_pending_action_id: updated.id,
+        created_by: user.id,
+      },
     }),
   );
 

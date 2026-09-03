@@ -1694,3 +1694,185 @@ applied to a database. `apps/api`'s consumption (three thin-orchestrator
 agents, the autonomy-level hard block, the tool-permission allowlist, the
 runner, and the four routes) is documented in
 `platform/docs/epics/12-agents-backend.md`.
+
+## 27. Epic 13 (Action Center & Controlled Publishing) schema additions
+
+`docs/epics/13-action-center-publishing.md`'s domain model is the
+approve -> execute -> rollback lifecycle `docs/06-database/SCHEMA.md` §4's
+literal `actions` DDL specifies (`recommendation_id`/`autonomy_level`/
+`approved_by`/`approved_at`/`executed_at`/`rolled_back_at`/`result`), plus a
+`published_content` table (listed by name in SCHEMA.md's Content schema
+group outline, §8, but never actually given a DDL body anywhere in that
+document).
+
+**`actions` already existed** (ported in Epic 0), checked directly against
+schema.prisma first (this epic's own "check the schema first" instruction) —
+but as a generic, unconsumed "action item" shape (`priority`/`source`/
+`source_id`/`assigned_to`/`due_date`/`metadata`, `status` IN `{pending,
+in_progress, completed, dismissed}`) with **zero application code touching
+it anywhere**, confirmed by grep before this epic's first edit. This is the
+same situation §25 already resolved for `content_briefs`' missing
+`recommendation_id`: extend the already-ported table rather than rename/
+duplicate it. Every pre-existing column is kept (harmless, orthogonal, zero
+migration risk since no row/caller exists yet); this epic adds exactly the
+domain-model columns it needs (`recommendation_id`, `autonomy_level`,
+`approved_by`/`approved_at`, `executed_at`, `rolled_back_at`, `result`) plus
+two handoff FKs not in SCHEMA.md's own DDL but required by this epic's own
+task brief: `content_draft_id` (Epic 11 -> Epic 13) and
+`agent_pending_action_id` (Epic 12 -> Epic 13), both `@unique` (idempotent —
+a given draft/pending-action spawns at most one `actions` row, ever) and
+mutually exclusive (`chk_actions_single_handoff_source`) — a real FK,
+never a re-typed copy of the source row's own fields, per this epic's
+explicit instruction. `status`'s vocabulary is widened to this epic's real
+lifecycle (`pending -> approved -> completed`, or `rolled_back`) — safe for
+the same "zero existing rows/callers" reason as the rest of this extension.
+
+**`autonomy_level` deliberately stays 1-4 at the DB layer** — unlike
+`agent_runs.autonomy_level` (§26's `chk_agent_runs_autonomy_level`, CHECK
+`IN (1,2,3)`, which makes a Level 4 row physically impossible to create).
+This epic's own non-negotiable is different in kind: "No code path exists
+that publishes without a prior `approved_at`... enforceable by reading the
+execute function's guard clause itself" and "Autonomy Level 4 must be
+rejected by the execute path even given a manually-crafted request with
+approval fields set." Both phrasings assume a row CAN legitimately hold
+`autonomy_level: 4` (a manually-crafted/corrupted row, or simply data this
+epic's own creation code never produces but does not itself forbid) and
+require the EXECUTE function's own guard clause to be what catches it — not
+a CHECK constraint quietly making the scenario untestable by construction.
+Two DB-level constraints still back that application guard up as genuine
+defense-in-depth (`chk_actions_execute_requires_approval`,
+`chk_actions_level4_never_executes`) — belt AND suspenders, same
+"the constraint is backup, not the primary mechanism" relationship §26's own
+`chk_agent_runs_autonomy_level` comment already documents for its table.
+
+**`published_content` is a NEW table, deliberately NOT a reuse of the
+pre-existing `publish_jobs`** (also already ported in Epic 0 — §25 already
+flagged it as "ported... for Epic 13's later publishing workflow"). Checked
+directly against schema.prisma and against `publish_jobs`'s actual column
+set before deciding this: `publish_jobs` bundles `destination`/
+`destination_config` (JSON — third-party CMS connection config),
+`scheduled_at`, `rejection_reason`, and `publish_log` (JSON — step-by-step
+publish log) alongside its `approved_by`/`approved_at`/`published_at`/
+`published_url` fields — the shape of a genuine, multi-destination external
+publish workflow this epic explicitly does NOT build ("actually pushing to
+a customer's external CMS is explicitly out of scope for this build... a
+`PublishTarget` interface with an internal-record-only default
+implementation," this epic's own spec, verbatim). Writing this epic's
+publish record into `publish_jobs` would leave `destination_config`/
+`scheduled_at`/`rejection_reason`/`publish_log` permanently unpopulated
+dead columns implying a workflow that does not exist yet — the exact same
+"a different, wrong-shaped table for a different, not-yet-built concern,
+left alone rather than reused" reasoning §25 already used to justify
+`content_approvals` NOT reusing `publish_jobs`, and §25/§22 use for
+`content_drafts`/`opportunities` vs. their own legacy near-namesakes.
+`published_content` has no destination-config/schedule/rejection concept
+anywhere in it: `action_id` (`@unique` — one publish record per action,
+ever), `publish_target` (the real `PublishTarget.name` that wrote the row),
+`destination_ref` (an internal locator, e.g. `internal://published-content/
+<actionId>` — never a real external URL), `title`/`body` (a snapshot of the
+published `content_drafts` row, when the action came from one),
+`published_by`/`published_at`, `rolled_back_by`/`rolled_back_at`, and
+`result` (the raw `PublishTarget` result payload). `publish_jobs` is left
+completely untouched by this epic, still available for whichever future
+epic actually builds a real, multi-destination CMS integration.
+
+**`PublishTarget`** (`apps/api/src/lib/actions/publish-target.ts`) is
+transcribed in the exact same shape/factory-function precedent
+`lib/billing/payment-provider.ts` (Epic 16) already established for
+`PaymentProvider`/`NullPaymentProvider` — a single interface, one shipped
+`NullPublishTarget` implementation (deterministic, zero network calls, an
+internal-record-only `destinationRef`), a process-lifetime singleton getter
+(`getPublishTarget()`), and a test-only setter
+(`__setPublishTargetForTesting`). No registry class, same "exactly one real
+implementation, no routing table to encode yet" reasoning
+`payment-provider.ts`'s own header comment gives.
+
+**RLS** — `prisma/migrations/0016_action_center_publishing/rls.sql` adds
+the standard `tenant_isolation` policy to `published_content` (the one
+genuinely new table; `actions` already has RLS from 0000_init). **CHECK
+constraints** — `.../checks.sql`: `actions.status` (widened, DROP + re-ADD,
+same precedent §23/0013's `chk_agency_clients_status` widening already
+established), `actions.autonomy_level` (1-4), the two execute-guard mirror
+constraints, the approval-fields-together and single-handoff-source
+invariants, and `published_content.status`/rollback-fields-together.
+
+**30-day rollback window — resolved ambiguity.** Neither SCHEMA.md nor
+AGENT_ARCHITECTURE.md's "Rollback available for 30 days" states which
+timestamp the window is measured FROM. This epic's own task brief names
+both candidates ("compare against `approved_at` or `executed_at` per the
+spec"). Resolved as `executed_at` + 30 days
+(`apps/api/src/lib/actions/rollback-window.ts`): rollback reverts
+`published_content` — the artifact created AT execution, not at approval —
+and `approved_at`/`executed_at` can legitimately drift apart (spec's own
+step 2: "a human might approve now and the system executes async"),
+so measuring from `approved_at` could silently shrink the window below the
+full 30 days customers were promised, which is the more customer-hostile
+failure mode of the two readings. No `rollback_until` column is persisted
+on `actions` (unlike `agent_pending_actions.rollback_until`, §26) — the
+deadline is a pure function of `executed_at` + a constant, computed at
+request time, not a second column that could drift from the timestamp it is
+derived from (same "don't add a column that can disagree with itself"
+reasoning this document already applies elsewhere, e.g. `brands`' own
+header comment on `account_health`).
+
+**Handoff wiring — the two insertion points, found by reading each source
+epic's actual code, not re-guessed from the spec's prose:**
+- Epic 11 -> Epic 13: `routes/content-drafts.ts`'s `POST
+  /content-drafts/:id/approve` (that file's own header comment already
+  anticipated this: "Epic 13 is the only future code that ever moves a
+  draft past this point, and it does so through its OWN table, never by
+  mutating this one further") — right after `content_drafts.status` flips
+  to `'approved'`, a pending `actions` row is created with
+  `content_draft_id` set to the real draft id and `recommendation_id`
+  denormalized from the draft's own brief. This relies on the route's
+  EXISTING idempotency short-circuit (a second approve on an
+  already-approved draft returns before reaching this new code at all) for
+  its own idempotency, backed up by `content_draft_id`'s DB-level
+  `@unique` as a second line of defense.
+- Epic 12 -> Epic 13: `routes/agent-run-details.ts`'s `POST
+  /agent-runs/:id/approve`. This epic's own spec line ("a Level-3-approved
+  agent action... becomes an actions row, status: pending") is read as: the
+  SAME event this route already performs (`agent_pending_actions.status`
+  flipping to `'approved'`, a real human decision) is what "Level-3-approved"
+  names — so the insertion point is right after that update, not
+  `runner.ts`'s earlier (pre-approval) pending-action creation. This DOES
+  add a new mutation to a route Epic 12's own test suite asserted performs
+  no other table's create/update (`agent-run-details.test.ts`'s "never
+  publishes/executes anything" case) — that assertion's own wording is
+  literally about publish/execute (still true: this insertion only ever
+  creates a `pending` Action Center entry, the same bookkeeping shape the
+  content-drafts handoff performs, never anything publish-shaped), so the
+  test was updated (not weakened) to assert the new `actions.create` call's
+  exact shape alongside the still-true "no publish/content-draft/execute
+  call" invariant. Neither handoff's `actions.create` call is itself
+  audit-logged: the privileged decision it follows (`content.approved` /
+  `agent.action`) is already logged by the pre-existing code immediately
+  above it, and a second log entry for the same human decision would be
+  redundant, not a missing event — `actions.approved`/`.executed`/
+  `.rolled_back` are their own privileged decisions, logged by this epic's
+  own three routes instead.
+
+**`GET /brands/:id/actions`** — the spec's literal route. Adapted to `GET
+/brands/me/actions`, the single-brand-per-org convention every Epic 2+
+route in `app.ts` already uses (documented per-route in that file, e.g.
+Epic 12's own `/brands/:id/agents/:agentName/run` -> `/brands/me/...`
+adaptation) — not a fresh decision, applying an established precedent.
+
+**RBAC** — `POST /actions/:id/approve`/`/execute`/`/rollback` all gate on
+`publish_content` (owner/admin only), not `approve_content`
+(owner/admin/editor-own, Epic 11's OWN draft-quality gate). This epic's own
+task brief is explicit that its approval is "per docs/08-security/
+SECURITY.md's 'Publish content: owner/admin only'" — a materially different,
+stricter permission than "Approve content," and SECURITY.md's matrix has
+exactly one row for the whole publish-shaped decision, covering approve,
+the execute that follows it, and the rollback that reverses it alike (`lib/
+rbac.ts`'s `Action` union already had `publish_content` defined, unused by
+any route until this epic — anticipated, same as `approve_content`/
+`create_content_draft` were for Epic 11, per that file's own header
+comment).
+
+As with every other section: `prisma validate`/`generate` only — nothing
+applied to a database. `apps/api`'s consumption (the `PublishTarget`
+abstraction, the three lifecycle routes with their guard clauses, and the
+two cross-epic handoffs) is documented in
+`platform/docs/epics/13-action-center-publishing-backend.md`.

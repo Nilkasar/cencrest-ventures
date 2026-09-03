@@ -530,3 +530,55 @@ describe.skip('Epic 12 tenant isolation — agent_runs / agent_events / agent_pe
       'run id that is not itself secret',
   );
 });
+
+/**
+ * Epic 13 (Action Center & Controlled Publishing). `actions` (extended,
+ * already had RLS from 0000_init) and `published_content` (genuinely new,
+ * 0016's own rls.sql) both use the standard single-`organization_id`
+ * `tenant_isolation` policy — see @bebest/database schema.prisma's "ACTION
+ * CENTER" comment block. Real coverage matters specifically for the
+ * approve/execute/rollback lifecycle: `routes/action-details.test.ts`
+ * already proves the mocked-Prisma version of every guard clause (a
+ * foreign-org id 404s, Level 4 is rejected regardless of approval state,
+ * execute without approval is rejected, the 30-day window is enforced);
+ * this block is the real-RLS proof those unit tests cannot provide —
+ * specifically that RLS itself, not just this route's own explicit WHERE
+ * clause, independently blocks a cross-tenant read/write.
+ */
+describe.skip('Epic 13 tenant isolation — actions / published_content (NEEDS LIVE DB)', () => {
+  it.todo(
+    'app.current_org = orgA sees ZERO actions rows for orgB\'s brand in GET /brands/me/actions, ' +
+      'across all four sections (pending/in-progress/completed/rolled-back), even when orgB has at ' +
+      'least one action in each status',
+  );
+
+  it.todo(
+    'app.current_org = orgA cannot read/approve/execute/rollback orgB\'s action via any of ' +
+      'POST /actions/:id/{approve,execute,rollback} — each returns 404 (via the route\'s own ' +
+      'explicit organization_id WHERE clause) even for a real, existing action id from orgB, and ' +
+      'RLS independently returns zero rows for the same query with app.current_org unset/mismatched',
+  );
+
+  it.todo(
+    'inserting an actions (or published_content) row with organization_id set to a foreign org is ' +
+      'rejected by WITH CHECK, even when brand_id/content_draft_id/agent_pending_action_id/action_id ' +
+      'correctly point at real rows the caller genuinely owns in their OWN org — proves the tenant ' +
+      'column itself is enforced, not just the FK relationships',
+  );
+
+  it.todo(
+    'CRITICAL: with an approved, executed orgB action (and its published_content row) seeded, ' +
+      'POST /actions/:id/rollback called with app.current_org = orgA (a real org that exists, just ' +
+      'not the owner) returns 404, and both the underlying actions row and its published_content ' +
+      'row remain untouched (status still \'completed\'/\'published\') — confirms a cross-tenant ' +
+      'rollback cannot revert another org\'s published record even within the real 30-day window',
+  );
+
+  it.todo(
+    'a content_drafts row belonging to orgB can never be referenced by an orgA actions row\'s ' +
+      'content_draft_id — either the FK\'s own cross-schema reference fails, or (if the FK alone ' +
+      'would technically allow it) RLS on content_drafts makes the row invisible to orgA\'s own ' +
+      'approve handler in the first place, so the Epic 11 -> Epic 13 handoff can never cross a ' +
+      'tenant boundary',
+  );
+});

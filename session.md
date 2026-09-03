@@ -1,20 +1,21 @@
 # Session Log — Cencrest Ventures
 
-## ▶ RESUME HERE (last updated 2026-09-03)
+## ▶ RESUME HERE (last updated 2026-09-03, Wave 8)
 
 **Do not start from Session: 2026-08-10 below** — that's history. This block is the current state.
 
 **What this is**: a from-scratch platform rebuild (`platform/` monorepo, pnpm+Turborepo) replacing the old `api/`/`web-app/` implementation, on branch **`rebuild/platform`**. Full context/history is in the "Platform rebuild" session entries further down this file; `platform/EPICS.md` is the authoritative epic-by-epic status table (not `PROJECT_STATUS.md`, which is stale).
 
-**Progress: 16 of 19 product epics VERIFIED** (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 18) plus a foundational auth-token-propagation fix. All committed on `rebuild/platform` through commit `0a91776`. **Nothing has been pushed to the remote** — this sandbox has read-only git access; the user pushes manually.
+**Progress: 17 of 19 product epics VERIFIED** (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16, 17, 18) plus a foundational auth-token-propagation fix. Not yet committed as of this entry — commit pending at the end of this session block.
 
 **Remaining work, in dependency order**:
-1. Epic 13 — Action Center & Controlled Publishing (needs 11+12, both done — **unblocked, do this next**)
-2. Epic 14 — Measurement & Learning Loop (needs 13)
-3. Epic 15 — Reporting & Notifications (needs 14)
-4. Epic 19 — Production Hardening (cross-cutting pass over every prior epic's own flagged `// TODO`s — durable queue, error tracking, the missing `GET /brands/me/crawl-jobs` endpoint, etc.)
-5. Epic 20 — Marketing Site Rebuild (root site, saved for last per the user's explicit sequencing)
-6. Epic 21 — Final Audit (full done/pending report, the user's explicitly requested final deliverable)
+1. Epic 14 — Measurement & Learning Loop (needs 13, now done — **unblocked, do this next**)
+2. Epic 15 — Reporting & Notifications (needs 14)
+3. Epic 19 — Production Hardening (cross-cutting pass over every prior epic's own flagged `// TODO`s — durable queue, error tracking, the missing `GET /brands/me/crawl-jobs` endpoint, the authenticated 120/min rate-limit tier defined but never wired into any route, etc.)
+4. Epic 20 — Marketing Site Rebuild (root site, saved for last per the user's explicit sequencing)
+5. Epic 21 — Final Audit (full done/pending report, the user's explicitly requested final deliverable)
+
+Custom `.claude/agents/*.md` subagent types (`growth-strategist`, `backend-architect`, `frontend-engineer`, `qa-flow-tester`) now resolve directly as invokable `agentType`s in this session (confirmed in the fresh session that ran Wave 8) — no more embedding personas in raw prompts as a workaround; pass `agentType: '<name>'` in `agent()` calls going forward.
 
 **Paused per explicit user instruction** ("when this wave completes please let me know before starting next") — every subsequent wave needs a check-in before launching, unless the user says otherwise in a future session.
 
@@ -388,3 +389,31 @@ Epics 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 18 are now `VERIFIED` �
 ### Paused per explicit instruction — awaiting go-ahead before Wave 8
 
 User asked to be told when this wave completes before starting the next one. Remaining work: Epic 13 (Action Center & Publishing, needs 11+12 — both now done), Epic 14 (Measurement & Learning Loop, needs 13), Epic 15 (Reporting & Notifications, needs 14), Epic 19 (Production Hardening, cross-cutting pass over every prior epic's own flagged TODOs) — then Epic 20 (Marketing Site Rebuild) and Epic 21 (Final Audit) close out the roadmap, per the user's original sequencing request.
+
+---
+
+## Session: 2026-09-03 (cont.) — Wave 8: Epic 13 (Action Center & Controlled Publishing)
+
+### Context
+
+Fresh session, resumed from this file's "RESUME HERE" block. User gave the go-ahead ("start with the next wave then"). Confirmed this session's custom subagent types (`growth-strategist`, `backend-architect`, `frontend-engineer`, `qa-flow-tester`) resolve directly as invokable `agentType`s in the Workflow tool — the earlier-session limitation is gone, so this wave's script passed `agentType` directly instead of embedding personas in raw prompts.
+
+Epic 13 was the only dependency-unblocked epic this wave (needs 11+12, both done; Epic 14 needs 13, not yet unblocked) — single-epic wave, backend-first-then-frontend per the standing rule, run via `Workflow` (`wf_78d4823e-7bf`).
+
+### Wave 8 results — verify came back `needs-fixes`, one real spec-relevant gap
+
+Backend: full approve→execute→rollback lifecycle built, both handoffs (`content_drafts`→`actions` on draft approval, `agent_pending_actions`→`actions` on Level-3 approval) as real unique FKs with idempotency tests, Level-4-execute-rejected-even-with-forged-approval-fields and no-execute-without-approval both proven with hostile-input tests, 30-day rollback window tested at the 29d23h/30d1h boundaries, RBAC matches SECURITY.md's "Publish content" (owner/admin) row exactly. Migration `0016_action_center_publishing`. 45 new tests, full `@bebest/api` suite 817 passed/0 failed/69 todo.
+
+Frontend wired directly to the real routes (read the actual backend code, not the spec prose, per the standing rule) — reconciled `ActionStatus`, kept `autonomy_level` as `1|2|3|4` deliberately (not narrowed to 1-3) since the non-negotiable requires proving the block against a row that legitimately holds 4, and handled two real gaps honestly rather than faking them: no `agentRunId` FK/route exists so it built a bounded best-effort join, and no `GET /published-content/:id` route exists so outcome detail beyond the mutating response is session-local only.
+
+qa-flow-tester's verify pass (walking the spec's End-to-end flow section literally, not route-by-route) confirmed all 7 numbered steps hold in code, but found: **(1) notable** — the pending-approval card rendered only draft metadata (title/version/word count), never the draft's actual `body` or the brief's `evidenceSummary`, even though the API already returns both inline — falling short of the spec's literal "visible inline, not just a title" requirement; **(2) minor, pre-existing** — the documented 120/min authenticated rate-limit tier is defined in `middleware/rate-limit.ts` but never wired into `app.ts` (every authenticated route, not just this epic's, actually runs at the 30/min public tier) — flagged for Epic 19, not this epic's regression.
+
+### Fix landed, spot-checked directly in code (not just the fix agent's claim)
+
+Dispatched a single scoped `frontend-engineer` fix (not a full Workflow — one small, well-defined gap). `action-origin.tsx` now renders the draft body and brief evidence inline via a new `ExpandableField` (collapses past 240 chars, "Show more"/"Show less"). While auditing the agent-pending-action branch as instructed, the fix agent found the identical gap was real there too and fixed it in the same pass (title/description now render inline for Level-3-agent-originated actions, previously discarded after being fetched). Read `action-origin.tsx` directly myself — confirmed both branches now render real inline content, not just metadata. Re-ran `@bebest/api`'s full suite myself: 817 passed, 0 failed, 69 todo, matching the reported figures exactly. `pnpm --filter @bebest/web typecheck/lint/build` all clean per the fix agent, consistent with the verify agent's own build check.
+
+Epics 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16, 17, 18 are now `VERIFIED` — **17 of 19 product epics done.**
+
+### Wave 9 — next up
+
+Epic 14 (Measurement & Learning Loop, needs Epic 13 — now done) is next. Per the paused-between-waves instruction, checking in before launching.

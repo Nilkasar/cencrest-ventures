@@ -13,6 +13,9 @@ let cqcRows: Array<Record<string, unknown>> = [];
 let caRows: Array<Record<string, unknown>> = [];
 let cjRows: Array<Record<string, unknown>> = [];
 let pgRows: Array<Record<string, unknown>> = [];
+// Epic 13 (Action Center & Controlled Publishing) — the handoff row
+// routes/content-drafts.ts's approve handler creates.
+let actRows: Array<Record<string, unknown>> = [];
 let idCounter = 0;
 
 function matches(row: Record<string, unknown>, where: Record<string, unknown>): boolean {
@@ -82,10 +85,16 @@ const db = {
     }),
   },
   content_drafts: {
-    findFirst: vi.fn(async ({ where, orderBy }: { where: Record<string, unknown>; orderBy?: { version?: string } }) => {
+    findFirst: vi.fn(async ({ where, orderBy, include }: { where: Record<string, unknown>; orderBy?: { version?: string }; include?: { content_briefs?: boolean } }) => {
       let rows = cdRows.filter((r) => matches(r, where));
       if (orderBy?.version === 'desc') rows = rows.slice().sort((a, b) => Number(b.version) - Number(a.version));
-      return rows.length > 0 ? { ...rows[0] } : null;
+      if (rows.length === 0) return null;
+      const row = { ...rows[0] };
+      if (include?.content_briefs) {
+        const brief = cbRows.find((b) => b.id === row.brief_id);
+        return { ...row, content_briefs: brief ? { ...brief } : null };
+      }
+      return row;
     }),
     findMany: vi.fn(async ({ where, orderBy }: { where?: Record<string, unknown>; orderBy?: { version?: string } } = {}) => {
       let rows = where ? cdRows.filter((r) => matches(r, where)) : cdRows.slice();
@@ -122,6 +131,19 @@ const db = {
     create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
       const row = { id: `ca-${++idCounter}`, approved_at: new Date('2026-02-03'), created_at: new Date('2026-02-03'), notes: null, ...data };
       caRows.push(row);
+      return { ...row };
+    }),
+  },
+  // Epic 13 (Action Center & Controlled Publishing) — the pending `actions`
+  // row routes/content-drafts.ts's approve handler creates on approval.
+  actions: {
+    findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+      const row = actRows.find((r) => matches(r, where));
+      return row ? { ...row } : null;
+    }),
+    create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+      const row = { id: `act-${++idCounter}`, created_at: new Date('2026-02-04'), updated_at: new Date('2026-02-04'), deleted_at: null, priority: 'medium', ...data };
+      actRows.push(row);
       return { ...row };
     }),
   },
@@ -226,6 +248,7 @@ beforeEach(async () => {
   caRows = [];
   cjRows = [];
   pgRows = [];
+  actRows = [];
   idCounter = 0;
 
   const { __setKeysForTesting } = await import('../lib/jwt.js');
@@ -433,6 +456,16 @@ describe('POST /content-drafts/:id/approve', () => {
     expect(db.audit_events.create).toHaveBeenCalledTimes(1);
     const auditCall = db.audit_events.create.mock.calls[0]![0] as { data: { action: string } };
     expect(auditCall.data.action).toBe('content.approved');
+
+    // Epic 13 (Action Center & Controlled Publishing) handoff — a real FK
+    // to the draft, never a re-typed copy, plus the recommendation_id
+    // carried through from the draft's own brief.
+    expect(actRows).toHaveLength(1);
+    expect(actRows[0]!.content_draft_id).toBe(draftId);
+    expect(actRows[0]!.agent_pending_action_id).toBeUndefined();
+    expect(actRows[0]!.recommendation_id).toBe('rec-1');
+    expect(actRows[0]!.status).toBe('pending');
+    expect(actRows[0]!.autonomy_level).toBe(1);
   });
 
   it('a viewer (below approve_content\'s allowed roles) is rejected server-side with 403', async () => {
@@ -474,6 +507,9 @@ describe('POST /content-drafts/:id/approve', () => {
     expect(body.alreadyApproved).toBe(true);
     expect(caRows).toHaveLength(1);
     expect(db.audit_events.create).toHaveBeenCalledTimes(1); // still just one
+    // The Epic 13 handoff row is created exactly once too, not duplicated
+    // on the idempotent repeat.
+    expect(actRows).toHaveLength(1);
   });
 
   it('404s (not a leaking 403) for a draft belonging to a different organization — tenant isolation', async () => {

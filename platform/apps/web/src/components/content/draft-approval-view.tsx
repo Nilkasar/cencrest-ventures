@@ -80,7 +80,7 @@ export function DraftApprovalView({ draftId }: { draftId: string }) {
         title: result.alreadyApproved ? "Already approved" : "Draft approved",
         description: result.alreadyApproved
           ? "This draft was already approved — nothing changed."
-          : "Ready to publish. Publishing itself happens in a later epic — nothing was published automatically.",
+          : "Ready to publish. Head to Actions to approve the actual publish — nothing was published automatically.",
       });
       reload();
     } catch (err) {
@@ -231,11 +231,16 @@ export function DraftApprovalView({ draftId }: { draftId: string }) {
                 <EmptyState
                   compact
                   icon={<CheckCircle2 size={18} />}
-                  title="Approved — ready to publish"
+                  title="Approved — waiting in the Action Center"
                   description={
                     justApproved
-                      ? `Approved as ${justApproved.approvedRole} at ${formatDateTime(justApproved.approvedAt)}${justApproved.notes ? ` — “${justApproved.notes}”` : ""}. Nothing is published automatically.`
-                      : "This draft has been approved. Nothing is published automatically — publishing is a future epic's concern."
+                      ? `Approved as ${justApproved.approvedRole} at ${formatDateTime(justApproved.approvedAt)}${justApproved.notes ? ` — “${justApproved.notes}”` : ""}. It's now waiting in Actions for a human to approve the actual publish — nothing is published automatically.`
+                      : "This draft has been approved. It's now waiting in Actions for a human to approve the actual publish — nothing is published automatically."
+                  }
+                  action={
+                    <Button asChild variant="secondary" size="sm">
+                      <Link href="/actions">Go to Actions</Link>
+                    </Button>
                   }
                 />
               ) : (

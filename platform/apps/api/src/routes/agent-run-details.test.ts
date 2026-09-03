@@ -9,6 +9,9 @@ const db = {
   agent_runs: { findFirst: vi.fn() },
   agent_events: { findMany: vi.fn() },
   agent_pending_actions: { findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
+  // Epic 13 (Action Center & Controlled Publishing) — the pending `actions`
+  // handoff row this route's approve handler now also creates.
+  actions: { create: vi.fn() },
   audit_events: { create: vi.fn().mockResolvedValue({}) },
   organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
 };
@@ -19,6 +22,7 @@ const tx = {
   agent_runs: db.agent_runs,
   agent_events: db.agent_events,
   agent_pending_actions: db.agent_pending_actions,
+  actions: db.actions,
 };
 vi.mock('@bebest/database', () => ({
   db,
@@ -95,6 +99,7 @@ beforeEach(async () => {
   db.agent_pending_actions.findMany.mockResolvedValue([PENDING_ACTION]);
   db.agent_pending_actions.findFirst.mockResolvedValue(PENDING_ACTION);
   db.agent_pending_actions.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ ...PENDING_ACTION, ...data }));
+  db.actions.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'action-1', created_at: new Date(), updated_at: new Date(), ...data }));
 });
 
 describe('GET /agent-runs/:id', () => {
@@ -177,21 +182,50 @@ describe('POST /agent-runs/:id/approve', () => {
     expect(db.audit_events.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ action: 'agent.action', entity_type: 'agent_pending_action', entity_id: 'pending-1' }) }),
     );
+
+    // Epic 13 (Action Center & Controlled Publishing) handoff — a real FK
+    // to this pending action, never a re-typed copy, status starts at
+    // 'pending' (a SEPARATE approval gate at the Action Center layer,
+    // still required before anything executes — see routes/
+    // action-details.ts). Not itself audit-logged (the privileged decision
+    // it follows, `agent.action` above, already is).
+    expect(db.actions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          organization_id: 'org-1',
+          brand_id: 'brand-1',
+          agent_pending_action_id: 'pending-1',
+          status: 'pending',
+          autonomy_level: 3,
+        }),
+      }),
+    );
+    const handoffCall = db.actions.create.mock.calls[0]![0] as { data: Record<string, unknown> };
+    expect(handoffCall.data.content_draft_id).toBeUndefined();
+    expect(db.audit_events.create).toHaveBeenCalledTimes(1); // still just the one 'agent.action' event
   });
 
-  it('never publishes/executes anything — approval only ever calls agent_pending_actions.update, no publish/content-draft/execute call exists in this route', async () => {
+  it('never publishes/executes anything — approval only ever calls agent_pending_actions.update (plus the Epic 13 pending-actions handoff create), no publish/content-draft/execute call exists in this route', async () => {
     const app = await buildApp();
     await app.request('/agent-runs/run-1/approve', { method: 'POST', headers: await authHeader('user-1', 'org-1') });
 
-    // The only mutation this route performs at all is the pending-action
-    // update above — no other table's `.update()`/`.create()` is touched,
-    // proving this epic stops at "approved" (Epic 13's execution is a
-    // separate, later call this route never makes).
+    // The only mutations this route performs at all are the pending-action
+    // update and the Epic 13 handoff create above — no OTHER table's
+    // `.update()`/`.create()` is touched, and even the handoff create only
+    // ever creates a `pending` Action Center entry (never anything
+    // publish/execute-shaped) — proving this epic still stops at
+    // "approved," Epic 13's own execute is a separate, later call this
+    // route never makes.
     const mutatedTables = Object.entries(tx)
       .filter(([, model]) => 'update' in model || 'create' in model)
-      .filter(([name]) => name !== 'agent_pending_actions' && name !== 'audit_events');
+      .filter(([name]) => name !== 'agent_pending_actions' && name !== 'audit_events' && name !== 'actions');
     for (const [, model] of mutatedTables) {
       if ('update' in model) expect(model.update).not.toHaveBeenCalled();
     }
+    expect(db.actions.create).toHaveBeenCalledTimes(1);
+    const createCall = db.actions.create.mock.calls[0]![0] as { data: Record<string, unknown> };
+    expect(createCall.data.status).toBe('pending');
+    expect(createCall.data).not.toHaveProperty('executed_at');
+    expect(createCall.data).not.toHaveProperty('approved_at');
   });
 });

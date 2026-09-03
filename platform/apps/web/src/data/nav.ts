@@ -53,7 +53,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { href: "/recommendations", label: "Recommendations", icon: Sparkles },
       { href: "/agents", label: "Agents", icon: Bot },
-      { href: "/actions", label: "Actions", icon: ListChecks, epic: 13 },
+      { href: "/actions", label: "Actions", icon: ListChecks },
       { href: "/content", label: "Content", icon: FileText },
       { href: "/reports", label: "Reports", icon: BarChart3, epic: 15 },
     ],

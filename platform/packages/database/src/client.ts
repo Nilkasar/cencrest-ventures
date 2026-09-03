@@ -271,6 +271,9 @@ export type {
   integrations,
   integration_type,
   integration_status,
+  // Epic 13 (Action Center & Controlled Publishing)
+  actions,
+  published_content,
 } from '@prisma/client';
 
 export type PrismaTransactionClient = Prisma.TransactionClient;
