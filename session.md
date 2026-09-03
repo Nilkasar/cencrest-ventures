@@ -327,3 +327,17 @@ Epics 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 16, 17 are now all `VERIFIED` — 12 of 19 p
 ### Wave 6 — next up
 
 Epic 10 (Recommendation Engine, needs Epic 9 — done) and Epic 18 (Agency/White-Label/Integrations, needs Epic 0 + Epic 16 — both done) build next in parallel.
+
+### Wave 6 results (commit `4e6fd5c`) — both VERIFIED first pass, plus a real cross-cutting discovery
+
+Epic 10 and Epic 18 both came back production-ready. Epic 18's verify agent did the deepest tenant-isolation re-tracing yet — independently confirmed the "revoking an `agency_clients` link immediately blocks the next request" test is a genuine two-request regression test (not rubber-stamped), and that the new authorization layer composes on top of Epic 0's RLS without ever relaxing it.
+
+**Important discovery**: tracing the auth chain for Epic 18's "switch to client org" flow surfaced that `platform/apps/web/src/lib/api-client.ts` has never actually attached an `Authorization` header to any request — it was built (Epic 0) with a stale assumption ("read from an httpOnly-cookie backed session") that never matched what the backend actually implements (bearer-token-only JWT, no cookies, documented in Epic 0's own completion doc). This has silently been true through 6 full waves — no epic's verification caught it because none involve a live authenticated session, so every "frontend calls the real API" confirmation was accurate about the URL/method/body but never actually checked whether the request would be authenticated. Confirmed by reading `api-client.ts` directly myself.
+
+Dispatched a dedicated fix (`wf_48ae002d-4d3`, not yet landed as of this entry) rather than patching it inside either epic — this is foundational, cross-cutting infrastructure work, not scoped to one epic. Login flow, token storage/attachment, refresh-on-401, logout, and org-switch token propagation are all in scope.
+
+Epics 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 17, 18 are now `VERIFIED` — 14 of 19 product epics done.
+
+### Open items for next session
+- Confirm the session/token wiring fix lands cleanly before starting Wave 7 (Epic 11: Content Intelligence, Epic 12: Agents — both benefit from a corrected apiClient pattern being in place before more frontend code is built on top of it).
+- Epic 17's white-label-into-report gap (Epic 18's own flagged limitation) will resolve naturally once Epic 15 (Reporting) is built.
