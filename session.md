@@ -311,3 +311,19 @@ Epics 0, 1, 2, 3, 4, 5, 6, 7, 8, 16 are now all `VERIFIED`.
 ### Wave 5 — next up
 
 Epic 9 (Opportunity Engine, needs Epic 4 + Epic 8 — both done) is ready. Writing Epic 17 (Free AI + SEO Snapshot) spec now to pair with it — Epic 17 needs Epic 1 (CRM) + Epic 7 (AI baseline), both done, and is high product value (it's the actual public lead-generation entry point `PRODUCT_VISION.md` describes, and ties together CRM/crawler/SEO/AI-visibility into one public, unauthenticated flow).
+
+### All remaining specs written (commit `3432ab3`)
+
+Wrote specs for Epics 12 (Agents), 13 (Action Center/Publishing), 14 (Measurement/Learning), 15 (Reporting/Notifications), 18 (Agency/White-Label/Integrations), 19 (Production Hardening) while Wave 5 built — every epic from 1 through 19 now has a written spec with the end-to-end-flow checklist. Notable calls made explicit in these specs rather than left ambiguous: Epic 12 hard-blocks autonomy Level 4 at the code level; Epic 13 requires a real guard clause against publishing without a prior approval timestamp (defense in depth against a crafted API call, not just normal-flow enforcement); Epic 14 requires snapshotting before-scores at approval time, not measurement time; Epic 18 extends multi-tenancy via an explicit `agency_clients` grant table without ever relaxing RLS itself; Epic 19 is scoped strictly to the real `// TODO`s every prior epic already flagged, not invented hardening work.
+
+### Wave 5 results (commit `1f9eea4`) — both VERIFIED first pass
+
+Epic 9's unified-opportunity score was mathematically proven (not just tested) to always be `>= max(seoOnly, geoOnly)` via a probabilistic-OR combine function. Idempotency, dismiss-then-recompute, and material-change reactivation all independently tested. Epic 17 (the actual public product entry point) proved rate-limiting and lead-creation both happen first via real call-order assertions, free-tier scoping (10 pages/50 queries) as genuine threaded parameters rather than hardcoded values, and a report token that's a SHA-256 hash of a 32-byte random value — spot-checked directly in `lib/tokens.ts`, never an enumerable database id.
+
+Notable: Epic 9's verify agent found a genuine cross-epic build-breaking bug in Epic 17's code (a JSDoc comment whose embedded `*/` prematurely closed a block comment and corrupted the rest of the file) — confirmed it by temporarily patching and rebuilding, then restored the file byte-for-byte since fixing someone else's epic wasn't its job. The concurrent Epic 17 agent independently found and fixed the same bug. Good example of the verify-agent discipline working as intended: report what's found, don't overstep scope.
+
+Epics 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 16, 17 are now all `VERIFIED` — 12 of 19 product epics done.
+
+### Wave 6 — next up
+
+Epic 10 (Recommendation Engine, needs Epic 9 — done) and Epic 18 (Agency/White-Label/Integrations, needs Epic 0 + Epic 16 — both done) build next in parallel.
