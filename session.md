@@ -6,7 +6,7 @@
 
 **What this is**: a from-scratch platform rebuild (`platform/` monorepo, pnpm+Turborepo) replacing the old `api/`/`web-app/` implementation, on branch **`rebuild/platform`**. Full context/history is in the "Platform rebuild" session entries further down this file; `platform/EPICS.md` is the authoritative epic-by-epic status table (not `PROJECT_STATUS.md`, which is stale).
 
-**Progress: 17 of 19 product epics VERIFIED** (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16, 17, 18) plus a foundational auth-token-propagation fix. Not yet committed as of this entry — commit pending at the end of this session block.
+**Progress: 17 of 19 product epics VERIFIED** (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16, 17, 18) plus a foundational auth-token-propagation fix, landed and pushed (`6b9cb2f`) on 2026-09-03. Wave 9 (Epic 14 + Epic 20, run in parallel) launched same day and is still in progress as of this note.
 
 **Remaining work, in dependency order**:
 1. Epic 14 — Measurement & Learning Loop (needs 13, now done — **unblocked, do this next**)
