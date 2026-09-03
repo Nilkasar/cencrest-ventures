@@ -348,3 +348,15 @@ New `lib/auth-state.ts` (access token in-memory only, refresh token in `localSto
 ### Wave 7 — next up
 
 Epic 11 (Content Intelligence & Generation, needs Epic 6 + Epic 10 — both done) and Epic 12 (Agents, needs Epic 4 + Epic 7 + Epic 9 + Epic 10 — all done) build next in parallel.
+
+### Wave 7 results (commit `400c205`) — both VERIFIED first pass
+
+Epic 11's ADR-007 boundary (no autonomous publishing) was proven by absence — grepped every file this epic touched for "publish" (zero hits outside a documented scope-limit comment) plus an explicit test asserting the API response never contains a `published` field. Epic 12's autonomy Level 4 hard-block was proven under 47 tried input combinations including a corrupted plan cap of 99 and an `AUTONOMOUS_MODE` env-var check — spot-checked directly in `lib/agents/autonomy.ts` myself, confirmed the function rejects unconditionally rather than clamping. Epic 12's prompt-injection test is genuinely falsifiable (a real "ignore previous instructions" string fed through the pipeline, confirmed never to reach or influence any downstream call).
+
+One real (if currently cosmetic) issue both verify agents caught: Epic 11 and Epic 12 built concurrently and each independently claimed migration folder `0014_*`. Fixed directly (not via another agent) — renamed Epic 11's to `0015_content_intelligence_generation` and updated its two stale references in `DECISIONS.md` and its own completion doc.
+
+Epics 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 18 are now `VERIFIED` — **16 of 19 product epics done.**
+
+### Paused per explicit instruction — awaiting go-ahead before Wave 8
+
+User asked to be told when this wave completes before starting the next one. Remaining work: Epic 13 (Action Center & Publishing, needs 11+12 — both now done), Epic 14 (Measurement & Learning Loop, needs 13), Epic 15 (Reporting & Notifications, needs 14), Epic 19 (Production Hardening, cross-cutting pass over every prior epic's own flagged TODOs) — then Epic 20 (Marketing Site Rebuild) and Epic 21 (Final Audit) close out the roadmap, per the user's original sequencing request.
