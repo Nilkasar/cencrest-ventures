@@ -23,9 +23,11 @@ import { ComingSoon } from "@/components/patterns/coming-soon";
 import { StubActionButton } from "@/components/patterns/stub-action-button";
 import { BrandProfilePanel } from "@/components/settings/brand-profile-panel";
 import { BillingPanel } from "@/components/settings/billing-panel";
+import { WhiteLabelPanel } from "@/components/settings/white-label-panel";
+import { IntegrationsPanel } from "@/components/settings/integrations-panel";
 import { currentUser, currentOrganization } from "@/data/fixtures";
 
-const TAB_VALUES = ["brand", "team", "notifications", "billing", "autonomy"] as const;
+const TAB_VALUES = ["brand", "team", "notifications", "billing", "white-label", "integrations", "autonomy"] as const;
 type TabValue = (typeof TAB_VALUES)[number];
 
 function isTabValue(value: string | null): value is TabValue {
@@ -50,6 +52,8 @@ function SettingsTabs() {
         <TabsTrigger value="team">Team</TabsTrigger>
         <TabsTrigger value="notifications">Notifications</TabsTrigger>
         <TabsTrigger value="billing">Billing</TabsTrigger>
+        <TabsTrigger value="white-label">White label</TabsTrigger>
+        <TabsTrigger value="integrations">Integrations</TabsTrigger>
         <TabsTrigger value="autonomy">Autonomy</TabsTrigger>
       </TabsList>
 
@@ -113,6 +117,14 @@ function SettingsTabs() {
 
       <TabsContent value="billing">
         <BillingPanel />
+      </TabsContent>
+
+      <TabsContent value="white-label">
+        <WhiteLabelPanel />
+      </TabsContent>
+
+      <TabsContent value="integrations">
+        <IntegrationsPanel />
       </TabsContent>
 
       <TabsContent value="autonomy">

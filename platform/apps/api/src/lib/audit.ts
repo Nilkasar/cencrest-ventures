@@ -97,4 +97,18 @@ export const ALWAYS_AUDITED_ACTIONS = [
   // requirement exists for, distinct from `billing.changed` (a legitimate,
   // successfully-applied billing change) — see routes/billing-webhooks.ts.
   'billing.webhook_rejected',
+  // Epic 18 (Agency / White Label / Integrations) additions — every step of
+  // the cross-org consent lifecycle this epic's DoD requires ("requires the
+  // documented consent/invitation step... and is audit-logged", "revoking a
+  // link immediately blocks a subsequent request") is exactly the class of
+  // event SECURITY.md's audit list exists for: it changes WHICH org id a
+  // request can assert, the same security-relevant weight as
+  // `membership.role_changed`. `integration.connected`/`.disconnected`
+  // guard a credential-shaped resource (`integrations.config_enc`) even
+  // though this build's provider is mocked.
+  'agency_client.invited',
+  'agency_client.consented',
+  'agency_client.revoked',
+  'integration.connected',
+  'integration.disconnected',
 ] as const;

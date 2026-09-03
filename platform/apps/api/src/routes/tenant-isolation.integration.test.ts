@@ -431,3 +431,60 @@ describe.skip('Epic 8 tenant isolation — competitor ai_runs (NEEDS LIVE DB)', 
       'via the same table with no per-org partition beyond the RLS-enforced organization_id column',
   );
 });
+
+/**
+ * Epic 18 (Agency / White Label / Integrations). `agency_clients` is the
+ * one genuinely two-tenant table in the schema (`agency_org_id`,
+ * `client_org_id`) — see @bebest/database rls.sql's "Special case —
+ * agency_clients" and DECISIONS.md's Epic 18 section for why its policy
+ * scopes visibility to the AGENCY side only, and why the client-side
+ * accept/revoke paths (`routes/agency.ts`) deliberately use plain `db` +
+ * an explicit `client_org_id` WHERE filter instead of a second RLS grant
+ * (same precedent as `invitations`, see DECISIONS.md §7b). `integrations`/
+ * `white_label_configs` use the standard single-`organization_id` policy —
+ * no new RLS mechanics, but real coverage still matters because both hold
+ * data this epic newly starts writing (mock OAuth tokens, custom branding).
+ */
+describe.skip('Epic 18 tenant isolation — agency_clients / integrations / white_label_configs (NEEDS LIVE DB)', () => {
+  it.todo(
+    'app.current_org = agencyOrgA sees ONLY agency_clients rows where agency_org_id = agencyOrgA — ' +
+      'a link belonging to agencyOrgB (a different agency managing a different, or even the SAME, ' +
+      'client org) is invisible, proving the two-tenant policy scopes on agency_org_id, not ' +
+      'client_org_id',
+  );
+
+  it.todo(
+    'app.current_org = clientOrgA (a client, not an agency) querying agency_clients directly via ' +
+      'withOrgContext sees ZERO rows even for its OWN incoming invitations — confirming the policy ' +
+      'really does scope to the agency side only, which is exactly why routes/agency.ts\'s ' +
+      '/clients/incoming and /clients/:id/accept use plain `db` + an explicit client_org_id filter ' +
+      'instead of relying on RLS for that direction',
+  );
+
+  it.todo(
+    'inserting an agency_clients row with agency_org_id set to a foreign org (one app.current_org ' +
+      'does not match) is rejected by WITH CHECK, even when client_org_id correctly points at a ' +
+      'real, existing client org — an agency cannot forge a link FROM an org it does not control',
+  );
+
+  it.todo(
+    'CRITICAL (mirrors the DoD requirement, exercised here against REAL RLS + a real row instead ' +
+      'of a mock): with an active agency_clients row seeded, a request "acting as" the client org ' +
+      'via withOrgContext(clientOrgId, ...) succeeds for a real tenant-table read; after UPDATEing ' +
+      'that SAME row\'s status to \'revoked\' (still via the agency\'s own org_context, matching ' +
+      'production), the identical subsequent read must return zero rows — proving revocation is ' +
+      'enforced by the real authorization check on real data, not just in the mocked unit tests in ' +
+      'lib/agency-access.test.ts and middleware/tenant-context.test.ts',
+  );
+
+  it.todo(
+    'app.current_org = orgA sees ONLY its own integrations row(s) — a connected Search Console ' +
+      'integration for orgB is invisible and does not affect orgA\'s resolveSEODataProviderForOrg ' +
+      'provider selection',
+  );
+
+  it.todo(
+    'app.current_org = orgA sees ONLY its own white_label_configs row — orgB\'s custom branding ' +
+      '(logo/colors/custom domain) never leaks into orgA\'s GET /orgs/me/settings/white-label',
+  );
+});

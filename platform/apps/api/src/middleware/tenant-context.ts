@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import { db, withUserContext, type role } from '@bebest/database';
 import { isAtLeast } from '../lib/rbac.js';
+import { resolveAgencyAccess } from '../lib/agency-access.js';
 import type { AppEnv, OrgContext } from '../types/context.js';
 
 /**
@@ -18,6 +19,17 @@ import type { AppEnv, OrgContext } from '../types/context.js';
  * `app.current_org`) to be set — see @bebest/database's rls.sql
  * "Special case — memberships" and DECISIONS.md §7a for why that table's
  * RLS policy is keyed differently from every other tenant table.
+ *
+ * Epic 18 (Agency / White Label / Integrations) addition: when there is NO
+ * direct membership, this now falls back to `lib/agency-access.ts`'s
+ * `resolveAgencyAccess` before giving up — composing with, not replacing,
+ * the direct-membership check above (which still runs first and is
+ * unchanged). This is the ONE place both `requireOrgBySlug` and
+ * `requireOrgFromToken` share, so an agency-mediated request goes through
+ * exactly the same fail-closed, re-verified-every-request path a direct
+ * member's request does: nothing about `withOrgContext`/RLS below this
+ * function changes, and a revoked `agency_clients` link is caught on the
+ * very next call to this function (there is no caching here to go stale).
  */
 async function resolveOrgContext(
   userId: string,
@@ -29,14 +41,27 @@ async function resolveOrgContext(
   const membership = await withUserContext(userId, (tx) =>
     tx.memberships.findFirst({ where: { organization_id: organizationId, user_id: userId } }),
   );
-  if (!membership) return null;
+  if (membership) {
+    return {
+      organizationId: org.id,
+      name: org.name,
+      slug: org.slug,
+      role: membership.role,
+    };
+  }
 
-  return {
-    organizationId: org.id,
-    name: org.name,
-    slug: org.slug,
-    role: membership.role,
-  };
+  const agencyAccess = await resolveAgencyAccess(userId, organizationId);
+  if (agencyAccess) {
+    return {
+      organizationId: org.id,
+      name: org.name,
+      slug: org.slug,
+      role: agencyAccess.role,
+      viaAgencyOrgId: agencyAccess.agencyOrgId,
+    };
+  }
+
+  return null;
 }
 
 /**

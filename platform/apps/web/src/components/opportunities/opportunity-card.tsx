@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, FileWarning } from "lucide-react";
-import { Badge, Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, Textarea } from "@bebest/ui";
-import { getOpportunity } from "@/data/opportunities/client";
-import type { Opportunity, OpportunityDetail, OpportunityStatus } from "@/data/opportunities/types";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { Badge, Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Textarea } from "@bebest/ui";
+import type { Opportunity, OpportunityStatus } from "@/data/opportunities/types";
+import type { Recommendation, RecommendationStatus } from "@/data/recommendations/types";
 import {
   OPPORTUNITY_STATUS_BADGE_VARIANT,
   OPPORTUNITY_STATUS_LABEL,
@@ -14,9 +14,9 @@ import {
   PRIORITY_LABEL,
   effortTone,
   scoreTone,
-  sourceTableLabel,
 } from "@/data/opportunities/labels";
-import { formatDate } from "@/lib/format";
+import { EvidenceTrailPanel, useEvidenceTrail } from "./evidence-trail";
+import { NextActionPanel } from "@/components/recommendations/next-action-panel";
 
 const STATUS_OPTIONS: OpportunityStatus[] = ["new", "in_progress", "completed", "dismissed"];
 
@@ -37,12 +37,6 @@ function ScoreTile({ label, value, tone }: { label: string; value: number | null
   );
 }
 
-type EvidenceState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "error"; error: Error }
-  | { status: "success"; data: OpportunityDetail };
-
 /**
  * One card in the Opportunities list — `docs/09-ux/CUSTOMER_JOURNEY.md`'s
  * "What should I do next?" screen. Per the epic's UI-surface requirement,
@@ -53,21 +47,38 @@ type EvidenceState =
  *     evidence, see `data/opportunities/types.ts`'s header comment);
  *   - a visible next action: a status control (New / In progress /
  *     Completed / Dismissed) that, for Dismissed specifically, requires a
- *     reason before committing (`PATCH` 422s without one) — content-brief
- *     generation is Epic 10/11, out of scope here, so "dismiss with a
- *     reason" is this screen's one real terminal action today.
+ *     reason before committing (`PATCH` 422s without one);
+ *   - Epic 10's generated recommendation as the opportunity's own "Next
+ *     action" (`NextActionPanel`) — effort/impact visible, a link back into
+ *     this same card's evidence disclosure (never a bare instruction with no
+ *     backing, per that epic's UI requirement), and a status control of its
+ *     own distinct from the opportunity's status above.
  */
 export function OpportunityCard({
   opportunity,
   updating,
   onStatusChange,
+  recommendation,
+  recommendationLoading,
+  generatingRecommendation,
+  onGenerateRecommendation,
+  updatingRecommendationStatus,
+  onRecommendationStatusChange,
 }: {
   opportunity: Opportunity;
   updating: boolean;
   onStatusChange: (opportunity: Opportunity, status: OpportunityStatus, dismissalReason?: string) => void;
+  /** `undefined` when no recommendation has been generated for this
+   *  opportunity yet — distinct from "still loading" (`recommendationLoading`). */
+  recommendation: Recommendation | undefined;
+  recommendationLoading: boolean;
+  generatingRecommendation: boolean;
+  onGenerateRecommendation: (opportunity: Opportunity) => void;
+  updatingRecommendationStatus: boolean;
+  onRecommendationStatusChange: (recommendation: Recommendation, status: RecommendationStatus) => void;
 }) {
   const [showEvidence, setShowEvidence] = useState(false);
-  const [evidenceState, setEvidenceState] = useState<EvidenceState>({ status: "idle" });
+  const { state: evidenceState, load: loadEvidence } = useEvidenceTrail(opportunity.id);
   const [pendingDismiss, setPendingDismiss] = useState(false);
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState(false);
@@ -76,14 +87,12 @@ export function OpportunityCard({
     const next = !showEvidence;
     setShowEvidence(next);
     if (next && evidenceState.status === "idle") {
-      setEvidenceState({ status: "loading" });
-      try {
-        const detail = await getOpportunity(opportunity.id);
-        setEvidenceState({ status: "success", data: detail });
-      } catch (err) {
-        setEvidenceState({ status: "error", error: err instanceof Error ? err : new Error("Couldn't load evidence.") });
-      }
+      await loadEvidence();
     }
+  }
+
+  function openEvidence() {
+    if (!showEvidence) void toggleEvidence();
   }
 
   function handleStatusSelect(next: OpportunityStatus) {
@@ -209,41 +218,19 @@ export function OpportunityCard({
 
       {showEvidence && (
         <div className="rounded-lg border border-border bg-surface p-3">
-          {evidenceState.status === "loading" && (
-            <div className="flex flex-col gap-2">
-              <Skeleton className="h-3 w-full" />
-              <Skeleton className="h-3 w-4/5" />
-            </div>
-          )}
-          {evidenceState.status === "error" && (
-            <div className="flex items-center gap-2 text-[12.5px] text-danger">
-              <FileWarning size={14} className="shrink-0" />
-              {evidenceState.error.message}
-              <Button variant="ghost" size="sm" onClick={toggleEvidence}>
-                Retry
-              </Button>
-            </div>
-          )}
-          {evidenceState.status === "success" && (
-            <ul className="flex flex-col gap-2.5">
-              {evidenceState.data.evidence.map((row) => (
-                <li key={row.id} className="text-[12.5px] leading-relaxed">
-                  <span className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-subtle-foreground mr-2">
-                    {sourceTableLabel(row.sourceTable)}
-                  </span>
-                  <span className="text-foreground">{row.summary}</span>
-                </li>
-              ))}
-              {evidenceState.data.evidence.length === 0 && (
-                <li className="text-[12.5px] text-muted-foreground">No evidence rows recorded for this opportunity.</li>
-              )}
-            </ul>
-          )}
-          <p className="text-[11px] text-subtle-foreground mt-2.5 pt-2.5 border-t border-border">
-            Formula v{opportunity.scoringFormulaVersion} · last updated {formatDate(opportunity.updatedAt)}
-          </p>
+          <EvidenceTrailPanel state={evidenceState} onRetry={loadEvidence} />
         </div>
       )}
+
+      <NextActionPanel
+        recommendation={recommendation}
+        loading={recommendationLoading}
+        generating={generatingRecommendation}
+        onGenerate={() => onGenerateRecommendation(opportunity)}
+        updatingStatus={updatingRecommendationStatus}
+        onStatusChange={(status) => recommendation && onRecommendationStatusChange(recommendation, status)}
+        onViewEvidence={openEvidence}
+      />
     </div>
   );
 }

@@ -47,6 +47,10 @@ const db = {
     update: vi.fn(),
   },
   audit_events: { create: vi.fn().mockResolvedValue({}) },
+  // Epic 18 — backs `resolveSEODataProviderForOrg`'s "is Search Console
+  // connected" check. Defaults to "no" (`null`) so every PRE-EXISTING test
+  // in this file keeps exercising `NullSEODataProvider`, unchanged.
+  integrations: { findUnique: vi.fn().mockResolvedValue(null) },
 };
 
 const tx = {
@@ -62,6 +66,7 @@ const tx = {
   keyword_groups: db.keyword_groups,
   seo_keywords: db.seo_keywords,
   seo_opportunities: db.seo_opportunities,
+  integrations: db.integrations,
 };
 
 vi.mock('@bebest/database', () => ({

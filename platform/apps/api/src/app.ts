@@ -27,10 +27,16 @@ import competitorAiRuns from './routes/competitor-ai-runs.js';
 import competitiveIntelligence from './routes/competitive-intelligence.js';
 import opportunities from './routes/opportunities.js';
 import opportunityDetails from './routes/opportunity-details.js';
+import opportunityRecommendations from './routes/opportunity-recommendations.js';
+import recommendations from './routes/recommendations.js';
+import recommendationDetails from './routes/recommendation-details.js';
 import plans from './routes/plans.js';
 import subscription from './routes/subscription.js';
 import billingWebhooks from './routes/billing-webhooks.js';
 import { createSnapshotRoutes } from './routes/snapshot.js';
+import agency from './routes/agency.js';
+import whiteLabel from './routes/white-label.js';
+import integrations from './routes/integrations.js';
 import { ConsoleEmailSender } from './lib/email.js';
 import type { AppEnv } from './types/context.js';
 
@@ -158,6 +164,21 @@ app.route('/api/brands/me', competitiveIntelligence);
 app.route('/api/brands/me/opportunities', opportunities);
 app.route('/api/opportunities', opportunityDetails);
 
+// Epic 10 — Recommendation Engine. Template-driven brief generated from a
+// `unified_opportunities` row's real evidence (Epic 9). Spec's literal
+// `POST /opportunities/:id/recommendations/generate` matches exactly — a
+// second router mounted at the SAME `/api/opportunities` base as
+// `opportunityDetails` above, same precedent `/api/brands/me/competitors`
+// already sets (Epic 2's `competitors` + Epic 8's `competitorAiRuns` share
+// one base path too). `GET /brands/:id/recommendations` is adapted to
+// `/brands/me/recommendations`, same single-brand-per-org convention as
+// every route above; `/api/recommendations/:id` matches the spec exactly —
+// an `opportunity_recommendations` row is addressed by its own id, not a
+// brand's.
+app.route('/api/opportunities', opportunityRecommendations);
+app.route('/api/brands/me/recommendations', recommendations);
+app.route('/api/recommendations', recommendationDetails);
+
 // Epic 16 — Billing. `plans` is public reference data (no auth) for a
 // pricing/upgrade UI. `/api/orgs/me/subscription` follows the same
 // `requireOrgFromToken` "me" convention as every Epic 2+ brand-scoped route
@@ -176,6 +197,17 @@ app.route('/api/webhooks/billing', billingWebhooks);
 // applied to every route above; `GET /snapshot/:token` is looked up by an
 // opaque token hash, never `snapshot_requests.id`.
 app.route('/api/snapshot', createSnapshotRoutes(emailSender));
+
+// Epic 18 — Agency / White Label / Integrations. `agency` composes with
+// (never replaces) Epic 0's tenant-context/RLS — see
+// `lib/agency-access.ts`/`middleware/tenant-context.ts`'s doc comments and
+// `platform/docs/epics/18-agency-white-label-integrations-backend.md`.
+// `/orgs/me/settings/white-label` follows the same `requireOrgFromToken`
+// "me" convention as `/orgs/me/subscription` above; `integrations` is
+// org-scoped the same way.
+app.route('/api/agency', agency);
+app.route('/api/orgs/me/settings/white-label', whiteLabel);
+app.route('/api/integrations', integrations);
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 

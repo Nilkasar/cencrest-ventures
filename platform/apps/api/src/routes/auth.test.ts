@@ -9,7 +9,13 @@ const db = {
   sessions: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
   refresh_tokens: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
   organizations: { findUnique: vi.fn() },
-  memberships: { findFirst: vi.fn() },
+  // `findMany` backs Epic 18's `lib/agency-access.ts` fallback, consulted by
+  // `/select-org` only when `findFirst` (direct membership) resolves null.
+  // Defaults to `[]` (via mockResolvedValue below) so every PRE-EXISTING
+  // test in this file — none of which sets this up — keeps its original
+  // "no membership -> 403" outcome unchanged.
+  memberships: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
+  agency_clients: { findFirst: vi.fn() },
   organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
   audit_events: { create: vi.fn().mockResolvedValue({}) },
 };
@@ -18,6 +24,9 @@ vi.mock('@bebest/database', () => ({
   db,
   withUserContext: vi.fn(async (_userId: string, fn: (tx: unknown) => unknown) =>
     fn({ memberships: db.memberships, users: db.users }),
+  ),
+  withOrgContext: vi.fn(async (_orgId: string, fn: (tx: unknown) => unknown) =>
+    fn({ agency_clients: db.agency_clients }),
   ),
 }));
 
@@ -325,5 +334,53 @@ describe('POST /auth/select-org', () => {
     const verified = await verifyAccessToken(body.accessToken);
     expect(verified.org).toBe('org-1');
     expect(body.organization.role).toBe('admin');
+  });
+
+  // Epic 18 (Agency / White Label / Integrations)
+  it('issues a token for a client org via an active agency_clients link when there is no direct membership', async () => {
+    const { signAccessToken, verifyAccessToken } = await import('../lib/jwt.js');
+    const token = await signAccessToken({ sub: 'user-1', email: 'a@example.com', org: null });
+
+    db.organizations.findUnique.mockResolvedValue({ id: 'client-org', slug: 'client', name: 'Client Co' });
+    db.memberships.findFirst.mockResolvedValue(null); // no direct membership
+    db.memberships.findMany.mockResolvedValue([{ organization_id: 'agency-org', role: 'admin' }]);
+    db.agency_clients.findFirst.mockResolvedValue({ id: 'link-1', access_level: 'full', status: 'active' });
+    db.users.findUnique.mockResolvedValue({ id: 'user-1', email: 'a@example.com', name: 'Ada', deleted_at: null });
+
+    const { app } = await buildApp();
+    const res = await app.request('/auth/select-org', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ slug: 'client' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      accessToken: string;
+      organization: { role: string; viaAgencyOrgId: string };
+    };
+    const verified = await verifyAccessToken(body.accessToken);
+    expect(verified.org).toBe('client-org');
+    expect(body.organization.role).toBe('admin');
+    expect(body.organization.viaAgencyOrgId).toBe('agency-org');
+  });
+
+  it('403s for a client org when the agency_clients link is not active (e.g. still pending or already revoked)', async () => {
+    const { signAccessToken } = await import('../lib/jwt.js');
+    const token = await signAccessToken({ sub: 'user-1', email: 'a@example.com', org: null });
+
+    db.organizations.findUnique.mockResolvedValue({ id: 'client-org', slug: 'client', name: 'Client Co' });
+    db.memberships.findFirst.mockResolvedValue(null);
+    db.memberships.findMany.mockResolvedValue([{ organization_id: 'agency-org', role: 'admin' }]);
+    db.agency_clients.findFirst.mockResolvedValue(null); // the query filters status: 'active' — not found
+    db.users.findUnique.mockResolvedValue({ id: 'user-1', email: 'a@example.com', name: 'Ada', deleted_at: null });
+
+    const { app } = await buildApp();
+    const res = await app.request('/auth/select-org', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ slug: 'client' }),
+    });
+    expect(res.status).toBe(403);
   });
 });

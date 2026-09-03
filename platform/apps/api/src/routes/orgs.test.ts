@@ -5,12 +5,17 @@ import { generateKeyPair } from 'jose';
 const db = {
   organizations: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
   memberships: {
-    findMany: vi.fn(),
+    // `findMany` defaults to `[]` — it backs Epic 18's `lib/agency-access.ts`
+    // fallback (consulted only when `findFirst` resolves null), so every
+    // PRE-EXISTING "not a member" test in this file (none of which sets
+    // this up) keeps its original "no membership -> 403" outcome.
+    findMany: vi.fn().mockResolvedValue([]),
     findFirst: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
   },
+  agency_clients: { findFirst: vi.fn() },
   invitations: { deleteMany: vi.fn(), create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   users: { findUnique: vi.fn() },
   audit_events: { create: vi.fn().mockResolvedValue({}) },
@@ -23,6 +28,7 @@ const db = {
 const tx = {
   organizations: db.organizations,
   memberships: db.memberships,
+  agency_clients: db.agency_clients,
   invitations: db.invitations,
   users: db.users,
 };

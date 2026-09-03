@@ -253,6 +253,15 @@ export type {
   unified_opportunities,
   opportunity_evidence,
   unified_opportunity_type,
+  // Epic 10 (Recommendation Engine)
+  opportunity_recommendations,
+  recommendation_action_type,
+  // Epic 18 (Agency / White Label / Integrations)
+  agency_clients,
+  white_label_configs,
+  integrations,
+  integration_type,
+  integration_status,
 } from '@prisma/client';
 
 export type PrismaTransactionClient = Prisma.TransactionClient;

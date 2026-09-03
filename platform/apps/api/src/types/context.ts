@@ -28,6 +28,17 @@ export interface OrgContext {
   name: string;
   slug: string;
   role: role;
+  /** Epic 18 (Agency / White Label / Integrations) — set ONLY when this
+   * context was resolved via an `agency_clients` link rather than a direct
+   * `memberships` row (see `middleware/tenant-context.ts`'s
+   * `resolveOrgContext` and `lib/agency-access.ts`). Absent (not merely
+   * `null`) for the normal direct-membership case, so existing equality
+   * assertions in Epic 0's own test suite comparing a full `OrgContext`
+   * object are unaffected by this addition. Carries the id of the agency
+   * org the access came through — never used for authorization itself
+   * (that already happened before this context was constructed), only for
+   * audit-trail and response transparency. */
+  viaAgencyOrgId?: string;
 }
 
 export type AppEnv = {

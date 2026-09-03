@@ -8,7 +8,7 @@ import { auditLog, writeManualAuditEvent } from '../middleware/audit-log.js';
 import { getBrandForOrg, NO_BRAND_ERROR } from '../lib/brand-context.js';
 import { runContentChecklist, runTechnicalChecklist } from '../lib/seo/technical-checklist.js';
 import { generateKeywordCandidates } from '../lib/seo/keyword-generator.js';
-import { getSEODataProvider } from '../lib/seo/seo-data-provider.js';
+import { resolveSEODataProviderForOrg } from '../lib/seo/resolve-provider-for-org.js';
 import { buildOpportunityScoringInput, classifyOpportunityType } from '../lib/seo/keyword-to-opportunity.js';
 import { computeOpportunityScore } from '../lib/seo/opportunity-scoring.js';
 import type { AppEnv } from '../types/context.js';
@@ -407,10 +407,12 @@ seoRoute.post(
     }
 
     // Provider call happens OUTSIDE the write transaction — it makes no
-    // network call today (NullSEODataProvider), but a future real provider
-    // implementation might, and a slow external call has no business
-    // holding open a database transaction.
-    const provider = getSEODataProvider();
+    // network call today (NullSEODataProvider/MockSearchConsoleProvider),
+    // but a future real provider implementation might, and a slow external
+    // call has no business holding open a database transaction.
+    // Epic 18: prefers a connected Search Console integration over the null
+    // default — see `resolveSEODataProviderForOrg`'s own doc comment.
+    const provider = await resolveSEODataProviderForOrg(org.organizationId);
     const keywordData = await provider.getKeywordData(candidates);
 
     const created = await withOrgContext(org.organizationId, async (tx) => {

@@ -75,4 +75,13 @@ export {
   type unified_opportunities,
   type opportunity_evidence,
   type unified_opportunity_type,
+  // Epic 10 (Recommendation Engine)
+  type opportunity_recommendations,
+  type recommendation_action_type,
+  // Epic 18 (Agency / White Label / Integrations)
+  type agency_clients,
+  type white_label_configs,
+  type integrations,
+  type integration_type,
+  type integration_status,
 } from './client.js';

@@ -28,6 +28,8 @@ import {
 } from "@/data/opportunities/client";
 import type { Opportunity, OpportunityPriority, OpportunityStatus, OpportunityType } from "@/data/opportunities/types";
 import { OPPORTUNITY_STATUS_LABEL, OPPORTUNITY_TYPE_LABEL, PRIORITY_LABEL, scoreBand, type ScoreBand } from "@/data/opportunities/labels";
+import { generateRecommendation, listRecommendations, updateRecommendationStatus } from "@/data/recommendations/client";
+import type { Recommendation, RecommendationStatus } from "@/data/recommendations/types";
 import { OpportunityCard } from "./opportunity-card";
 
 const STATUS_FILTERS: Array<OpportunityStatus | "all"> = ["all", "new", "in_progress", "completed", "dismissed"];
@@ -84,6 +86,26 @@ export function OpportunitiesView() {
   const [recomputing, setRecomputing] = useState(false);
   const [recomputeError, setRecomputeError] = useState<Error | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  // Epic 10 — the "join by opportunityId" the backend's own completion doc
+  // documents as this frontend's responsibility (see
+  // `docs/epics/10-recommendation-engine-backend.md`'s "known limitations"
+  // #1): one extra list fetch, joined client-side, rather than a per-card
+  // `N+1` fetch or a change to Epic 9's already-verified list route.
+  const { reload: reloadRecommendations, ...recommendationsState } = useAsyncData(
+    () => listRecommendations({ limit: 100 }),
+    [],
+  );
+  const [generatingRecommendationId, setGeneratingRecommendationId] = useState<string | null>(null);
+  const [updatingRecommendationId, setUpdatingRecommendationId] = useState<string | null>(null);
+
+  const recommendationsByOpportunityId = useMemo(() => {
+    const map = new Map<string, Recommendation>();
+    if (recommendationsState.status === "success") {
+      for (const r of recommendationsState.data.recommendations) map.set(r.opportunityId, r);
+    }
+    return map;
+  }, [recommendationsState]);
 
   const visibleOpportunities = useMemo(() => {
     if (state.status !== "success") return [];
@@ -154,6 +176,42 @@ export function OpportunitiesView() {
       });
     } finally {
       setUpdatingId(null);
+    }
+  }
+
+  async function handleGenerateRecommendation(opportunity: Opportunity) {
+    setGeneratingRecommendationId(opportunity.id);
+    try {
+      const { created } = await generateRecommendation(opportunity.id);
+      reloadRecommendations();
+      toast({
+        title: created ? "Recommendation generated" : "Recommendation refreshed",
+        description: `"${opportunity.title}" now has a next action.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't generate a recommendation",
+        description: err instanceof Error ? err.message : "Something went wrong — try again.",
+        variant: "danger",
+      });
+    } finally {
+      setGeneratingRecommendationId(null);
+    }
+  }
+
+  async function handleRecommendationStatusChange(recommendation: Recommendation, status: RecommendationStatus) {
+    setUpdatingRecommendationId(recommendation.id);
+    try {
+      await updateRecommendationStatus(recommendation.id, status);
+      reloadRecommendations();
+    } catch (err) {
+      toast({
+        title: "Couldn't update that recommendation",
+        description: err instanceof Error ? err.message : "Something went wrong — try again.",
+        variant: "danger",
+      });
+    } finally {
+      setUpdatingRecommendationId(null);
     }
   }
 
@@ -303,6 +361,12 @@ export function OpportunitiesView() {
                   opportunity={opportunity}
                   updating={updatingId === opportunity.id}
                   onStatusChange={handleStatusChange}
+                  recommendation={recommendationsByOpportunityId.get(opportunity.id)}
+                  recommendationLoading={recommendationsState.status === "loading"}
+                  generatingRecommendation={generatingRecommendationId === opportunity.id}
+                  onGenerateRecommendation={handleGenerateRecommendation}
+                  updatingRecommendationStatus={updatingRecommendationId === recommendationsByOpportunityId.get(opportunity.id)?.id}
+                  onRecommendationStatusChange={handleRecommendationStatusChange}
                 />
               ))}
             </div>

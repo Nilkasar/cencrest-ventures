@@ -38,6 +38,21 @@ export function isAtLeast(userRole: role, minRole: role): boolean {
   return ROLE_RANK[userRole] >= ROLE_RANK[minRole];
 }
 
+/**
+ * The lower-ranked of two roles — used by Epic 18's `lib/agency-access.ts`
+ * to cap the role an agency link grants by the acting user's OWN rank in
+ * their agency org, so a `viewer` at the agency never inherits a client
+ * link's `full` (→`admin`) access just because the agency's contract with
+ * that client is broad. `editor`/`analyst` are the same rank (see this
+ * file's header comment) — when both inputs land on that tie, either is
+ * returned (they're interchangeable for ranking purposes; ties never need
+ * a determinstic pick because no caller branches on which specific name a
+ * tie returns, only on rank comparisons downstream).
+ */
+export function lowerRankRole(a: role, b: role): role {
+  return ROLE_RANK[a] <= ROLE_RANK[b] ? a : b;
+}
+
 /** @deprecated use {@link isAtLeast} — kept only because the original
  * implementation exposed this name and existing call sites may reference
  * it during the port. */
@@ -67,7 +82,17 @@ export type Action =
   | 'view_crm'
   | 'manage_leads'
   | 'manage_deals'
-  | 'log_crm_activities';
+  | 'log_crm_activities'
+  // Epic 18 (Agency / White Label / Integrations) — inviting/revoking a
+  // client link is exactly the shape of privileged, cross-org-consequential
+  // action `manage_team`/`manage_billing` already gate at owner/admin;
+  // reusing `manage_integrations` (also owner/admin, but semantically about
+  // a DIFFERENT resource — third-party connections, not client
+  // relationships) would conflate two unrelated permission questions the
+  // matrix keeps separate everywhere else (see this union's own header
+  // comment on why `manage_leads`/`manage_deals` aren't folded into one
+  // `manage_crm`).
+  | 'manage_agency_clients';
 
 /**
  * The permission matrix table, transcribed verbatim from
@@ -102,6 +127,8 @@ const PERMISSION_MATRIX: Record<Action, ReadonlyArray<role>> = {
   manage_leads: ['owner', 'admin', 'analyst'],
   manage_deals: ['owner', 'admin', 'analyst'],
   log_crm_activities: ['owner', 'admin', 'analyst', 'editor'],
+  // Epic 18 — see the `Action` union above for why this is its own action.
+  manage_agency_clients: ['owner', 'admin'],
 };
 
 export interface PermissionCheckOptions {

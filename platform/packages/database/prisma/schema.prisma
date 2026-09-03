@@ -146,6 +146,8 @@ model organizations {
   // Epic 9 (Opportunity Engine) additions
   unified_opportunities     unified_opportunities[]
   opportunity_evidence      opportunity_evidence[]
+  // Epic 10 (Recommendation Engine) addition
+  opportunity_recommendations opportunity_recommendations[]
   learning_insights         learning_insights[]
   learning_signals          learning_signals[]
   marketing_campaigns       marketing_campaigns[]
@@ -279,6 +281,19 @@ model users {
   seo_opportunities_updated   seo_opportunities[]        @relation("seo_opportunities_updated_by")
   // Epic 9 (Opportunity Engine) addition
   unified_opportunities_updated unified_opportunities[]  @relation("unified_opportunities_updated_by")
+  // Epic 10 (Recommendation Engine) addition
+  opportunity_recommendations_updated opportunity_recommendations[] @relation("opportunity_recommendations_updated_by")
+  // Epic 18 (Agency / White Label / Integrations) additions — the
+  // consent/invitation lifecycle `agency_clients` gained (see that model's
+  // own comment + DECISIONS.md): who on the agency side sent the
+  // invitation, who on the client side consented, who (either side) later
+  // revoked it. Three separate nullable FKs, not one shared "actor" column,
+  // because the three events can legitimately be performed by users in TWO
+  // DIFFERENT organizations (the same "which side" ambiguity a shared
+  // column would erase).
+  agency_clients_invited   agency_clients[] @relation("agency_clients_invited_by")
+  agency_clients_consented agency_clients[] @relation("agency_clients_consented_by")
+  agency_clients_revoked   agency_clients[] @relation("agency_clients_revoked_by")
 
   @@index([email], map: "idx_users_email")
 }
@@ -1082,12 +1097,21 @@ model activities {
 // INTEGRATIONS
 // ============================================================================
 
+// Epic 18 addition to a pre-existing table: `connected_at`/`disconnected_at`.
+// The epic spec's own literal `integrations` shape names `connected_at`
+// alongside `status` — distinct from `updated_at` (which also moves on
+// unrelated edits, e.g. a future settings tweak) and from `last_synced_at`
+// (which is about DATA sync, not the connection lifecycle itself; a
+// `MockSearchConsoleProvider` proving the abstraction never actually
+// syncs anything real, so `last_synced_at` stays null through this build).
 model integrations {
   id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organization_id    String               @db.Uuid
   integration_type   integration_type
   config_enc         Json                 @default("{}")
   status             integration_status   @default(disconnected)
+  connected_at       DateTime?            @db.Timestamptz(6)
+  disconnected_at    DateTime?            @db.Timestamptz(6)
   last_synced_at     DateTime?            @db.Timestamptz(6)
   created_by         String?              @db.Uuid
   created_at         DateTime             @default(now()) @db.Timestamptz(6)
@@ -1139,6 +1163,24 @@ model org_ai_providers {
 // AGENCY / WHITE LABEL
 // ============================================================================
 
+// Epic 18 (Agency / White Label / Integrations) — this table already
+// existed (ported + hardened ahead of this epic, see DECISIONS.md's Epic 18
+// section), but modeled only a business relationship (relationship_type/
+// access_level/monthly_fee/contract dates), never an ACCESS-CONTROL one.
+// The epic's own hard requirement — "an agency cannot unilaterally claim
+// any org id... requires an explicit consent/invitation step" — has no
+// column to represent "invited but not yet consented" without a change
+// here, so five columns are added additively (schema never applied to a
+// database — see this package's DECISIONS.md header) and `status`'s closed
+// vocabulary widens from {active,paused,terminated} to also include
+// `pending` (the new default: a row starts unconsented) and `revoked`
+// (access explicitly pulled — distinct from `terminated`'s "contract ended"
+// business meaning; this is the value the DoD's "revoking a link
+// immediately blocks a subsequent request" test exercises). See
+// `apps/api/src/lib/agency-access.ts` for how `access_level` doubles as the
+// role granted to an agency user acting as this client (full→admin,
+// limited→analyst, read_only→viewer) — reusing this existing column rather
+// than adding a fourth, redundant "role" column that could disagree with it.
 model agency_clients {
   id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   agency_org_id     String    @db.Uuid
@@ -1148,7 +1190,17 @@ model agency_clients {
   monthly_fee       Decimal?  @db.Decimal(10, 2)
   contract_start    DateTime? @db.Timestamptz(6)
   contract_end      DateTime? @db.Timestamptz(6)
-  status            String    @default("active") @db.VarChar(50) // active, paused, terminated — see checks.sql
+  // pending, active, paused, terminated, revoked — see checks.sql (widened
+  // by prisma/migrations/0012_agency_white_label_integrations/checks.sql,
+  // superseding 0000_init's narrower constraint, same "new migration folder
+  // supersedes an earlier one, never edited in place" precedent as
+  // 0006_epic5_postverification_fixes).
+  status            String    @default("pending") @db.VarChar(50)
+  invited_by        String?   @db.Uuid // agency-side user who sent the invitation
+  consented_by      String?   @db.Uuid // client-side user who accepted it
+  consented_at      DateTime? @db.Timestamptz(6)
+  revoked_by        String?   @db.Uuid // either side's user who pulled access
+  revoked_at        DateTime? @db.Timestamptz(6)
   notes             String?
   created_at        DateTime  @default(now()) @db.Timestamptz(6)
   updated_at        DateTime  @default(now()) @db.Timestamptz(6)
@@ -1156,9 +1208,13 @@ model agency_clients {
 
   organizations_agency organizations @relation("agency_clients_agency_org_idToorganizations", fields: [agency_org_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   organizations_client organizations @relation("agency_clients_client_org_idToorganizations", fields: [client_org_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  invited_by_user      users?        @relation("agency_clients_invited_by", fields: [invited_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  consented_by_user    users?        @relation("agency_clients_consented_by", fields: [consented_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  revoked_by_user      users?        @relation("agency_clients_revoked_by", fields: [revoked_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([agency_org_id, client_org_id])
   @@index([agency_org_id], map: "idx_agency_clients_agency")
+  @@index([client_org_id], map: "idx_agency_clients_client")
 }
 
 model white_label_configs {
@@ -1269,6 +1325,8 @@ model brands {
   seo_opportunities       seo_opportunities[]
   // Epic 9 (Opportunity Engine) addition
   unified_opportunities   unified_opportunities[]
+  // Epic 10 (Recommendation Engine) addition
+  opportunity_recommendations opportunity_recommendations[]
   learning_insights       learning_insights[]
   learning_signals        learning_signals[]
   measurement_annotations measurement_annotations[]
@@ -3126,6 +3184,8 @@ model unified_opportunities {
   queries              queries                @relation(fields: [query_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   updated_by_user      users?                 @relation("unified_opportunities_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
   opportunity_evidence opportunity_evidence[]
+  // Epic 10 (Recommendation Engine) addition
+  opportunity_recommendations opportunity_recommendations[]
 
   // The idempotency key this epic's DoD explicitly tests: one opportunity
   // row per (brand, intent), ever — `POST .../recompute` always upserts
@@ -3168,6 +3228,114 @@ model opportunity_evidence {
   unified_opportunities unified_opportunities @relation(fields: [opportunity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([opportunity_id], map: "idx_opportunity_evidence_opportunity")
+}
+
+// ============================================================================
+// Epic 10 — RECOMMENDATION ENGINE (generated action brief from a
+// `unified_opportunities` row, per-`action_type` template, SEO+GEO dual
+// requirement — see docs/epics/10-recommendation-engine.md)
+// ============================================================================
+// The legacy `recommendations` model above (in the "GAP / OPPORTUNITY /
+// RECOMMENDATION ENGINE" section) is NOT this epic's table — same collision,
+// same resolution, as `opportunities`/`unified_opportunities` (DECISIONS.md
+// §22): it requires a non-null `analysis_id` into the LEGACY `analyses`
+// pipeline and keys off the legacy `opportunities`/`geo_gaps` tables, and its
+// column set (`is_recommended`, `rec_type`, `roi_score`, `rec_status`) does
+// not match this epic's literal field list (`opportunity_id`, `title`,
+// `description`, `action_type`, `effort`, `impact`, `priority_rank`,
+// `evidence_summary`, `implementation_notes`, `status`) at all — a different
+// table for a different, untouched pipeline, left completely alone. This
+// epic's actual table is disambiguated as `opportunity_recommendations`.
+model opportunity_recommendations {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String @db.Uuid
+  // Denormalized (not read through opportunity_id -> unified_opportunities
+  // -> brand_id) so `GET /brands/me/recommendations` never needs a join to
+  // scope its list — same "denormalize the tenant/brand key" precedent
+  // `unified_opportunities.brand_id` itself already sets (DECISIONS.md §22).
+  brand_id String @db.Uuid
+  // One recommendation per opportunity, ever — `POST /opportunities/:id/
+  // recommendations/generate` upserts against this exactly like `POST
+  // .../recompute` upserts unified_opportunities against `query_id` (this
+  // epic's spec: "idempotent, same discipline as Epic 9"). Cascade: a
+  // recommendation is generated FROM its opportunity's evidence and has no
+  // independent meaning without it (same composition-child reasoning as
+  // `opportunity_evidence`, DECISIONS.md §5/§22).
+  opportunity_id String @db.Uuid
+
+  // create_page | update_page | fix_technical | build_citations — the
+  // spec's literal domain-model enum. NOT a reuse of the legacy
+  // `action_type` enum (content|seo|pr|product|positioning|technical) —
+  // checked directly against schema.prisma before writing this: that
+  // enum's vocabulary is a different, coarser taxonomy for a different
+  // table and does not contain any of this epic's four literal values.
+  action_type recommendation_action_type
+  // Reuses `effort_level` (low|medium|high) — already the generic-enough
+  // vocabulary the legacy `opportunities.effort_level` column uses
+  // (DECISIONS.md §6's "don't duplicate a vocabulary that already exists
+  // under a generic enough name"). Reused a second time for `impact` below:
+  // the value SET (low/medium/high) is identical for both columns, and
+  // Prisma enum type names are independent of the column name that uses
+  // them, so defining a second `impact_level` enum with the exact same
+  // three values would be the duplication §6 warns against, not this reuse.
+  effort effort_level
+  impact effort_level
+
+  // Computed from the parent opportunity's `opportunity_score` and this
+  // recommendation's own `effort` (this epic's spec, verbatim) — HIGHER
+  // ranks first (`GET .../recommendations` orders by this DESC, same
+  // convention `opportunity_score` itself already uses), so a cheap
+  // (low-effort) recommendation against the same opportunity_score outranks
+  // an expensive one. Exact formula + rationale in
+  // `apps/api/src/lib/recommendations/generator.ts`'s header comment.
+  priority_rank Decimal @db.Decimal(6, 2)
+
+  title String @db.VarChar(500)
+  // The specific action, in plain language, grounded in the opportunity's
+  // real intent/competitor data — never a rephrasing of the opportunity's
+  // own title (this epic's explicit "not a rephrasing" instruction).
+  description String
+  // Quotes the PARENT opportunity's `opportunity_evidence` rows verbatim
+  // (the exact sentences with real numbers already written by Epic 9 —
+  // "500 monthly searches," "CompetitorA appears in 84% of responses") —
+  // never a generic template string with no real data interpolated (this
+  // epic's explicit DoD requirement, end-to-end flow step 1).
+  evidence_summary String
+  // MUST cover both an SEO requirement (docs/10-seo/SEO_ENGINE.md's Page
+  // Analysis Checklist) and a GEO requirement (docs/11-geo/GEO_ENGINE.md's
+  // GEO Optimization Principles) for EVERY `action_type` — this epic's DoD
+  // calls a recommendation satisfying only one half a spec violation, not a
+  // style choice. Plain text (not JSON): the two halves are meant to be
+  // read together as one brief, not rendered as separate structured lists.
+  implementation_notes String
+
+  // Reuses `opportunity_status` (new|in_progress|completed|dismissed) —
+  // same four-state workflow vocabulary `unified_opportunities.status`
+  // itself already reuses (DECISIONS.md §22) — rather than a third copy of
+  // an identical closed vocabulary for what is functionally the same
+  // "open -> in_progress -> completed/dismissed" lifecycle.
+  status opportunity_status @default(new)
+
+  // Status transitions are a human action (`PATCH /recommendations/:id`,
+  // this epic's spec: "status transitions, audit-logged") — nullable +
+  // SetNull, same precedent as `unified_opportunities.updated_by`.
+  updated_by String? @db.Uuid
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  organizations         organizations         @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands                brands                @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  unified_opportunities unified_opportunities @relation(fields: [opportunity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  updated_by_user       users?                @relation("opportunity_recommendations_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  // The idempotency key this epic's DoD explicitly tests (step 3: re-run
+  // generation, confirm no duplicate row): one recommendation per
+  // opportunity, ever.
+  @@unique([organization_id, opportunity_id], map: "uq_opportunity_recommendations_opportunity")
+  @@index([brand_id], map: "idx_opportunity_recommendations_brand")
+  @@index([status], map: "idx_opportunity_recommendations_status")
+  @@index([organization_id, brand_id, priority_rank(sort: Desc)], map: "idx_opportunity_recommendations_brand_rank")
 }
 
 // ============================================================================
@@ -4079,4 +4247,16 @@ enum unified_opportunity_type {
   unified
   content
   technical
+}
+
+// Epic 10 (Recommendation Engine). The spec's literal domain-model enum —
+// NOT a reuse of the legacy `action_type` enum a few hundred lines above
+// (content|seo|pr|product|positioning|technical), which is a different,
+// coarser taxonomy for the legacy `opportunities` table and shares none of
+// these four values (checked directly against schema.prisma, not assumed).
+enum recommendation_action_type {
+  create_page
+  update_page
+  fix_technical
+  build_citations
 }

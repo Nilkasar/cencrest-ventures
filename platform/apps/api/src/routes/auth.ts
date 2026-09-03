@@ -12,6 +12,7 @@ import type { EmailSender } from '../lib/email.js';
 import { requireAuth } from '../middleware/auth.js';
 import { authRateLimit } from '../middleware/rate-limit.js';
 import { auditLog } from '../middleware/audit-log.js';
+import { resolveAgencyAccess } from '../lib/agency-access.js';
 import type { AppEnv } from '../types/context.js';
 
 const MAGIC_LINK_TTL_MS = 15 * 60 * 1000; // 15 minutes
@@ -180,6 +181,16 @@ export function createAuthRoutes(emailSender: EmailSender) {
   );
 
   // ── Select an organization (issues a new, org-scoped access token) ──────
+  // Epic 18 (Agency / White Label / Integrations): when the caller has no
+  // DIRECT membership in the requested org, this now also tries
+  // `resolveAgencyAccess` before rejecting — the same composed check
+  // `middleware/tenant-context.ts`'s `resolveOrgContext` uses, so an agency
+  // user can obtain a token for a client org they only reach via an active
+  // `agency_clients` link. This mint is still just a HINT: the `org` claim
+  // on the resulting token is re-verified (membership AND agency access,
+  // fresh) by `resolveOrgContext` on every subsequent request — minting a
+  // token here grants nothing by itself, and a link revoked a moment later
+  // blocks the very next request regardless of what this token claims.
   auth.post('/select-org', requireAuth, async (c) => {
     const body = await c.req.json().catch(() => null);
     const parsed = z.object({ slug: z.string().min(1) }).safeParse(body);
@@ -192,12 +203,27 @@ export function createAuthRoutes(emailSender: EmailSender) {
     const membership = await withUserContext(user.id, (tx) =>
       tx.memberships.findFirst({ where: { organization_id: org.id, user_id: user.id } }),
     );
-    if (!membership) return c.json({ error: 'Forbidden' }, 403);
+    if (membership) {
+      const accessToken = await signAccessToken({ sub: user.id, email: user.email, org: org.id });
+      return c.json({
+        accessToken,
+        organization: { id: org.id, name: org.name, slug: org.slug, role: membership.role },
+      });
+    }
+
+    const agencyAccess = await resolveAgencyAccess(user.id, org.id);
+    if (!agencyAccess) return c.json({ error: 'Forbidden' }, 403);
 
     const accessToken = await signAccessToken({ sub: user.id, email: user.email, org: org.id });
     return c.json({
       accessToken,
-      organization: { id: org.id, name: org.name, slug: org.slug, role: membership.role },
+      organization: {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        role: agencyAccess.role,
+        viaAgencyOrgId: agencyAccess.agencyOrgId,
+      },
     });
   });
 

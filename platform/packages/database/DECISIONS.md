@@ -1333,3 +1333,191 @@ applied to a database. `apps/api`'s consumption (the merge algorithm, the
 scoring-combination formula, the idempotent recompute route, evidence
 generation, and the four routes) is documented in
 `platform/docs/epics/09-opportunity-engine-backend.md`.
+
+---
+
+## 23. Epic 18 (Agency / White Label / Integrations) schema additions
+
+Three tables this epic needs — `agency_clients`, `integrations`,
+`white_label_configs` — already existed (ported from the original schema,
+generically hardened in the same pass as everything else: `organization_id`
+normalization, RLS, timestamps, `created_by`). Verified directly against
+`schema.prisma` and `prisma/migrations/0000_init/{rls.sql,checks.sql}`
+before writing anything, per this epic's own "always verify against
+schema.prisma directly, never assume a spec's prose name is final"
+instruction — the spec's prose ("`organizations.settings` gains a
+`whiteLabel` JSONB shape") predates knowledge that a dedicated,
+already-RLS'd `white_label_configs` table exists and is a strictly better
+fit (typed columns, independently auditable) than a JSONB blob squeezed
+into a column three other epics already read/write. `apps/api` reuses it
+as-is (no schema change) and exposes it through the spec's literal
+`GET/PATCH /orgs/me/settings/white-label` route shape — same "the spec's
+literal route survives even when the spec's literal table name doesn't"
+precedent Epic 9 established for `unified_opportunities` vs. the legacy
+`opportunities` table.
+
+**`agency_clients` — additive columns, not a new table.** This table
+already had exactly the shape DECISIONS.md's own §1 called out as the one
+genuine two-tenant table (`agency_org_id`, `client_org_id`, its own
+special-cased RLS policy scoped to the agency side only — see rls.sql's
+"Special case — agency_clients" note, already written before this epic
+started). What it did NOT have was any representation of consent: `status`
+was a closed `{active,paused,terminated}` business-relationship vocabulary
+with no "invited but not yet agreed to" state, so a bare `INSERT` could
+already claim `status='active'` unilaterally — exactly what this epic's
+brief says must never be possible. Fix: five new nullable columns
+(`invited_by`, `consented_by`, `consented_at`, `revoked_by`, `revoked_at`)
+and `status`'s vocabulary widens to include `pending` (new default — every
+row starts unconsented) and `revoked` (the value the DoD's mandated
+"revoking a link immediately blocks a subsequent request" test asserts,
+kept distinct from `terminated`'s different, contract-ended business
+meaning). The widened CHECK lives in a NEW migration folder
+(`0013_agency_white_label_integrations/checks.sql`, `DROP CONSTRAINT IF
+EXISTS` + re-`ADD`) rather than editing `0000_init/checks.sql` in place —
+same "supersede in a new folder, never rewrite history" precedent
+`0006_epic5_postverification_fixes` already set for a different table's
+CHECK.
+
+**No fourth "role" column.** The epic spec's own literal table shape lists
+`role` as a column, but this table already has `access_level`
+(`full|limited|read_only`) encoding the exact same concept for the exact
+same table — an agency's granted access tier for one client. Adding a
+second column would let the two disagree with each other for no reason
+(the same "don't add a column that can disagree with itself" reasoning
+DECISIONS.md §17 already applied to `pages.schema_types` vs. a would-be
+`has_schema_markup` boolean). `apps/api/src/lib/agency-access.ts` maps
+`access_level` onto the platform's real `role` enum
+(`full→admin, limited→analyst, read_only→viewer`) at the one place that
+turns a link into an authorization decision, so the API-facing contract
+still speaks in `role` (matching the spec) while the column stays
+`access_level` (matching what was already there).
+
+**`integrations` — two additive timestamp columns.** Already had
+`organization_id`, `integration_type` (a closed enum that already includes
+`gsc` — Google Search Console, this epic's one real target — alongside
+`ga4`/`slack`/`hubspot`/`salesforce`/`zapier`/`webhook`), `config_enc`
+(JSONB — the "encrypted at rest" boundary the epic spec asks for; this
+build never writes a real OAuth token into it, only a clearly-tagged mock
+string, since no real network call is permitted), and `status`
+(`connected|disconnected|error`). Missing only `connected_at`/
+`disconnected_at` — the epic spec's own literal field names for the
+connection lifecycle, distinct from `updated_at` (moves on any edit) and
+`last_synced_at` (about data sync, not the connection itself; stays null
+through this build — `MockSearchConsoleProvider` never actually syncs
+anything). Both added as plain nullable `Timestamptz`, no new enum or
+CHECK needed. `seo_provider_source.search_console` (Epic 4) already
+anticipated this exact wiring — see that enum's own doc comment in this
+file: "`search_console` names the pre-existing, unused `gsc_connections`
+OAuth-token table... as the natural first real provider a future epic
+would implement." This epic's provider-selection code (documented in
+`platform/docs/epics/18-agency-white-label-integrations-backend.md`) reads
+this `integrations` table (org-level "is Search Console connected"),
+not `gsc_connections` (brand-level real OAuth tokens, still untouched and
+still unused — a genuine future OAuth implementation would populate that
+table, not this build's mock).
+
+**No RLS changes.** All three tables already had the standard
+`tenant_isolation` policy (`agency_clients` already had its two-tenant
+special case) from `0000_init/rls.sql`, written before this epic started —
+nothing new to add. `0013_agency_white_label_integrations/` therefore
+contains only `checks.sql`.
+
+As with every other section: `prisma validate`/`generate` only — nothing
+applied to a database.
+
+## 24. Epic 10 (Recommendation Engine) schema addition
+
+`docs/epics/10-recommendation-engine.md` generates a **recommendation**
+(a specific, actionable brief) from an existing Epic 9 `unified_opportunities`
+row's evidence — "opportunities identify WHERE to act; recommendations say
+WHAT specifically to do." The spec's own literal domain-model field list:
+`opportunity_id`, `title`, `description`, `action_type
+(create_page|update_page|fix_technical|build_citations)`, `effort`,
+`impact`, `priority_rank`, `evidence_summary`, `implementation_notes`,
+`status`, under the table name `recommendations`.
+
+**The `recommendations` naming collision — resolved the same way §22
+resolved `opportunities`'.** The ported schema already has a
+`recommendations` model (checked directly against schema.prisma before
+writing this, per the recurring "do not guess" rule, in the "GAP /
+OPPORTUNITY / RECOMMENDATION ENGINE" section): it requires a non-null
+`analysis_id` into the LEGACY `analyses` pipeline and keys off the legacy
+`opportunities`/`geo_gaps` tables (both already carved off as untouched
+legacy pipelines by §21/§22), and its actual column set (`is_recommended`,
+`rec_type`, `roi_score`, `rec_status`, optional `opportunity_id`/`gap_id`)
+does not match this epic's literal field list at all — a different table
+for a different, untouched pipeline, left completely alone. Resolution: a
+disambiguated name, **`opportunity_recommendations`**, exactly the "new
+epic, `unified_` / `opportunity_`-prefixed table" convention §22 already
+established for this same domain.
+
+**One recommendation per opportunity, ever — `@@unique([organization_id,
+opportunity_id])`.** This epic's spec explicitly asks for the SAME
+idempotency discipline Epic 9's `POST .../recompute` already has ("does
+not duplicate on re-run, same discipline as Epic 9"): `POST /opportunities/
+:id/recommendations/generate` upserts against this key, so a second
+consecutive call updates the existing row's title/description/evidence/
+brief fields in place rather than creating a duplicate. `Cascade` from
+`unified_opportunities` (not `Restrict`): a recommendation is generated
+FROM its opportunity's evidence and, unlike the opportunity itself, has no
+independent meaning without it — same true-composition-child reasoning
+`opportunity_evidence` already gets (§5/§22).
+
+**`action_type` — a new `recommendation_action_type` enum, not a reuse of
+the legacy `action_type` enum** (`content|seo|pr|product|positioning|
+technical`, on the legacy `opportunities` table) — checked directly:
+that enum's six values share none of this epic's four literal values
+(`create_page|update_page|fix_technical|build_citations`), so reusing it
+would mean either widening an unrelated legacy enum or silently mapping
+onto values that mean something else entirely. `effort`/`impact` both
+reuse the existing `effort_level` enum (`low|medium|high`, already used by
+the legacy `opportunities.effort_level` column) — per §6's "don't
+duplicate a vocabulary that already exists under a generic enough name":
+the value SET is identical for both columns, and a Prisma enum's type name
+is independent of the column name that uses it, so a second `impact_level`
+enum with the exact same three values would be the duplication §6 warns
+against, not this reuse. `status` reuses `opportunity_status`
+(`new|in_progress|completed|dismissed`) — the same four-state lifecycle
+`unified_opportunities.status` itself already reuses from `seo_opportunities`
+(§20/§22), since a recommendation's status workflow is functionally
+identical, not a fourth copy of one closed vocabulary.
+
+**`priority_rank` is a `Decimal(6,2)` SCORE, not a 1..N list position** —
+same shape choice as `unified_opportunities.opportunity_score` (a
+recompute-independent, per-row number a caller sorts by), not a
+recompute-the-whole-list rank like `priority_tier`. `apps/api`'s exact
+formula (`opportunity_score * effort-based multiplier` — see
+`platform/docs/epics/10-recommendation-engine-backend.md` and
+`lib/recommendations/generator.ts`'s header comment) is a route-layer
+concern, not a schema one; the column only needs to be sortable, which a
+plain Decimal already is (`GET /brands/me/recommendations` orders
+`priority_rank DESC`, same directional convention `opportunity_score`
+itself already uses).
+
+**`brand_id` denormalized onto the table** (not read through
+`opportunity_id -> unified_opportunities -> brand_id`) — same
+"denormalize the tenant/brand key so a list endpoint never needs a join to
+scope itself" precedent `unified_opportunities.brand_id` already sets
+(§22), needed here for `GET /brands/me/recommendations` to filter/sort
+without joining back through the opportunity on every request.
+
+**RLS** — `prisma/migrations/0012_recommendation_engine/rls.sql` adds the
+standard `tenant_isolation` policy to the one new table (genuinely new —
+no earlier migration's policy could have covered it). **Indexing** —
+`prisma/migrations/0012_recommendation_engine/indexes.sql` adds one
+partial index, `idx_opportunity_recommendations_open_rank` (`WHERE status
+!= 'dismissed'`, ordered by `priority_rank DESC`) — the "top 10
+prioritized recommendations" view's exact read pattern
+(`docs/09-ux/CUSTOMER_JOURNEY.md`'s onboarding Step 6 / Stage 4 dashboard),
+same reasoning `idx_unified_opportunities_open_score` already documents
+(not expressible in Prisma's `@@index` DSL — no WHERE clause support). No
+CHECK constraints needed: both new enums are native Postgres enums
+(self-enforcing), and `priority_rank` follows the established "plain
+Decimal, no CHECK" precedent every other opportunity-adjacent score column
+already uses.
+
+As with every other section: `prisma validate`/`generate` only — nothing
+applied to a database. `apps/api`'s consumption (the template-driven
+brief generation, the `action_type`/effort/impact/priority_rank derivation,
+the idempotent generate route, and the three routes) is documented in
+`platform/docs/epics/10-recommendation-engine-backend.md`.
