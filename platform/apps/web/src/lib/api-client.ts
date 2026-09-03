@@ -1,14 +1,25 @@
 /**
- * Thin fetch abstraction for `platform/apps/api` (built in parallel this
- * epic, not yet callable from here). Nothing in this app calls this module
- * yet — every screen in Epic 0 renders typed fixture data or an EmptyState
- * instead. It exists now so that wiring a real page next epic is:
+ * Thin fetch abstraction for `platform/apps/api`.
  *
- *   const leads = await apiClient.get<Lead[]>("/crm/leads");
- *
- * instead of a rewrite of how requests are made, authenticated, and errors
- * are surfaced.
+ * Auth model, matching what the backend actually does (`apps/api/src/routes/
+ * auth.ts`, `apps/api/DECISIONS.md`) — bearer tokens only, the server sets
+ * NO cookies at all, so there is nothing for `credentials: "include"` to
+ * send and no CSRF token to attach (correct per the backend's own docs: no
+ * cookies means no CSRF surface). Every request here attaches
+ * `Authorization: Bearer <access token>` from `lib/auth-state.ts`'s
+ * in-memory token. On a 401, this module attempts one silent
+ * `POST /auth/refresh` using the persisted refresh token and retries the
+ * original request exactly once before surfacing the error — see
+ * `refreshAccessToken` below. Full storage/tradeoff writeup:
+ * `platform/apps/web/DECISIONS.md`.
  */
+
+import {
+  getAccessToken,
+  getRefreshToken,
+  handleSessionExpired,
+  setSession,
+} from "./auth-state";
 
 export class ApiError extends Error {
   constructor(
@@ -28,18 +39,74 @@ interface RequestOptions {
   headers?: Record<string, string>;
 }
 
-async function request<T>(path: string, init: RequestInit & RequestOptions = {}): Promise<T> {
+interface RefreshResponse {
+  accessToken: string;
+  refreshToken: string;
+}
+
+// Concurrent 401s (several in-flight requests whose access token expired at
+// once) must trigger exactly one `/auth/refresh` call, not one per request —
+// every caller that arrives while a refresh is already running awaits this
+// same promise instead of racing it.
+let inFlightRefresh: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!response.ok) return false;
+
+    const data = (await response.json()) as RefreshResponse;
+    setSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function refreshAccessTokenOnce(): Promise<boolean> {
+  if (!inFlightRefresh) {
+    inFlightRefresh = refreshAccessToken().finally(() => {
+      inFlightRefresh = null;
+    });
+  }
+  return inFlightRefresh;
+}
+
+async function request<T>(
+  path: string,
+  init: RequestInit & RequestOptions = {},
+  isRetryAfterRefresh = false,
+): Promise<T> {
+  const accessToken = getAccessToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(init.headers as Record<string, string> | undefined),
+  };
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      // Auth token wiring lands with Epic 0's backend session work; the
-      // shape below is the intended seam (read from an httpOnly-cookie
-      // backed session, not localStorage).
-      ...init.headers,
-    },
-    credentials: "include",
+    headers,
   });
+
+  if (response.status === 401 && !isRetryAfterRefresh) {
+    const refreshed = await refreshAccessTokenOnce();
+    if (refreshed) {
+      return request<T>(path, init, true);
+    }
+    // Refresh token missing/expired/revoked — the session is genuinely
+    // over, not just this one access token. Clear state and send the user
+    // back to `/login` rather than surfacing a raw 401 to a caller with no
+    // way to act on it.
+    handleSessionExpired();
+  }
 
   if (!response.ok) {
     const body = await response.json().catch(() => undefined);

@@ -203,15 +203,10 @@ export class OrgAccessDeniedError extends Error {
  * re-verifies membership AND agency access fresh on every subsequent
  * request, so minting it here grants nothing by itself.
  *
- * KNOWN GAP: nothing in this frontend yet attaches the returned
- * `accessToken` as an `Authorization` header on later `apiClient` calls —
- * that's Epic 0's session/token-storage layer, which (per every other
- * epic's own client — see `lib/api-client.ts`'s doc comment) has not landed
- * in this app yet. `OrgSwitcher` calls this so the real endpoint, request
- * shape, and error cases are exercised end-to-end; wiring the token into
- * subsequent requests is the same follow-up every other epic's real-API
- * wiring is already waiting on, not something this epic can complete
- * alone.
+ * The caller (`OrgSwitcher`) is responsible for storing the returned
+ * `accessToken` via `lib/auth-state.ts`'s `setOrgScopedAccessToken` — this
+ * function only makes the call and returns the result, it doesn't reach
+ * into session storage itself.
  */
 export async function switchToOrg(slug: string): Promise<OrgSelection> {
   try {

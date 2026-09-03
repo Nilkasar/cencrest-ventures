@@ -5,11 +5,27 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Mail } from "lucide-react";
 import { Button } from "@bebest/ui";
+import { apiClient } from "@/lib/api-client";
 
 function CheckEmailContent() {
   const searchParams = useSearchParams();
   const email = searchParams.get("email") ?? "your email";
   const [resent, setResent] = useState(false);
+  const [resending, setResending] = useState(false);
+
+  async function handleResend() {
+    if (resent || resending) return;
+    setResending(true);
+    try {
+      // Same real `POST /auth/magic-link` call the login screen makes —
+      // always "succeeds" from the caller's side (see that endpoint's
+      // account-enumeration note in apps/api/src/routes/auth.ts).
+      await apiClient.post("/auth/magic-link", { email });
+      setResent(true);
+    } finally {
+      setResending(false);
+    }
+  }
 
   return (
     <div className="flex flex-col items-center text-center gap-5">
@@ -26,7 +42,7 @@ function CheckEmailContent() {
         </p>
       </div>
 
-      <Button variant="secondary" size="sm" onClick={() => setResent(true)} disabled={resent}>
+      <Button variant="secondary" size="sm" onClick={handleResend} loading={resending} disabled={resent}>
         {resent ? "Link resent" : "Resend link"}
       </Button>
 

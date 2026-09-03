@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import { Button, Input } from "@bebest/ui";
+import { apiClient } from "@/lib/api-client";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,7 +12,7 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
-  function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!email.trim() || !email.includes("@")) {
       setError("Enter a valid work email.");
@@ -19,11 +20,17 @@ export default function LoginPage() {
     }
     setError(undefined);
     setSubmitting(true);
-    // Stub: no backend call yet. Epic 0's auth service issues the real
-    // magic link; this just simulates the request/redirect shape.
-    window.setTimeout(() => {
-      router.push(`/login/check-email?email=${encodeURIComponent(email)}`);
-    }, 500);
+    try {
+      // Real call: `POST /auth/magic-link` (apps/api/src/routes/auth.ts).
+      // Always resolves `{ success: true }` whether or not the email
+      // exists — the backend deliberately can't be used to enumerate
+      // accounts — so there's no "email not found" branch to handle here.
+      await apiClient.post("/auth/magic-link", { email: email.trim() });
+      router.push(`/login/check-email?email=${encodeURIComponent(email.trim())}`);
+    } catch {
+      setError("Couldn't send the link right now. Try again in a moment.");
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -58,11 +65,6 @@ export default function LoginPage() {
           Continue with email <ArrowRight size={15} />
         </Button>
       </form>
-
-      <p className="text-[12px] text-subtle-foreground leading-relaxed">
-        This is a visual preview — sign-in isn&apos;t wired to a real auth service yet (that&apos;s Epic 0&apos;s
-        backend, landing alongside this UI). Continuing takes you straight to the confirmation screen.
-      </p>
     </div>
   );
 }

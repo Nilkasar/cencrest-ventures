@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut, Settings, User } from "lucide-react";
 import {
@@ -13,9 +14,31 @@ import {
   getInitials,
 } from "@bebest/ui";
 import { currentUser } from "@/data/fixtures";
+import { apiClient } from "@/lib/api-client";
+import { clearSession, getRefreshToken } from "@/lib/auth-state";
 
 export function UserMenu() {
   const router = useRouter();
+  const [signingOut, setSigningOut] = useState(false);
+
+  async function handleSignOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      // Real `POST /auth/logout` (apps/api/src/routes/auth.ts) — revokes
+      // this refresh token's session server-side. Best-effort: even if the
+      // network call fails, local state is cleared and the user is sent to
+      // `/login` regardless, since staying "logged in" client-side with a
+      // token the server might have already invalidated helps no one.
+      const refreshToken = getRefreshToken();
+      if (refreshToken) {
+        await apiClient.post("/auth/logout", { refreshToken }).catch(() => undefined);
+      }
+    } finally {
+      clearSession();
+      router.push("/login");
+    }
+  }
 
   return (
     <DropdownMenu>
@@ -38,8 +61,8 @@ export function UserMenu() {
           <Settings size={14} className="mr-1" /> Settings
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem destructive onSelect={() => router.push("/login")}>
-          <LogOut size={14} className="mr-1" /> Sign out
+        <DropdownMenuItem destructive disabled={signingOut} onSelect={handleSignOut}>
+          <LogOut size={14} className="mr-1" /> {signingOut ? "Signing out…" : "Sign out"}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

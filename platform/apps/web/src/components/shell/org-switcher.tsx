@@ -16,6 +16,7 @@ import {
 import { currentOrganization } from "@/data/fixtures";
 import { listAgencyClients, switchToOrg } from "@/data/agency/client";
 import type { AgencyClientLink } from "@/data/agency/types";
+import { setOrgScopedAccessToken } from "@/lib/auth-state";
 
 /**
  * Epic 18: the client switcher, built by extending this component in place
@@ -27,10 +28,12 @@ import type { AgencyClientLink } from "@/data/agency/types";
  * section below it is fetched live from `GET /api/agency/clients` (this
  * org's `active` agency_clients links) instead of the old two-entry
  * fixture list, and selecting one calls the real `POST /auth/select-org`
- * "acting as" flow (`data/agency/client.ts`'s `switchToOrg`) — see that
- * function's doc comment for the one known gap (the returned token isn't
- * yet attached to subsequent requests; no epic has wired that layer into
- * `apiClient` yet).
+ * "acting as" flow (`data/agency/client.ts`'s `switchToOrg`). The Epic 0
+ * session-wiring fix closed the gap this component used to flag in its own
+ * doc comment: the org-scoped access token `switchToOrg` returns is now
+ * stored via `setOrgScopedAccessToken` before this function returns, so
+ * every subsequent `apiClient` call is already scoped to the client org by
+ * the time the toast fires.
  */
 export function OrgSwitcher() {
   const [selectedId, setSelectedId] = useState<string>(currentOrganization.id);
@@ -64,6 +67,7 @@ export function OrgSwitcher() {
     setSwitchingId(link.id);
     try {
       const selection = await switchToOrg(link.clientOrgSlug);
+      setOrgScopedAccessToken(selection.accessToken);
       setSelectedId(link.clientOrgId);
       setSelectedName(selection.organization.name);
       toast({ title: `Now acting as ${selection.organization.name}`, variant: "success" });
