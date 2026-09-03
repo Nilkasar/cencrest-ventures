@@ -37,6 +37,7 @@ class FakeEmailSender implements EmailSender {
   }
   async sendInvitation(): Promise<void> {}
   async sendSnapshotReady(): Promise<void> {}
+  async sendNotification(): Promise<void> {}
 }
 
 async function buildApp() {

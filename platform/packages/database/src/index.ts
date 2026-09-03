@@ -99,4 +99,9 @@ export {
   // Epic 14 (Measurement & Learning Loop)
   type measurements,
   type outcome_records,
+  // Epic 15 (Reporting & Notifications)
+  type reports,
+  type notifications,
+  type notification_type,
+  type notif_channel,
 } from './client.js';

@@ -35,6 +35,14 @@ vi.mock('./usage.js', () => ({ countAgentRunsThisMonth: (...args: unknown[]) => 
 const getDefaultAiProviderRegistry = vi.fn(() => ({}));
 vi.mock('../ai-visibility/provider-registry.js', () => ({ getDefaultAiProviderRegistry: () => getDefaultAiProviderRegistry() }));
 
+// Epic 15 — `executeAgentRun`'s real call site into the shared `notify()`
+// mechanism. Mocked here (`notify()`'s own internals are covered by
+// `lib/notifications/notify.test.ts`) so this file only has to assert the
+// runner calls it with the right shape, same "mock the dependency, assert
+// the call" precedent every other import above already follows.
+const notify = vi.fn().mockResolvedValue({ inApp: {}, email: null });
+vi.mock('../notifications/notify.js', () => ({ notify: (...args: unknown[]) => notify(...args) }));
+
 vi.mock('./geo-agent.js', () => ({ GEO_AGENT_VERSION: '1.0.0' }));
 vi.mock('./seo-agent.js', () => ({ SEO_AGENT_VERSION: '1.0.0' }));
 vi.mock('./growth-agent.js', () => ({ GROWTH_AGENT_VERSION: '1.0.0' }));
@@ -54,6 +62,7 @@ beforeEach(() => {
   db.agent_runs.update.mockResolvedValue({});
   db.agent_events.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: `event-${Math.random()}`, ...data }));
   db.agent_pending_actions.create.mockResolvedValue({});
+  notify.mockResolvedValue({ inApp: {}, email: null });
   createAgent.mockReturnValue({ run: () => fakeAgentRun([{ type: 'complete', summary: 'done', resultId: 'res-1' }]) });
 });
 
@@ -170,6 +179,12 @@ describe('the scheduled background run — event persistence and Level 3 pending
 
     const finalUpdate = db.agent_runs.update.mock.calls.at(-1)![0] as { data: Record<string, unknown> };
     expect(finalUpdate.data).toMatchObject({ status: 'completed', result_id: 'rec-99' });
+
+    // Epic 15 — the real call site: a completed run notifies whoever
+    // triggered it (BASE_PARAMS is triggeredBy: 'user', triggeredById:
+    // 'user-1') via the shared notify() mechanism, never a parallel ad hoc
+    // email call.
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-1', userId: 'user-1', type: 'run_complete' }));
   });
 
   it('marks the run failed when a fatal error event is yielded', async () => {
@@ -182,6 +197,34 @@ describe('the scheduled background run — event persistence and Level 3 pending
 
     const finalUpdate = db.agent_runs.update.mock.calls.at(-1)![0] as { data: Record<string, unknown> };
     expect(finalUpdate.data).toMatchObject({ status: 'failed', error: 'boom' });
+
+    // Still notifies on failure — "run_complete" covers both outcomes, the
+    // title/body distinguish them (see runner.ts).
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'org-1', userId: 'user-1', type: 'run_complete' }));
+  });
+
+  it('a notify() failure never overwrites an already-finalized run\'s status — it is swallowed, not re-thrown into the outer schedule catch', async () => {
+    notify.mockRejectedValue(new Error('email provider unreachable'));
+    const { triggerAgentRun } = await import('./runner.js');
+
+    await triggerAgentRun(BASE_PARAMS);
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // Exactly one update to 'completed' — never a second update
+    // downgrading it to 'failed' because notify() threw.
+    const statuses = db.agent_runs.update.mock.calls.map((callArgs: unknown[]) => (callArgs[0] as { data: Record<string, unknown> }).data.status);
+    expect(statuses).toEqual(['running', 'completed']);
+  });
+
+  it('addresses the notification org-wide (no single user) for a schedule-triggered run', async () => {
+    const { triggerAgentRun } = await import('./runner.js');
+
+    await triggerAgentRun({ ...BASE_PARAMS, triggeredBy: 'schedule', triggeredById: undefined });
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ userId: null, type: 'run_complete' }));
   });
 
   it('creates NO agent_pending_actions row for an action_required event at Level 1 — Level 3 mechanics only', async () => {

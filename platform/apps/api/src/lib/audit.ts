@@ -139,4 +139,16 @@ export const ALWAYS_AUDITED_ACTIONS = [
   // transparency principle every agent epic follows." See
   // `lib/measurement/run-measurement.ts`.
   'measurement.completed',
+  // Epic 15 (Reporting & Notifications) additions — this epic's own
+  // explicit requirement, verbatim: "Audit logging on report generation
+  // and notification creation, matching the existing audit-logging
+  // helper." `report.generated` is written by
+  // `lib/reporting/generate-report.ts` for every one of the four report
+  // types; `notification.sent` is written once per channel actually
+  // attempted (in_app always, email when a recipient resolves) by the
+  // shared `lib/notifications/notify.ts` — the single mechanism every
+  // notification in this codebase (agent-run completion, competitor
+  // movement, report-ready) now routes through.
+  'report.generated',
+  'notification.sent',
 ] as const;

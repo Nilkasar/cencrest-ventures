@@ -27,6 +27,7 @@
 import { withOrgContext, type agent_runs, type Prisma } from '@bebest/database';
 import { checkUsageLimit, resolvePlanLimits } from '../entitlements.js';
 import { getDefaultAiProviderRegistry } from '../ai-visibility/provider-registry.js';
+import { notify } from '../notifications/notify.js';
 import { countAgentRunsThisMonth } from './usage.js';
 import { resolveRequestedAutonomyLevel } from './autonomy.js';
 import { createAgent } from './registry.js';
@@ -244,4 +245,41 @@ async function executeAgentRun(runId: string, params: TriggerAgentRunParams, aut
       },
     }),
   );
+
+  // Epic 15 (Reporting & Notifications) — the real call site this file's
+  // own header comment (and `lib/notifications/notify.ts`'s "what was
+  // actually found when grepping") documents was missing: an agent run
+  // finishing (success or failure) is exactly the "run_complete" moment
+  // `notification_type` already had a value for, routed through the ONE
+  // shared mechanism instead of a parallel ad hoc email call. Addressed to
+  // whoever triggered it when a real user did (`triggeredBy === 'user'`);
+  // org-wide for a schedule/event-triggered run, which has no single human
+  // to notify.
+  //
+  // Wrapped in its own try/catch, deliberately AFTER the `agent_runs`
+  // update above has already committed: `scheduleAgentRun`'s caller-side
+  // `.catch()` (below) would otherwise reinterpret a notification failure
+  // as the RUN itself failing, overwriting an already-successfully-
+  // completed run's status — a notification is a side effect of a
+  // finished run, never allowed to retroactively change what "finished"
+  // means for it.
+  try {
+    await notify({
+      organizationId,
+      userId: params.triggeredBy === 'user' ? (params.triggeredById ?? null) : null,
+      type: 'run_complete',
+      title: finalStatus === 'completed' ? `${params.agentName} run completed` : `${params.agentName} run failed`,
+      body: finalStatus === 'completed' ? 'The agent run finished successfully.' : (finalError ?? 'The agent run failed.'),
+      actionUrl: `/agent-runs/${runId}`,
+    });
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        msg: 'agent_run_completion_notify_failed',
+        runId,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
 }

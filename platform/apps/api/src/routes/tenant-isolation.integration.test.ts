@@ -631,3 +631,48 @@ describe.skip('Epic 14 tenant isolation — measurements / outcome_records (NEED
       'does — confirms the 4-week trigger never bypasses RLS just because it has no Hono context',
   );
 });
+
+/**
+ * Epic 15 (Reporting & Notifications). `reports` and `notifications` are
+ * both PRE-EXISTING tables (0000_init's own `rls.sql`, ported — see
+ * @bebest/database DECISIONS.md §29) whose `tenant_isolation` policy
+ * predates this epic; this epic only widened their columns
+ * (0018_reporting_notifications/checks.sql adds one CHECK, no new
+ * rls.sql). Mocked-Prisma coverage already exists (`lib/reporting/
+ * generate-report.test.ts`, `lib/notifications/notify.test.ts`,
+ * `routes/reports.test.ts`, `routes/report-details.test.ts`, `routes/
+ * notifications.test.ts`, including the immutability proof in `lib/
+ * reporting/immutability.test.ts`); this block is the real-RLS proof
+ * those unit tests cannot provide.
+ */
+describe.skip('Epic 15 tenant isolation — reports / notifications (NEEDS LIVE DB)', () => {
+  it.todo(
+    'app.current_org = orgA sees ZERO rows for orgB\'s brand in GET /brands/me/reports, even when ' +
+      'orgB has at least one real, generated report',
+  );
+
+  it.todo(
+    'GET /reports/:id for an orgB report, called with app.current_org = orgA, returns 404 (via the ' +
+      'route\'s own explicit organization_id WHERE clause) — never leaking the existence of orgB\'s ' +
+      'report via a 403 for a real foreign row',
+  );
+
+  it.todo(
+    'inserting a reports (or notifications) row with organization_id set to a foreign org is ' +
+      'rejected by WITH CHECK, even when brand_id/created_by correctly point at real rows the ' +
+      'caller genuinely owns in their OWN org — proves the tenant column itself is enforced, not ' +
+      'just the FK relationships',
+  );
+
+  it.todo(
+    'GET /notifications with app.current_org = orgA never returns an orgB notification, per-user ' +
+      '(user_id set) or org-wide (user_id null) — RLS blocks the row outright before this route\'s ' +
+      'own (user_id = caller OR user_id IS NULL) visibility filter even runs',
+  );
+
+  it.todo(
+    'POST /notifications/:id/read for an orgB notification, called with app.current_org = orgA, ' +
+      'returns 404 and leaves the underlying row\'s read_at untouched — a cross-tenant caller can ' +
+      'never mark another org\'s notification read',
+  );
+});

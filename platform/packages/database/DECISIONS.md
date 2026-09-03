@@ -1990,3 +1990,86 @@ applied to a database. `apps/api`'s consumption (the before-score capture
 inside Epic 13's approve handler, the 4-week trigger, the pure scoring/
 attribution functions, and the two read routes) is documented in
 `platform/docs/epics/14-measurement-learning-loop-backend.md`.
+
+## 29. Epic 15 (Reporting & Notifications) schema additions
+
+### Reused two pre-existing, ported-but-dormant tables instead of inventing new ones
+
+`reports` and `notifications` already existed in `schema.prisma` — carried
+over from the original ported schema (same "ported in Epic 0" lineage as
+`publish_jobs`/the legacy `geo_agent_runs` family, see §2's header and this
+file's Epic 12 section) — with `tenant_isolation` RLS policies already
+applied in `0000_init/rls.sql`. Grepping `apps/api/src` confirmed zero
+route/lib code anywhere had ever read or written either table before this
+epic. Rather than build a second, differently-named pair of tables to match
+the epic spec's prose exactly, both were widened forward — the same
+"reuse the pre-existing hardened table, don't invent a parallel one"
+precedent Epic 18 already set for `white_label_configs` (§23) and Epic 12
+set for real `agent_runs`/`agent_events` superseding the legacy
+`geo_agent_runs` family for its OWN new concerns while leaving the legacy
+tables alone. `prisma/migrations/0018_reporting_notifications/` is the new
+migration folder (checked immediately before creating it — 0018 was free).
+
+**`reports`** — added `period_start`/`period_end`/`generated_at`/`content`
+(this epic's literal domain-model fields); left `name`/`format`/`status`/
+`metadata`/`file_path`/`created_by`/`completed_at` untouched. `content Json`
+(required, no default) is the whole non-negotiable: a report's assembled
+data, written exactly once at generation time. `type` stays the legacy
+`String @db.VarChar(50)` rather than becoming a new Prisma enum (an enum
+column can't be safely retrofitted onto an already-"shipped" — even if
+never-applied — column without a real migration path this package doesn't
+exercise); the closed `weekly|monthly|custom|baseline_comparison`
+vocabulary is enforced by `chk_reports_type`
+(`0018_reporting_notifications/checks.sql`), the same CHECK-on-closed-
+VARCHAR discipline §6 established. `file_path` (legacy) doubles as this
+epic's `pdf_url` — PDF export is explicitly nice-to-have, never blocking
+(the epic spec, verbatim); no code path in this build ever writes it.
+
+**`notifications`** — two real widenings, not just additions:
+`user_id String @db.Uuid` (NOT NULL) became `String? @db.Uuid`, because the
+spec's domain model explicitly distinguishes an org-wide notification
+(`user_id: null`) from a per-user one — the legacy ported shape had no way
+to express the former at all. Its relation's `onDelete` moved from Cascade
+to SetNull to match (deleting a user must never cascade-delete an org-wide
+row). `channel notif_channel` (previously only a column on the sibling
+`notification_preferences` table, never on `notifications` itself) and
+`sent_at DateTime?` were added — `lib/notifications/notify.ts` writes ONE
+row per channel actually attempted: an `in_app` row always, an `email` row
+only when a per-user recipient's real address is resolvable (org-wide
+`user_id: null` notifications are in-app only in this build — email fan-out
+to "every member of an org" has no natural single recipient and is left
+undone, see this epic's backend doc). `notification_type` gained two values
+this epic's own domain model names verbatim — `weekly_digest` and
+`entitlement_warning` — added outright (schema never applied to a database,
+same §22/`unified_opportunity_type` precedent for adding a forward-reserved
+enum value with no live caller yet; `entitlement_warning` has none in this
+build, an honest documented gap).
+
+**Per-user visibility is an application-layer concern, not RLS's.** RLS's
+`tenant_isolation` policy on `notifications` (unchanged from 0000_init)
+enforces exactly one thing — the `organization_id` boundary, ADR-005's hard
+DB-level guarantee. Whether a specific member can see a specific per-user
+row (`user_id` set to someone else) versus an org-wide one (`user_id: null`,
+visible to everyone in the org) is a same-org visibility question, not a
+cross-tenant leak — `routes/notifications.ts`'s own `WHERE (user_id = :me
+OR user_id IS NULL)` clause is where that's enforced, the same "RLS proves
+the tenant boundary, the route proves the narrower business rule on top of
+it" division of labor `requirePermission`'s role checks already use
+everywhere else in this codebase.
+
+### RLS / CHECK
+
+No new `rls.sql` in `0018_reporting_notifications/` — both tables are
+genuinely pre-existing with their `tenant_isolation` policy already applied
+in `0000_init`, and none of this epic's new columns need a policy of their
+own (same "no RLS changes" precedent §23 already documents for Epic 18 when
+every touched table already had RLS). `.../checks.sql` adds exactly one
+constraint: `chk_reports_type` (see above).
+
+As with every other section: `prisma validate`/`generate` only — nothing
+applied to a database. `apps/api`'s consumption (the shared `notify()`
+function consolidating Epic 12's agent-run-completion and Epic 8's
+competitor-movement-alert logic onto one real notification mechanism, the
+four report-generation builders reading Epic 4/7/8/9/14's already-computed
+data, and the four routes) is documented in
+`platform/docs/epics/15-reporting-notifications-backend.md`.

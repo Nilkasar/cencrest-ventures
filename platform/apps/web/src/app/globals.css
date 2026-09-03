@@ -34,3 +34,18 @@
     margin-left: 264px;
   }
 }
+
+/* Epic 15 (Reporting & Notifications) — "board-presentable" printing for
+   `/reports/:id` (`report-detail-view.tsx`'s Print action calls
+   `window.print()`, no PDF-export dependency). Elements opt in with
+   `data-print-hide` rather than a Tailwind `print:hidden` per element,
+   since the sidebar/topbar live in `AppShell`, outside the report view's
+   own tree. */
+@media print {
+  [data-print-hide] {
+    display: none !important;
+  }
+  .app-content {
+    margin-left: 0 !important;
+  }
+}

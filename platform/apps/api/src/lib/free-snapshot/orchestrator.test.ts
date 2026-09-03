@@ -58,7 +58,7 @@ beforeEach(() => {
 describe('runFreeSnapshotPipeline — free-tier-scoping proof (DoD)', () => {
   it('calls the crawl with the free plan\'s pages_analyzed cap (10), never a paid-tier number', async () => {
     const { runFreeSnapshotPipeline } = await import('./orchestrator.js');
-    const emailSender = { sendMagicLink: vi.fn(), sendInvitation: vi.fn(), sendSnapshotReady: vi.fn() };
+    const emailSender = { sendMagicLink: vi.fn(), sendInvitation: vi.fn(), sendSnapshotReady: vi.fn(), sendNotification: vi.fn() };
 
     await runFreeSnapshotPipeline('snap-1', 'raw-token', INPUT, { emailSender });
 
@@ -67,7 +67,7 @@ describe('runFreeSnapshotPipeline — free-tier-scoping proof (DoD)', () => {
 
   it('calls the query generator with the free plan\'s queries_per_query_set cap (50), never a paid-tier number', async () => {
     const { runFreeSnapshotPipeline } = await import('./orchestrator.js');
-    const emailSender = { sendMagicLink: vi.fn(), sendInvitation: vi.fn(), sendSnapshotReady: vi.fn() };
+    const emailSender = { sendMagicLink: vi.fn(), sendInvitation: vi.fn(), sendSnapshotReady: vi.fn(), sendNotification: vi.fn() };
 
     await runFreeSnapshotPipeline('snap-1', 'raw-token', INPUT, { emailSender });
 
@@ -76,7 +76,7 @@ describe('runFreeSnapshotPipeline — free-tier-scoping proof (DoD)', () => {
 
   it('lets a test override the caps explicitly (proving the cap is a real, threaded parameter, not a silently-ignored one)', async () => {
     const { runFreeSnapshotPipeline } = await import('./orchestrator.js');
-    const emailSender = { sendMagicLink: vi.fn(), sendInvitation: vi.fn(), sendSnapshotReady: vi.fn() };
+    const emailSender = { sendMagicLink: vi.fn(), sendInvitation: vi.fn(), sendSnapshotReady: vi.fn(), sendNotification: vi.fn() };
 
     await runFreeSnapshotPipeline('snap-1', 'raw-token', INPUT, { emailSender, maxPages: 3, maxQueries: 5 });
 
@@ -86,7 +86,7 @@ describe('runFreeSnapshotPipeline — free-tier-scoping proof (DoD)', () => {
 
   it('runs the AI query step against ONLY the capped query list the generator returned, never the uncapped candidate set', async () => {
     const { runFreeSnapshotPipeline } = await import('./orchestrator.js');
-    const emailSender = { sendMagicLink: vi.fn(), sendInvitation: vi.fn(), sendSnapshotReady: vi.fn() };
+    const emailSender = { sendMagicLink: vi.fn(), sendInvitation: vi.fn(), sendSnapshotReady: vi.fn(), sendNotification: vi.fn() };
 
     await runFreeSnapshotPipeline('snap-1', 'raw-token', INPUT, { emailSender });
 
@@ -95,7 +95,7 @@ describe('runFreeSnapshotPipeline — free-tier-scoping proof (DoD)', () => {
 
   it('runs every step in order, marks the row processing then complete, persists the report, and attempts the ready email with the raw token in the link', async () => {
     const { runFreeSnapshotPipeline } = await import('./orchestrator.js');
-    const emailSender = { sendMagicLink: vi.fn(), sendInvitation: vi.fn(), sendSnapshotReady: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = { sendMagicLink: vi.fn(), sendInvitation: vi.fn(), sendSnapshotReady: vi.fn().mockResolvedValue(undefined), sendNotification: vi.fn() };
 
     await runFreeSnapshotPipeline('snap-1', 'raw-token-xyz', INPUT, { emailSender, reportBaseUrl: 'https://app.bebestwith.ai' });
 
@@ -119,7 +119,7 @@ describe('runFreeSnapshotPipeline — free-tier-scoping proof (DoD)', () => {
   it('marks the row failed (never throws) when a sub-pipeline step rejects, and still does not send an email', async () => {
     crawlFreeSnapshotSite.mockRejectedValue(new Error('crawl exploded'));
     const { runFreeSnapshotPipeline } = await import('./orchestrator.js');
-    const emailSender = { sendMagicLink: vi.fn(), sendInvitation: vi.fn(), sendSnapshotReady: vi.fn() };
+    const emailSender = { sendMagicLink: vi.fn(), sendInvitation: vi.fn(), sendSnapshotReady: vi.fn(), sendNotification: vi.fn() };
 
     await expect(runFreeSnapshotPipeline('snap-1', 'raw-token', INPUT, { emailSender })).resolves.toBeUndefined();
 

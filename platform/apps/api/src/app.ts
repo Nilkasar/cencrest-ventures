@@ -40,6 +40,9 @@ import actions from './routes/actions.js';
 import actionDetails from './routes/action-details.js';
 import actionMeasurement from './routes/action-measurement.js';
 import measurements from './routes/measurements.js';
+import { createReportsRoutes } from './routes/reports.js';
+import reportDetails from './routes/report-details.js';
+import notifications from './routes/notifications.js';
 import plans from './routes/plans.js';
 import subscription from './routes/subscription.js';
 import billingWebhooks from './routes/billing-webhooks.js';
@@ -254,6 +257,21 @@ app.route('/api/actions', actionDetails);
 // scheduled, not a route — see that file's own header comment.
 app.route('/api/brands/me/measurements', measurements);
 app.route('/api/actions', actionMeasurement);
+
+// Epic 15 — Reporting & Notifications. Packages Epic 4/7/8/9/14's already-
+// computed data into human-facing report snapshots (`content` JSONB,
+// immutable once generated — never a live re-query on view) plus the ONE
+// shared `notify()` mechanism every notification in this codebase now
+// routes through (agent-run completion above, competitor movement via
+// weekly-digest generation — see `lib/notifications/notify.ts`'s header
+// comment for the full consolidation writeup). Spec's literal `/brands/:id/
+// reports...` is adapted to `/brands/me/reports`, same single-brand-per-org
+// convention as every route above; `/api/reports/:id` matches the spec
+// exactly, same "id-addressed, own base path" convention `/api/ai-runs/:id`
+// already uses. `/api/notifications` is org/user-scoped, not brand-scoped.
+app.route('/api/brands/me/reports', createReportsRoutes(emailSender));
+app.route('/api/reports', reportDetails);
+app.route('/api/notifications', notifications);
 
 // Epic 16 — Billing. `plans` is public reference data (no auth) for a
 // pricing/upgrade UI. `/api/orgs/me/subscription` follows the same

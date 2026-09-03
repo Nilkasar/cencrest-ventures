@@ -277,6 +277,13 @@ export type {
   // Epic 14 (Measurement & Learning Loop)
   measurements,
   outcome_records,
+  // Epic 15 (Reporting & Notifications) — `reports`/`notifications` are the
+  // pre-existing, ported-but-dormant tables (see schema.prisma's own
+  // "Epic 15 widens this pre-existing table" comments), not new ones.
+  reports,
+  notifications,
+  notification_type,
+  notif_channel,
 } from '@prisma/client';
 
 export type PrismaTransactionClient = Prisma.TransactionClient;

@@ -82,6 +82,7 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
       </AnimatePresence>
 
       <aside
+        data-print-hide
         className={cn("hidden lg:block fixed inset-y-0 left-0 z-30")}
         style={{ width: SIDEBAR_WIDTH }}
       >

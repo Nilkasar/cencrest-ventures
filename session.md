@@ -1,19 +1,18 @@
 # Session Log — Cencrest Ventures
 
-## ▶ RESUME HERE (last updated 2026-09-04, Wave 9)
+## ▶ RESUME HERE (last updated 2026-09-04, Wave 10)
 
 **Do not start from Session: 2026-08-10 below** — that's history. This block is the current state.
 
 **What this is**: a from-scratch platform rebuild (`platform/` monorepo, pnpm+Turborepo) replacing the old `api/`/`web-app/` implementation, on branch **`rebuild/platform`**. Full context/history is in the "Platform rebuild" session entries further down this file; `platform/EPICS.md` is the authoritative epic-by-epic status table (not `PROJECT_STATUS.md`, which is stale).
 
-**Progress: 19 of 21 total epics VERIFIED** — all 17 product epics that needed building (0-13, 16, 17, 18) plus Epic 14 (Measurement & Learning Loop) and Epic 20 (Marketing Site Rebuild, pulled forward per explicit user request to run in parallel with Wave 9 rather than last). Only Epic 15 (Reporting & Notifications), Epic 19 (Production Hardening), and Epic 21 (Final Audit) remain.
+**Progress: 20 of 21 total epics VERIFIED** — every epic except Epic 19 (Production Hardening) and Epic 21 (Final Audit).
 
 **As of this note: user has asked to run continuously through completion, no more per-wave pauses** — proceed Wave 10 → 11 → 12 without waiting for check-ins, only stopping if something needs a real user decision (see the Epic 20/CLAUDE.md precedent below for what that looks like).
 
 **Remaining work, in dependency order**:
-1. Epic 15 — Reporting & Notifications (needs 14, now done — **unblocked, Wave 10, do this next**)
-2. Epic 19 — Production Hardening (Wave 11, needs the rest of the roadmap done — cross-cutting pass over every prior epic's own flagged `// TODO`s: durable queue, error tracking, the missing `GET /brands/me/crawl-jobs` endpoint, and now a repeatedly-flagged one — the documented 120/min authenticated rate-limit tier is defined in `middleware/rate-limit.ts` but never wired into any route app-wide; every authenticated route actually runs at the 30/min public tier. Flagged independently by Epic 13's, Epic 14's, and Epic 20's own verify passes — fix once, here, not per-epic.)
-3. Epic 21 — Final Audit (Wave 12, alone, last — the user's explicitly requested final deliverable)
+1. Epic 19 — Production Hardening (Wave 11, now the only build left — cross-cutting pass over every prior epic's own flagged `// TODO`s: durable queue, error tracking, the missing `GET /brands/me/crawl-jobs` endpoint, and the repeatedly-flagged one — the documented 120/min authenticated rate-limit tier is defined in `middleware/rate-limit.ts` but never wired into any route app-wide; every authenticated route actually runs at the 30/min public tier. Flagged independently by Epics 13, 14, 15, and 20's own verify passes — fix once, here, not per-epic.)
+2. Epic 21 — Final Audit (Wave 12, alone, last — the user's explicitly requested final deliverable)
 
 **Important discovery from Wave 9, resolved**: the root marketing site was already rebranded from "Cencrest" to **BeBest** by the user directly on 2026-08-11 (commit "Rebrand to BeBest..."), into a full multi-page site (`about.html`, `services.html`, `pricing.html`, `contact.html`, etc., domain `bebestwithai.com`) — but root `CLAUDE.md` was never updated to match, and this was never logged in session.md until now. The repo/Vercel project name (`cencrest-ventures`) did not change, only the marketing brand shown on the live site. Root `CLAUDE.md` has now been rewritten (2026-09-04) to match the real live site — Project Identity/Tech Stack/Design System/Sections/Pricing sections only; the Commit-Push-Deploy Rule and Token & Response Rules sections were deliberately left untouched. One cosmetic leftover not fixed: `design-bible.html`'s `<title>` still says "Cencrest."
 
@@ -451,3 +450,17 @@ Epics 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 20 are now `
 ### Wave 10 — next up, no pause (per user's continuous-run instruction)
 
 Epic 15 (Reporting & Notifications, needs Epic 14 — now done) is next, followed immediately by Wave 11 (Epic 19, Production Hardening — now the only remaining epic, since Epic 20 already landed) and Wave 12 (Epic 21, Final Audit) with no check-in between, per explicit instruction — only stopping if something surfaces that needs a real user decision, same bar as the CLAUDE.md rewrite above.
+
+### Wave 10 results (`wf_c7e56778-c28`) — Epic 15 VERIFIED, no fix wave needed
+
+Every one of the spec's 5 numbered end-to-end steps confirmed directly in code by qa-flow-tester, not just the agents' own claims: weekly digest content traces to real Epic 8/9/14 records via their real functions (grep-confirmed, no reimplemented scoring); the immutability test genuinely drives the real routes, mutates a live mock's score after report generation, and proves the re-fetched report is byte-identical — independently grep-confirmed zero `reports.update` call sites exist anywhere, so the guarantee holds by construction, not test coincidence; Epic 12's agent-run-completion and Epic 8's competitor-movement-alert paths (both previously undone stubs, not real ad hoc paths to delete) are now wired through the new shared `notify()` function, independently grep-confirmed no leftover email/notification code exists elsewhere; mark-as-read persists server-side and the frontend re-syncs from the server rather than trusting optimistic state alone.
+
+Backend made a good reuse call worth noting: `reports`/`notifications` already existed in the schema as dormant, ported-but-never-used tables with RLS already applied since `0000_init` — widened them forward instead of inventing new tables (same precedent Epic 18 set for `white_label_configs`), documented in `DECISIONS.md` §29.
+
+Only 2 findings, both minor and both pre-existing/documented-by-design (not epic regressions): the same shared rate-limit-tier gap flagged by Epics 13/14/20 (carrying to Epic 19, as planned), and a client-side notification-list pagination edge case (a >50-combined-row org could lose visibility into older in-app notifications) that both building agents disclosed themselves rather than hid. No blocking or notable bugs — **no fix wave needed**, marked `VERIFIED` directly. Re-ran the full `@bebest/api` suite myself: 950 passed, 0 failed, 79 todo — matches exactly.
+
+Epics 0-15, 16, 17, 18, 20 are now `VERIFIED` — **20 of 21 total epics done.** Only Epic 19 (Production Hardening) and Epic 21 (Final Audit) remain.
+
+### Wave 11 — next up, no pause
+
+Epic 19 (Production Hardening) is the last build wave — a cross-cutting pass over the TODOs every prior epic has been flagging, most consistently the app-wide authenticated-rate-limit-tier gap (Epics 13, 14, 15, 20 all independently hit it). Wave 12 (Epic 21, Final Audit) closes out the roadmap immediately after, alone, per the user's original sequencing.

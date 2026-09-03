@@ -21,7 +21,7 @@ process.env.CRM_INTERNAL_ORG_ID = '11111111-1111-1111-1111-111111111111';
 
 async function buildApp() {
   const { createSnapshotRoutes } = await import('./snapshot.js');
-  const emailSender = { sendMagicLink: vi.fn(), sendInvitation: vi.fn(), sendSnapshotReady: vi.fn() };
+  const emailSender = { sendMagicLink: vi.fn(), sendInvitation: vi.fn(), sendSnapshotReady: vi.fn(), sendNotification: vi.fn() };
   const app = new Hono();
   app.route('/snapshot', createSnapshotRoutes(emailSender));
   return { app, emailSender };

@@ -22,6 +22,21 @@ export interface EmailSender {
    * `ResendEmailSender` with zero route/orchestrator changes.
    */
   sendSnapshotReady(params: { to: string; reportUrl: string }): Promise<void>;
+  /**
+   * Epic 15 (Reporting & Notifications) — the email half of
+   * `lib/notifications/notify.ts`'s shared `notify()` function, the ONE
+   * mechanism every notification in this codebase (agent-run completion,
+   * competitor movement, report-ready) should route through instead of
+   * each epic inventing its own email-sending call. Deliberately generic
+   * (subject/body, not a bespoke method per notification type) — unlike
+   * `sendMagicLink`/`sendInvitation`/`sendSnapshotReady` above, which each
+   * have their own fixed template because their content shape never
+   * varies, a notification's title/body varies per `notification_type`,
+   * so one templated method covers all of them rather than growing a new
+   * interface method per type as this epic's notification vocabulary
+   * grows.
+   */
+  sendNotification(params: { to: string; subject: string; body: string }): Promise<void>;
 }
 
 /**
@@ -52,5 +67,10 @@ export class ConsoleEmailSender implements EmailSender {
   async sendSnapshotReady({ to, reportUrl }: { to: string; reportUrl: string }): Promise<void> {
     // eslint-disable-next-line no-console -- deliberate: this class IS the dev-mode "delivery"
     console.log(`[dev email] AI Visibility Snapshot ready for ${to}: ${reportUrl}`);
+  }
+
+  async sendNotification({ to, subject, body }: { to: string; subject: string; body: string }): Promise<void> {
+    // eslint-disable-next-line no-console -- deliberate: this class IS the dev-mode "delivery"
+    console.log(`[dev email] notification for ${to} — ${subject}: ${body}`);
   }
 }

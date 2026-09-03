@@ -2855,6 +2855,34 @@ model scores {
   @@index([score_type], map: "idx_scores_type")
 }
 
+// Epic 15 (Reporting & Notifications) widens this pre-existing, already-
+// RLS-hardened, ported-but-dormant table (0000_init's rls.sql already has
+// its `tenant_isolation` policy; nothing in any verified epic wrote to it
+// before this one — same "reuse the pre-existing hardened table, widen
+// forward, never invent a parallel one" precedent Epic 18 already set for
+// `white_label_configs`, see @bebest/database DECISIONS.md's Epic 18
+// section) rather than creating a second `reports`-shaped table under a new
+// name. `type`/`format`/`status`/`name`/`metadata`/`file_path`/
+// `created_by`/`completed_at` are the untouched legacy columns; `period_
+// start`/`period_end`/`generated_at`/`content` are this epic's additions —
+// see docs/epics/15-reporting-notifications.md's literal domain model.
+//
+// `content` is the non-negotiable: the FULL assembled report data, written
+// once at generation time and NEVER re-derived on read — a report generated
+// today must render identically next month even if the brand's live scores
+// change (see `lib/reporting/generate-report.ts`'s own header comment and
+// `lib/reporting/immutability.test.ts` for the explicit proof). `file_path`
+// (legacy) doubles as this epic's `pdf_url` — PDF export is documented
+// nice-to-have, never blocking (this epic's spec, verbatim); nothing in
+// this build ever writes it, so it stays `null` on every row today.
+// `type` keeps its legacy `String @db.VarChar(50)` shape rather than a new
+// Prisma enum (Prisma enums cannot be added to an already-shipped column
+// without a data migration this package never runs against a real
+// database) — the closed `weekly|monthly|custom|baseline_comparison`
+// vocabulary is enforced by `chk_reports_type`
+// (`prisma/migrations/0018_reporting_notifications/checks.sql`), same
+// "CHECK constraint on a genuinely closed VARCHAR taxonomy" discipline
+// every other epic in this schema already follows (DECISIONS.md §6).
 model reports {
   id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organization_id String        @db.Uuid
@@ -2865,6 +2893,12 @@ model reports {
   status          run_status
   file_path       String?       @db.VarChar(500)
   metadata        Json?
+  // ── Epic 15 additions ────────────────────────────────────────────────
+  period_start  DateTime @db.Timestamptz(6)
+  period_end    DateTime @db.Timestamptz(6)
+  generated_at  DateTime @default(now()) @db.Timestamptz(6)
+  content       Json
+  // ─────────────────────────────────────────────────────────────────────
   created_by      String        @db.Uuid
   created_at      DateTime      @default(now()) @db.Timestamptz(6)
   completed_at    DateTime?     @db.Timestamptz(6)
@@ -2874,6 +2908,7 @@ model reports {
 
   @@index([brand_id], map: "idx_reports_brand")
   @@index([type], map: "idx_reports_type")
+  @@index([organization_id, brand_id, type, generated_at(sort: Desc)], map: "idx_reports_org_brand_type_generated")
 }
 
 // ============================================================================
@@ -4572,18 +4607,47 @@ model notification_preferences {
   @@index([user_id], map: "idx_notif_prefs_user")
 }
 
+// Epic 15 (Reporting & Notifications) widens this pre-existing, already-
+// RLS-hardened, ported-but-dormant table (0000_init's rls.sql already has
+// its `tenant_isolation` policy) — same reuse-forward precedent as
+// `reports` above. Two changes from the legacy shape:
+//   - `user_id` NOT NULL -> nullable: this epic's domain model explicitly
+//     distinguishes an org-wide notification (`user_id: null` — e.g. a
+//     `competitor_alert` visible to every member) from a per-user one (e.g.
+//     `weekly_digest`/`report_ready`, addressed to whoever generated or is
+//     entitled to see it). `onDelete` changes Cascade -> SetNull to match:
+//     deleting a user should never silently delete an org-wide audit trail
+//     row, and a per-user row losing its user still has a real
+//     organization_id to stay governed by RLS under.
+//   - `channel notif_channel` (was previously only a column on
+//     `notification_preferences`, never on `notifications` itself) and
+//     `sent_at` are added — the spec's literal `channel: in_app|email` +
+//     `sent_at` domain-model fields. `lib/notifications/notify.ts` writes
+//     ONE row per channel actually attempted (an in_app row is always
+//     written; an email row is written only when a per-user recipient's
+//     address is resolvable — see that file's own header comment for the
+//     honest scope boundary on org-wide email fan-out).
+// Per-user VISIBILITY within an org (a `user_id: null` row is visible to
+// every member, a `user_id: <uuid>` row only to that member) is enforced at
+// the application layer (`routes/notifications.ts`'s own WHERE clause), not
+// by RLS — RLS's `tenant_isolation` policy here (like every other table's)
+// only ever enforces the organization_id boundary, the one thing ADR-005
+// makes a hard DB-level guarantee; same-org, different-member visibility is
+// not a tenant-isolation concern in the sense RLS exists for.
 model notifications {
   id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id         String            @db.Uuid
+  user_id         String?           @db.Uuid
   organization_id String            @db.Uuid
   type            notification_type
+  channel         notif_channel     @default(in_app)
   title           String            @db.VarChar(255)
   body            String?
   action_url      String?           @db.VarChar(500)
   read_at         DateTime?         @db.Timestamptz(6)
+  sent_at         DateTime?         @db.Timestamptz(6)
   created_at      DateTime          @default(now()) @db.Timestamptz(6)
   organizations   organizations     @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users           users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           users?            @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([organization_id], map: "idx_notifications_org")
   @@index([user_id, read_at, created_at(sort: Desc)], map: "idx_notifications_user")
@@ -4891,6 +4955,20 @@ enum notification_type {
   report_ready
   action_assigned
   billing_alert
+  // Epic 15 (Reporting & Notifications) additions — the spec's own literal
+  // domain-model examples (`report_ready|weekly_digest|competitor_alert|
+  // entitlement_warning|...`). `weekly_digest` is used specifically for a
+  // generated `type: 'weekly'` report (distinct from the generic
+  // `report_ready` used for monthly/custom/baseline_comparison — see
+  // `lib/reporting/notify-for-report.ts`); `entitlement_warning` is added
+  // now for the same "domain model names it, add the enum value outright,
+  // schema never applied to a database yet" reasoning
+  // `unified_opportunity_type`'s `content`/`technical` values already used
+  // (DECISIONS.md), but has no live caller in this build — an honest,
+  // documented scope boundary (this epic's backend doc's "what's not
+  // done").
+  weekly_digest
+  entitlement_warning
 }
 
 enum opportunity_status {

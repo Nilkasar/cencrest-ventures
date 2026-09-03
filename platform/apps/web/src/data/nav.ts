@@ -55,7 +55,7 @@ export const navGroups: NavGroup[] = [
       { href: "/agents", label: "Agents", icon: Bot },
       { href: "/actions", label: "Actions", icon: ListChecks },
       { href: "/content", label: "Content", icon: FileText },
-      { href: "/reports", label: "Reports", icon: BarChart3, epic: 15 },
+      { href: "/reports", label: "Reports", icon: BarChart3 },
     ],
   },
   {
