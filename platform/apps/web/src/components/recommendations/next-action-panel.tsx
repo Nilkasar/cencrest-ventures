@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Sparkles } from "lucide-react";
-import { Badge, Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton } from "@bebest/ui";
+import { ChevronDown, ChevronRight, FileText, Sparkles } from "lucide-react";
+import { Badge, Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, useToast } from "@bebest/ui";
 import type { Recommendation, RecommendationStatus } from "@/data/recommendations/types";
 import {
   ACTION_TYPE_BADGE_VARIANT,
@@ -14,8 +14,23 @@ import {
   RECOMMENDATION_STATUS_LABEL,
   splitImplementationNotes,
 } from "@/data/recommendations/labels";
+import { generateContentBrief } from "@/data/content/client";
+import { PendingActionPanel } from "@/components/agents/pending-action-panel";
+import type { AgentPendingAction } from "@/data/agents/types";
 
 const STATUS_OPTIONS: RecommendationStatus[] = ["new", "in_progress", "completed", "dismissed"];
+
+/** Epic 11's entry point: a content brief is generated FROM an approved,
+ *  content-type recommendation (`create_page`/`update_page` — the two
+ *  action types that actually produce written content, per
+ *  `apps/api/src/lib/content/brief-builder.ts`'s `isContentTypeRecommendation`).
+ *  Kept as a client-side mirror of that same distinction rather than a
+ *  second server round trip just to ask "can I brief this?" — the server
+ *  re-checks (409/422) regardless, this only decides whether the button
+ *  renders at all. */
+function isContentTypeAction(actionType: Recommendation["actionType"]): boolean {
+  return actionType === "create_page" || actionType === "update_page";
+}
 
 /**
  * Epic 10 (Recommendation Engine)'s "next action" — inline on Epic 9's
@@ -35,6 +50,8 @@ export function NextActionPanel({
   updatingStatus,
   onStatusChange,
   onViewEvidence,
+  pendingAction,
+  onApprovePendingAction,
 }: {
   recommendation: Recommendation | undefined;
   loading: boolean;
@@ -43,8 +60,36 @@ export function NextActionPanel({
   updatingStatus: boolean;
   onStatusChange: (status: RecommendationStatus) => void;
   onViewEvidence: () => void;
+  /** Epic 12's Level 3 one-click approval for the agent action (if any)
+   *  proposed FROM this opportunity's recommendation — see
+   *  `recommendation-card.tsx`'s identical prop for the full rationale.
+   *  `undefined` when no agent has proposed anything for it. */
+  pendingAction?: AgentPendingAction;
+  onApprovePendingAction?: () => Promise<void>;
 }) {
   const [showNotes, setShowNotes] = useState(false);
+  const [generatingBrief, setGeneratingBrief] = useState(false);
+  const { toast } = useToast();
+
+  async function handleGenerateContentBrief() {
+    if (!recommendation) return;
+    setGeneratingBrief(true);
+    try {
+      const { created } = await generateContentBrief(recommendation.id);
+      toast({
+        title: created ? "Content brief generated" : "Content brief refreshed",
+        description: "Carries forward this recommendation's full SEO+GEO requirements. Review it on the Content screen.",
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't generate a content brief",
+        description: err instanceof Error ? err.message : "Something went wrong — try again.",
+        variant: "danger",
+      });
+    } finally {
+      setGeneratingBrief(false);
+    }
+  }
 
   if (loading) {
     return <Skeleton className="h-9 w-full rounded-lg" />;
@@ -88,6 +133,10 @@ export function NextActionPanel({
 
       <p className="text-[12.5px] text-muted-foreground leading-relaxed">{recommendation.evidenceSummary}</p>
 
+      {pendingAction && onApprovePendingAction && (
+        <PendingActionPanel pendingAction={pendingAction} onApprove={onApprovePendingAction} compact />
+      )}
+
       <div className="flex items-center gap-3 flex-wrap">
         <Select
           value={recommendation.status}
@@ -124,6 +173,11 @@ export function NextActionPanel({
         <Button variant="ghost" size="sm" loading={generating} onClick={onGenerate}>
           Regenerate
         </Button>
+        {isContentTypeAction(recommendation.actionType) && (
+          <Button variant="outline" size="sm" loading={generatingBrief} onClick={handleGenerateContentBrief}>
+            <FileText size={13} /> Generate content brief
+          </Button>
+        )}
       </div>
 
       {showNotes && (

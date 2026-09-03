@@ -9,6 +9,8 @@ import { useAsyncData } from "@/lib/use-async-data";
 import { listRecommendations, updateRecommendationStatus } from "@/data/recommendations/client";
 import type { Recommendation, RecommendationActionType, RecommendationStatus } from "@/data/recommendations/types";
 import { ACTION_TYPE_LABEL, RECOMMENDATION_STATUS_LABEL } from "@/data/recommendations/labels";
+import { approvePendingAction, listPendingActionsByRecommendationId } from "@/data/agents/client";
+import type { AgentPendingAction } from "@/data/agents/types";
 import { RecommendationCard } from "./recommendation-card";
 
 const STATUS_FILTERS: Array<RecommendationStatus | "all"> = ["all", "new", "in_progress", "completed", "dismissed"];
@@ -56,6 +58,29 @@ export function RecommendationsView() {
 
   const { toast } = useToast();
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  // Epic 12 — Level 3's one-click approval, surfaced inline here rather than
+  // a separate approval inbox (that epic's own UI-surface requirement). A
+  // best-effort join, not this screen's primary data — see
+  // `listPendingActionsByRecommendationId`'s header comment for why this is
+  // an N+1 fetch over a small, recent window rather than a single request.
+  const { reload: reloadPendingActions, ...pendingActionsState } = useAsyncData(() => listPendingActionsByRecommendationId(), []);
+  const pendingActionsByRecommendationId: Map<string, { pendingAction: AgentPendingAction; agentRunId: string }> =
+    pendingActionsState.status === "success" ? pendingActionsState.data : new Map();
+
+  async function handleApprovePendingAction(agentRunId: string) {
+    try {
+      await approvePendingAction(agentRunId);
+      toast({ title: "Action approved", description: "A 30-day rollback window has started. This has not published anything." });
+      reloadPendingActions();
+    } catch (err) {
+      toast({
+        title: "Couldn't approve that action",
+        description: err instanceof Error ? err.message : "Something went wrong — try again.",
+        variant: "danger",
+      });
+    }
+  }
 
   const filtersActive = statusFilter !== "all" || actionTypeFilter !== "all";
 
@@ -167,14 +192,19 @@ export function RecommendationsView() {
 
           {state.status === "success" && state.data.recommendations.length > 0 && (
             <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
-              {state.data.recommendations.map((recommendation) => (
-                <RecommendationCard
-                  key={recommendation.id}
-                  recommendation={recommendation}
-                  updating={updatingId === recommendation.id}
-                  onStatusChange={handleStatusChange}
-                />
-              ))}
+              {state.data.recommendations.map((recommendation) => {
+                const pending = pendingActionsByRecommendationId.get(recommendation.id);
+                return (
+                  <RecommendationCard
+                    key={recommendation.id}
+                    recommendation={recommendation}
+                    updating={updatingId === recommendation.id}
+                    onStatusChange={handleStatusChange}
+                    pendingAction={pending?.pendingAction}
+                    onApprovePendingAction={pending ? () => handleApprovePendingAction(pending.agentRunId) : undefined}
+                  />
+                );
+              })}
             </div>
           )}
         </CardContent>

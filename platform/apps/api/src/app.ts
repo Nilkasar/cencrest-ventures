@@ -30,6 +30,12 @@ import opportunityDetails from './routes/opportunity-details.js';
 import opportunityRecommendations from './routes/opportunity-recommendations.js';
 import recommendations from './routes/recommendations.js';
 import recommendationDetails from './routes/recommendation-details.js';
+import contentBriefGenerate from './routes/content-brief-generate.js';
+import contentBriefs from './routes/content-briefs.js';
+import contentBriefDetails from './routes/content-brief-details.js';
+import contentDrafts from './routes/content-drafts.js';
+import agents from './routes/agents.js';
+import agentRunDetails from './routes/agent-run-details.js';
 import plans from './routes/plans.js';
 import subscription from './routes/subscription.js';
 import billingWebhooks from './routes/billing-webhooks.js';
@@ -178,6 +184,33 @@ app.route('/api/opportunities', opportunityDetails);
 app.route('/api/opportunities', opportunityRecommendations);
 app.route('/api/brands/me/recommendations', recommendations);
 app.route('/api/recommendations', recommendationDetails);
+
+// Epic 11 — Content Intelligence & Generation. A brief is generated FROM an
+// approved, content-type recommendation (`opportunity_recommendations`
+// above) — `contentBriefGenerate` mounts at the SAME `/api/recommendations`
+// base as `recommendationDetails`, same "second router, same base path"
+// precedent Epic 10 itself uses at `/api/opportunities`. Draft generation
+// (mocked `AIProviderRegistry`, versioned — never overwrites) and the
+// quality-checks/approve endpoints are id-addressed, not a brand's, same
+// convention `/api/crawl-jobs/:id`/`/api/ai-runs/:id`/`/api/recommendations/
+// :id` already use. ADR-007: this epic never publishes — ends at "approved,
+// ready to publish," Epic 13's concern from there.
+app.route('/api/recommendations', contentBriefGenerate);
+app.route('/api/brands/me/content-briefs', contentBriefs);
+app.route('/api/content-briefs', contentBriefDetails);
+app.route('/api/content-drafts', contentDrafts);
+
+// Epic 12 — GEO Agent / SEO Agent / Growth Agent. Each agent is a thin
+// orchestrator over Epics 5/7/8/9/10's already-built engines (see
+// `lib/agents/*`) — spec's literal `POST /brands/:id/agents/:agentName/run`
+// is adapted to `/brands/me/...`, same single-brand-per-org convention as
+// every route above; `/api/agent-runs/:id` (+ `/approve`) matches the spec
+// exactly — an `agent_runs` row is addressed by its own id, not a brand's,
+// same convention `/api/ai-runs/:id`/`/api/crawl-jobs/:id` already use.
+// Autonomy Level 4 is hard-blocked in `lib/agents/autonomy.ts`, not in this
+// routing layer.
+app.route('/api/brands/me/agents', agents);
+app.route('/api/agent-runs', agentRunDetails);
 
 // Epic 16 — Billing. `plans` is public reference data (no auth) for a
 // pricing/upgrade UI. `/api/orgs/me/subscription` follows the same

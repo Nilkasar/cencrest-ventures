@@ -14,6 +14,8 @@ import {
   splitImplementationNotes,
 } from "@/data/recommendations/labels";
 import { EvidenceTrailPanel, useEvidenceTrail } from "@/components/opportunities/evidence-trail";
+import { PendingActionPanel } from "@/components/agents/pending-action-panel";
+import type { AgentPendingAction } from "@/data/agents/types";
 import { formatDate } from "@/lib/format";
 
 const STATUS_OPTIONS: RecommendationStatus[] = ["new", "in_progress", "completed", "dismissed"];
@@ -33,10 +35,20 @@ export function RecommendationCard({
   recommendation,
   updating,
   onStatusChange,
+  pendingAction,
+  onApprovePendingAction,
 }: {
   recommendation: Recommendation;
   updating: boolean;
   onStatusChange: (recommendation: Recommendation, status: RecommendationStatus) => void;
+  /** Epic 12's Level 3 one-click approval, joined in by
+   *  `recommendations-view.tsx` via `listPendingActionsByRecommendationId`
+   *  when an agent run proposed a content brief FROM this exact
+   *  recommendation — `undefined` when no agent has proposed anything for
+   *  it. Surfaced inline here rather than a separate approval inbox, per
+   *  that epic's UI-surface requirement. */
+  pendingAction?: AgentPendingAction;
+  onApprovePendingAction?: () => Promise<void>;
 }) {
   const [showEvidence, setShowEvidence] = useState(false);
   const { state: evidenceState, load: loadEvidence } = useEvidenceTrail(recommendation.opportunityId);
@@ -86,6 +98,10 @@ export function RecommendationCard({
       <p className="text-[12.5px] text-foreground leading-relaxed rounded-lg border border-border bg-surface px-3 py-2.5">
         {recommendation.evidenceSummary}
       </p>
+
+      {pendingAction && onApprovePendingAction && (
+        <PendingActionPanel pendingAction={pendingAction} onApprove={onApprovePendingAction} compact />
+      )}
 
       <div className="flex items-center gap-3 flex-wrap">
         <Select value={recommendation.status} onValueChange={(v) => onStatusChange(recommendation, v as RecommendationStatus)} disabled={updating}>

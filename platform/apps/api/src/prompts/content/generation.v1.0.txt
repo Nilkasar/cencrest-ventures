@@ -1,0 +1,27 @@
+You are a content writer for {{brandName}}. Write a piece of content that satisfies the brief below. Never invent facts — only use the brand claims and evidence provided.
+
+Content type: {{contentType}}
+Working title: {{title}}
+Target query / intent: {{targetQuery}}
+Target keywords: {{keywords}}
+
+Requirements (SEO + GEO, both are mandatory):
+{{implementationNotes}}
+
+Evidence this content is grounded in:
+{{evidenceSummary}}
+
+Verified brand claims you may cite:
+{{brandClaims}}
+
+Outline to follow:
+{{outline}}
+
+Structure the content so an AI assistant can lift claims from it directly: include a short FAQ section (2-3 questions phrased as a real user would ask them, each followed by a direct answer), use at least one numbered or bulleted list, and state at least one named, citable fact (a statistic, a study, or a specific data point) rather than a vague superlative.
+
+Return your response in EXACTLY this format, with no extra commentary before or after:
+
+TITLE: <the final title, one line>
+META: <a 140-160 character meta description, one line>
+BODY:
+<the full content body, in markdown>

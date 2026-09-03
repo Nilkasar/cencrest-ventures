@@ -117,6 +117,10 @@ model organizations {
   competitors               competitors[]
   content_analyses          content_analyses[]
   content_briefs            content_briefs[]
+  // Epic 11 (Content Intelligence & Generation) additions
+  content_drafts            content_drafts[]
+  content_quality_checks    content_quality_checks[]
+  content_approvals         content_approvals[]
   crawl_jobs                crawl_jobs[]
   crm_contacts              crm_contacts[]
   crm_notes                 crm_notes[]
@@ -148,6 +152,11 @@ model organizations {
   opportunity_evidence      opportunity_evidence[]
   // Epic 10 (Recommendation Engine) addition
   opportunity_recommendations opportunity_recommendations[]
+  // Epic 12 (Agents) additions — NOT the legacy geo_agent_runs/seo_agent_runs/
+  // growth_agent_runs above (see the model's own header comment).
+  agent_runs                agent_runs[]
+  agent_events              agent_events[]
+  agent_pending_actions     agent_pending_actions[]
   learning_insights         learning_insights[]
   learning_signals          learning_signals[]
   marketing_campaigns       marketing_campaigns[]
@@ -268,6 +277,9 @@ model users {
   sessions                    sessions[]
   content_briefs_created      content_briefs[]           @relation("content_briefs_created_by")
   content_briefs_updated      content_briefs[]           @relation("content_briefs_updated_by")
+  // Epic 11 (Content Intelligence & Generation) additions
+  content_drafts_created      content_drafts[]           @relation("content_drafts_created_by")
+  content_approvals_approved  content_approvals[]        @relation("content_approvals_approved_by")
   gap_analysis_updated        gap_analysis[]
   opportunities_updated       opportunities[]
   white_label_configs_created white_label_configs[]
@@ -283,6 +295,10 @@ model users {
   unified_opportunities_updated unified_opportunities[]  @relation("unified_opportunities_updated_by")
   // Epic 10 (Recommendation Engine) addition
   opportunity_recommendations_updated opportunity_recommendations[] @relation("opportunity_recommendations_updated_by")
+  // Epic 12 (Agents) addition — who clicked "approve" on a Level 3 pending
+  // action.
+  agent_runs_triggered      agent_runs[]     @relation("agent_runs_triggered_by")
+  agent_pending_actions_approved agent_pending_actions[] @relation("agent_pending_actions_approved_by")
   // Epic 18 (Agency / White Label / Integrations) additions — the
   // consent/invitation lifecycle `agency_clients` gained (see that model's
   // own comment + DECISIONS.md): who on the agency side sent the
@@ -1304,6 +1320,10 @@ model brands {
   competitors             competitors[]
   content_analyses        content_analyses[]
   content_briefs          content_briefs[]
+  // Epic 11 (Content Intelligence & Generation) additions
+  content_drafts          content_drafts[]
+  content_quality_checks  content_quality_checks[]
+  content_approvals       content_approvals[]
   crawl_jobs              crawl_jobs[]
   entities                entities[]
   experiment_measurements experiment_measurements[]
@@ -1327,6 +1347,11 @@ model brands {
   unified_opportunities   unified_opportunities[]
   // Epic 10 (Recommendation Engine) addition
   opportunity_recommendations opportunity_recommendations[]
+  // Epic 12 (Agents) additions — NOT the legacy geo_agent_runs/seo_agent_runs/
+  // growth_agent_runs above (see the model's own header comment).
+  agent_runs              agent_runs[]
+  agent_events            agent_events[]
+  agent_pending_actions   agent_pending_actions[]
   learning_insights       learning_insights[]
   learning_signals        learning_signals[]
   measurement_annotations measurement_annotations[]
@@ -3328,6 +3353,10 @@ model opportunity_recommendations {
   brands                brands                @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   unified_opportunities unified_opportunities @relation(fields: [opportunity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   updated_by_user       users?                @relation("opportunity_recommendations_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  // Epic 11 (Content Intelligence & Generation) addition — a content brief
+  // is generated FROM one approved, content-type recommendation (real FK,
+  // not a copy of its fields).
+  content_briefs        content_briefs[]
 
   // The idempotency key this epic's DoD explicitly tests (step 3: re-run
   // generation, confirm no duplicate row): one recommendation per
@@ -3343,31 +3372,243 @@ model opportunity_recommendations {
 // ============================================================================
 
 model content_briefs {
-  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organization_id   String              @db.Uuid
-  brand_id          String              @db.Uuid
-  page_id           String?             @db.Uuid
-  content_type      String              @db.VarChar(50)
-  title             String              @db.VarChar(500)
-  target_query      String?
-  target_stage      String?             @db.VarChar(50)
-  target_intent     String?             @db.VarChar(50)
-  keywords          String[]            @default([])
-  outline           Json                @default("[]")
-  status            String              @default("draft") @db.VarChar(50) // draft, in_review, approved, archived — see checks.sql
-  created_by        String?             @db.Uuid // nullable: many briefs are agent-generated, not human-authored
-  updated_by        String?             @db.Uuid
-  created_at        DateTime            @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime            @default(now()) @db.Timestamptz(6)
-  deleted_at        DateTime?           @db.Timestamptz(6)
-  organizations     organizations       @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  brands            brands              @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  pages             pages?              @relation(fields: [page_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  created_by_user   users?              @relation("content_briefs_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  updated_by_user   users?              @relation("content_briefs_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  generated_content generated_content[]
-  geo_agent_actions geo_agent_actions[]
-  seo_agent_actions seo_agent_actions[]
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String @db.Uuid
+  brand_id        String @db.Uuid
+  page_id         String? @db.Uuid
+  // Epic 11 (Content Intelligence & Generation) addition — this epic's own
+  // domain-model requirement ("generated FROM a recommendation, real
+  // recommendation_id FK, not a copy"): the SOURCE `opportunity_recommendations`
+  // row this brief was generated from. Required (a brief always starts from
+  // a recommendation in this epic — there is no other entry point) and
+  // Restrict (not Cascade): a brief is a durable artifact of its own once
+  // drafts/approvals exist under it; the recommendation being later
+  // dismissed/completed must not be able to cascade-delete a brief a human
+  // may already be reviewing drafts against.
+  recommendation_id String @db.Uuid
+  // Denormalized copies of the recommendation's `evidence_summary`/
+  // `implementation_notes` AT BRIEF-CREATION TIME — same "snapshot, don't
+  // re-read live" reasoning `ai_runs.providers`/`unified_opportunities.intent_text`
+  // already use elsewhere in this schema: a later status change or
+  // regeneration of the source recommendation must never retroactively
+  // change what an already-generated brief says it was built from.
+  // `implementation_notes` is what carries the dual SEO+GEO requirement
+  // forward verbatim (this epic's end-to-end flow step 1's literal
+  // assertion) — never re-summarized/stripped down.
+  evidence_summary     String
+  implementation_notes String
+  // Step 2 of this epic's generation pipeline ("Research evidence and
+  // claims — pull from brand_claims [Epic 2], opportunity_evidence [Epic 9]")
+  // made visible/auditable rather than silently discarded once the outline
+  // is built: `{ brandClaims: [{id, claim, confidence}], opportunityEvidence:
+  // [{sourceTable, summary}] }`. See apps/api/src/lib/content/brief-builder.ts.
+  research_notes Json @default("{}")
+  content_type   String @db.VarChar(50)
+  title          String @db.VarChar(500)
+  target_query   String?
+  target_stage   String?  @db.VarChar(50)
+  target_intent  String?  @db.VarChar(50)
+  keywords       String[] @default([])
+  outline        Json     @default("[]")
+  status         String   @default("draft") @db.VarChar(50) // draft, in_review, approved, archived — see checks.sql
+  created_by     String?  @db.Uuid // nullable: many briefs are agent-generated, not human-authored
+  updated_by     String?  @db.Uuid
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @default(now()) @db.Timestamptz(6)
+  deleted_at     DateTime? @db.Timestamptz(6)
+
+  organizations         organizations               @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands                brands                      @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  pages                 pages?                      @relation(fields: [page_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  opportunity_recommendations opportunity_recommendations @relation(fields: [recommendation_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  created_by_user       users?                      @relation("content_briefs_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  updated_by_user       users?                      @relation("content_briefs_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  generated_content     generated_content[]
+  // Epic 11 (Content Intelligence & Generation) addition — see this file's
+  // own header comment on `content_drafts` for why this is a NEW table
+  // rather than a retrofit of the pre-existing `generated_content` above.
+  content_drafts        content_drafts[]
+  geo_agent_actions     geo_agent_actions[]
+  seo_agent_actions     seo_agent_actions[]
+
+  // One brief per recommendation, ever — same idempotency discipline this
+  // epic's own upstream table (`opportunity_recommendations`, §24) and
+  // Epic 9's `unified_opportunities` already establish: `POST
+  // /recommendations/:id/content-brief` upserts against this key, so a
+  // second call updates the existing brief rather than creating a sibling.
+  @@unique([organization_id, recommendation_id], map: "uq_content_briefs_recommendation")
+  @@index([recommendation_id], map: "idx_content_briefs_recommendation")
+  @@index([organization_id, brand_id, status], map: "idx_content_briefs_brand_status")
+}
+
+// Epic 11 (Content Intelligence & Generation) — VERSIONED draft content
+// (`docs/epics/11-content-intelligence-generation.md`'s literal domain
+// model: "content_drafts — generated content versions (plural — regenerating
+// creates a new version, never overwrites)").
+//
+// **Why this is a NEW table, not the pre-existing `generated_content`
+// below** (checked directly against schema.prisma first, per the recurring
+// "do not guess" rule, per this epic's own task brief: "check schema.prisma
+// first, may already have some of this ported"). `generated_content` was
+// already ported in Epic 0 from `docs/06-database/SCHEMA.md`'s Content
+// section, but its column set has no `version`/`prompt_version` at all —
+// retrofitting the versioning this epic's DoD explicitly tests
+// ("regenerating creates version 2, version 1 remains readable, never
+// overwritten") onto it would be the exact same schema surgery as adding a
+// new table, with none of the upside: `generated_content.status`'s existing
+// vocabulary (`draft|approved|published|rejected`) already contemplates a
+// `'published'` state, which is precisely the ADR-007 boundary this epic
+// must never cross (its own DoD: "no code path in this epic calls anything
+// resembling a publish action" — a table this epic writes to should not
+// even have a `'published'` value in its own vocabulary to accidentally
+// reach). `generated_content` is therefore left completely untouched here —
+// same "a different, wrong-shaped table for a different concern, left
+// alone" resolution DECISIONS.md's §22/§24 already use for `opportunities`/
+// `recommendations` — available for whichever future use (Epic 12's agent
+// output, most likely) actually wants its current shape.
+model content_drafts {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String @db.Uuid
+  brand_id        String @db.Uuid
+  // Cascade: a draft is generated FROM its brief and has no independent
+  // meaning without it — same composition-child reasoning `opportunity_evidence`
+  // (DECISIONS.md §5/§22) and `generated_content.brief_id` itself already get.
+  brief_id String @db.Uuid
+  // 1, 2, 3, ... per `brief_id` — `POST /content-briefs/:id/draft` always
+  // INSERTS the next version, never updates an existing row (this epic's
+  // explicit "never overwrites" requirement). `@@unique([brief_id, version])`
+  // below is both the ordering guarantee and the idempotent-version-number
+  // assignment's collision guard.
+  version Int
+  // ADR-006 evidence-traceability contract, same fields/reasoning
+  // `ai_run_responses` already carries for Epic 7's GEO calls — this is
+  // "every other AI call in this system" this epic's own end-to-end flow
+  // step 2 explicitly requires be true here too. `provider_name`/`model_name`
+  // from `CompletionResult.provider`/`.model`; `prompt_version` REQUIRED,
+  // never null (`CompletionRequest.promptVersion` is a required field on
+  // the `@bebest/ai-provider` contract itself).
+  provider_name String @db.VarChar(100)
+  model_name    String? @db.VarChar(100)
+  prompt_version String @db.VarChar(50)
+  title            String? @db.VarChar(500)
+  body             String
+  meta_description String?
+  word_count       Int @default(0)
+  // Whether the draft's own body contains schema.org-shaped structured
+  // markup guidance (e.g. an explicit FAQ block) — read by the `seo_checklist`
+  // quality check (reuses Epic 4's `runContentChecklist`, which expects a
+  // `schema_types`-shaped signal) rather than that check re-deriving it.
+  structured_data_types String[] @default([])
+  // generated | approved — never 'published' in this epic (see this model's
+  // header comment); a draft's status only ever reaches "approved, ready to
+  // publish," which Epic 13 is what actually acts on. See checks.sql.
+  status String @default("generated") @db.VarChar(20)
+  // Tracing fields from `CompletionResult`, same as `ai_run_responses`.
+  request_id        String? @db.VarChar(100)
+  tokens_prompt     Int?
+  tokens_completion Int?
+  tokens_total      Int?
+  latency_ms        Int?
+  // Who triggered `POST /content-briefs/:id/draft` — nullable + SetNull,
+  // same "no human author for an agent-triggered generation" precedent
+  // `content_briefs.created_by` itself already documents. Also this epic's
+  // RBAC "editor may approve only a draft they themselves authored" check
+  // (`opts.isOwnResource` in `lib/rbac.ts`'s `approve_content`) — see
+  // `routes/content-drafts.ts`.
+  created_by String? @db.Uuid
+  generated_at DateTime @default(now()) @db.Timestamptz(6)
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @default(now()) @db.Timestamptz(6)
+  deleted_at   DateTime? @db.Timestamptz(6)
+
+  organizations          organizations            @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands                 brands                   @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  content_briefs         content_briefs           @relation(fields: [brief_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  created_by_user        users?                   @relation("content_drafts_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  content_quality_checks content_quality_checks[]
+  content_approvals      content_approvals?
+
+  @@unique([brief_id, version], map: "uq_content_drafts_brief_version")
+  @@index([organization_id, brand_id], map: "idx_content_drafts_brand")
+}
+
+// Epic 11 addition — every quality check's OWN result, stored individually
+// (this epic's explicit DoD: "every check's result stored, not just a
+// pass/fail flag... a reviewer approving a draft needs to see what was
+// checked, not just that something was"). One row per (draft, check_type)
+// per generation — `POST /content-briefs/:id/draft` runs all 5 checks
+// (fact_check, brand_voice, duplicate_content, seo_checklist, geo_structure
+// — this epic's spec's literal list) and inserts one row each, read back via
+// `GET /content-drafts/:id/quality-checks`.
+model content_quality_checks {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String @db.Uuid
+  brand_id        String @db.Uuid
+  // Cascade: a check result has zero independent meaning once its draft is
+  // gone — true composition child, same reasoning as `content_drafts.brief_id`.
+  draft_id String @db.Uuid
+  // fact_check | brand_voice | duplicate_content | seo_checklist |
+  // geo_structure — see apps/api/src/lib/content/quality-checks.ts.
+  check_type String @db.VarChar(50)
+  // pass | fail | warning — see checks.sql.
+  status  String   @db.VarChar(20)
+  score   Decimal? @db.Decimal(5, 2)
+  // The check's own reasoning/evidence (which brand_claims were checked,
+  // which crawled page collided, which GEO structuring signals were found,
+  // etc.) — never discarded once a status is derived from it.
+  details    Json     @default("{}")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  organizations  organizations  @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands         brands         @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  content_drafts content_drafts @relation(fields: [draft_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([draft_id], map: "idx_content_quality_checks_draft")
+}
+
+// Epic 11 addition — the ADR-007 approval gate itself: "who approved, when,
+// at what draft version" (this epic's literal domain-model bullet). A
+// DEDICATED table, not the pre-existing `publish_jobs` (which already
+// exists in this schema, ported in Epic 0 for Epic 13's later publishing
+// workflow) — `publish_jobs` bundles the approval fields together with
+// `destination`/`published_at`/`published_url`/`publish_log`, i.e. the act
+// of publishing itself, which is exactly the surface this epic's DoD
+// requires be ABSENT from its own code ("no code path in this epic calls
+// anything resembling a publish action... enforced by absence of any
+// publish call, not by convention") — writing into a table literally named
+// `publish_jobs` from this epic's approve endpoint would blur that boundary
+// even though no `destination`/publish field would ever be set. `publish_jobs`
+// is left completely untouched; Epic 13 owns it.
+model content_approvals {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String @db.Uuid
+  brand_id        String @db.Uuid
+  // @unique, not just indexed — ONE approval per draft VERSION, ever. A
+  // second `POST /content-drafts/:id/approve` on an already-approved draft
+  // is idempotent (returns the existing approval, no duplicate row), see
+  // `routes/content-drafts.ts`.
+  draft_id String @unique @db.Uuid
+  // Nullable + SetNull, same convention every other `*_by` actor column in
+  // this schema uses (a deleted user must not block reading historical
+  // approval records) — the actual authorization check happens at approval
+  // TIME in `routes/content-drafts.ts`, this column is the durable record.
+  approved_by String? @db.Uuid
+  // Snapshot of the approver's role AT APPROVAL TIME — an org can change a
+  // member's role later (Epic 0's `membership.role_changed`), which must
+  // never retroactively rewrite what role actually authorized a past
+  // approval, same "snapshot, don't re-read live" reasoning `content_briefs.
+  // evidence_summary` above already documents.
+  approved_role String @db.VarChar(50)
+  notes         String?
+  approved_at   DateTime @default(now()) @db.Timestamptz(6)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  organizations    organizations   @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands           brands          @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  content_drafts   content_drafts  @relation(fields: [draft_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  approved_by_user users?          @relation("content_approvals_approved_by", fields: [approved_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([organization_id, brand_id], map: "idx_content_approvals_brand")
 }
 
 model generated_content {
@@ -3675,6 +3916,198 @@ model growth_levers {
   deleted_at       DateTime?     @db.Timestamptz(6)
   organizations    organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   created_by_user  users?        @relation(fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+}
+
+// ============================================================================
+// EPIC 12 — Agent Runner (GEO Agent / SEO Agent / Growth Agent)
+// ============================================================================
+// docs/epics/12-agents.md's domain model calls for `agent_runs`/`agent_events`
+// — genuinely new tables, NOT the legacy `geo_agent_runs`/`seo_agent_runs`/
+// `growth_agent_runs`/`geo_agent_actions`/`seo_agent_actions` immediately
+// above (checked directly against schema.prisma before writing this, per
+// this epic's own "always verify against schema.prisma directly" instruction
+// — same collision-check discipline DECISIONS.md §16/§19/§20/§21/§22/§24
+// each used for their own new tables). Those five legacy tables model THREE
+// SEPARATE per-agent-type run tables keyed into the OLD, untouched pipeline
+// (`geo_gaps`, the legacy `keywords`/`opportunities`, `content_briefs`) with
+// no event log, no autonomy level, and no approval/rollback mechanics — a
+// different, narrower shape for a different, untouched pipeline, left
+// completely alone (same treatment DECISIONS.md gives every other "old
+// table, new epic" collision). This epic's tables are ONE unified run table
+// across all three agent types (`agent_name` discriminates), a genuinely
+// append-only event log (the spec's own "trust differentiator" requirement
+// — never a single mutable status field), and a dedicated pending-action
+// table for Level 3's one-click-approval + 30-day-rollback mechanics, which
+// nothing in the ported schema modeled at all. `agent_runs`/`agent_events`
+// were confirmed UNCLAIMED names (unlike `opportunities`/`recommendations`/
+// `ai_responses`, the bare names here were never taken by the ported
+// schema), so no disambiguating prefix is needed.
+model agent_runs {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String @db.Uuid
+  brand_id        String @db.Uuid
+
+  // geo_agent | seo_agent | growth_agent — VARCHAR+CHECK (see checks.sql),
+  // same "closed-but-may-grow" treatment `crawl_jobs.status`/`ai_runs.status`
+  // already use (DECISIONS.md §6), not a native enum, in case a later epic
+  // (Content/Research/Competitor/Measurement agents, per
+  // docs/13-agents/AGENT_ARCHITECTURE.md's full agent-type list) adds a
+  // fourth value without a schema migration to widen a Postgres ENUM.
+  agent_name    String @db.VarChar(50)
+  agent_version String @db.VarChar(20)
+
+  status String @default("queued") @db.VarChar(20) // queued | running | completed | failed — see checks.sql
+
+  triggered_by String @db.VarChar(20) // user | schedule | event — see checks.sql
+  // Required when triggered_by = 'user' (checks.sql enforces this — the
+  // human who clicked "run" is the accountable actor, same "triggering is a
+  // human action -> required attribution" rule DECISIONS.md §17/§19 give
+  // `crawl_jobs.created_by`/`ai_runs.created_by`; nullable here rather than
+  // a NOT NULL `created_by` column because a schedule/event trigger
+  // genuinely has no human to attribute to).
+  triggered_by_id String? @db.Uuid
+
+  // 1 | 2 | 3 ONLY — Level 4 is hard-blocked in application code
+  // (`lib/agents/autonomy.ts`'s `assertAutonomyLevelAllowed`, never
+  // bypassable by any config value) AND at this column's own CHECK
+  // constraint (checks.sql: `autonomy_level IN (1, 2, 3)`) as defense in
+  // depth — two independent layers, matching this epic's own "hard-coded
+  // rejection, not a half-wired feature" instruction for autonomy level 4.
+  autonomy_level Int @default(1) @db.SmallInt
+
+  steps_completed Int @default(0)
+  total_steps     Int @default(0)
+  tokens_used     Int @default(0)
+  latency_ms      Int?
+
+  // Free-form pointer to whichever row the run's "complete" event names as
+  // its result (an opportunity, a recommendation, itself) — open, not FK'd
+  // to any one table, same "polymorphic reference, no fixed target" pattern
+  // `actions.source_id`/`opportunity_evidence.source_id` already use in this
+  // schema (DECISIONS.md §6/§22) for exactly this "could point at more than
+  // one kind of table" shape.
+  result_id String? @db.Uuid
+  error     String?
+
+  started_at   DateTime? @db.Timestamptz(6)
+  completed_at DateTime? @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @default(now()) @db.Timestamptz(6)
+
+  // No created_by/updated_by/deleted_at: a "run" is pipeline output exactly
+  // like `ai_runs`/`crawl_jobs` (DECISIONS.md §4's "pipeline table" rule) —
+  // `triggered_by`/`triggered_by_id` above already carry the one piece of
+  // human attribution this table needs.
+  organizations      organizations           @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands             brands                  @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  triggered_by_user  users?                  @relation("agent_runs_triggered_by", fields: [triggered_by_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  agent_events       agent_events[]
+  agent_pending_actions agent_pending_actions[]
+
+  @@index([organization_id], map: "idx_agent_runs_org")
+  @@index([brand_id, agent_name], map: "idx_agent_runs_brand_agent")
+  @@index([brand_id, created_at(sort: Desc)], map: "idx_agent_runs_brand_created")
+  @@index([status], map: "idx_agent_runs_status")
+}
+
+// Append-only event log — genuinely never UPDATEd or DELETEd by application
+// code (no `updated_at`/`deleted_at` at all, unlike almost every other table
+// in this schema) — this IS the literal mechanism behind
+// AGENT_ARCHITECTURE.md's "customers can see what the agent did, step-by-
+// step... a trust differentiator" requirement; a single mutable
+// `agent_runs.status` column could never reconstruct that history.
+model agent_events {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String @db.Uuid
+  brand_id        String @db.Uuid
+  agent_run_id    String @db.Uuid
+
+  // progress | observation | recommendation | draft | action_required |
+  // complete | error — the exact AgentEvent union from
+  // docs/13-agents/AGENT_ARCHITECTURE.md, transcribed as a VARCHAR+CHECK
+  // (see checks.sql) rather than a native enum for the same "may grow"
+  // reasoning as `agent_runs.agent_name`.
+  type    String @db.VarChar(20)
+  message String
+
+  step        Int?
+  total_steps Int?
+
+  // A real ID/link into the underlying engine's own data (an ai_run id, an
+  // opportunity id, a recommendation id, a query id) — this epic's own
+  // explicit requirement ("real evidence, not a vague string"). JSONB, not a
+  // bare UUID column, because the SHAPE of "evidence" differs per event type
+  // (sometimes one id, sometimes a small set — e.g. the competitor ids a gap
+  // finding names) — same "open, extensible" reasoning
+  // `opportunity_evidence.raw_data` already uses for exactly this kind of
+  // per-row-varying payload (DECISIONS.md §22).
+  evidence Json?
+
+  // The event-type-specific payload the interface's discriminated union
+  // carries (`recommendation`, `content`, `action`, `resultId`/`summary`,
+  // `fatal`) — stored once here rather than as a column per event type,
+  // since only one branch of the union is ever populated per row.
+  payload Json?
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  organizations organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands        brands        @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  agent_runs    agent_runs    @relation(fields: [agent_run_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  agent_pending_actions agent_pending_actions[]
+
+  @@index([agent_run_id, created_at], map: "idx_agent_events_run_created")
+  @@index([organization_id], map: "idx_agent_events_org")
+}
+
+// Level 3 ("Approve & Execute") mechanics: a one-click-approvable pending
+// action plus its 30-day rollback window. This epic's spec is explicit that
+// EXECUTION itself is Epic 13's job — this table stops at `approved`, it
+// never flips to any kind of "executed" state, and nothing in this epic's
+// code ever reads this table to actually publish/change anything.
+model agent_pending_actions {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String @db.Uuid
+  brand_id        String @db.Uuid
+  agent_run_id    String @db.Uuid
+  // The specific `action_required` event this row was created from — kept
+  // so `GET /agent-runs/:id` can join a pending action back to the exact
+  // evidence its originating event carried, without duplicating it here.
+  agent_event_id String @db.Uuid
+
+  // A real, checked tool name from the per-agent allowlist
+  // (`lib/agents/tool-permissions.ts`) — e.g. `publish_content`,
+  // `create_content_draft` — never a free-form string an approval route
+  // could be tricked into accepting for a tool this agent was never granted.
+  action_type String  @db.VarChar(50)
+  title       String  @db.VarChar(500)
+  description String?
+  // The concrete thing being proposed (e.g. the recommendation id and its
+  // action_type) — open JSONB, same "payload shape varies per action_type"
+  // reasoning as `agent_events.payload` above.
+  payload Json @default("{}")
+
+  status String @default("pending") @db.VarChar(20) // pending | approved | rejected — see checks.sql
+
+  approved_by String?   @db.Uuid
+  approved_at DateTime? @db.Timestamptz(6)
+  // Set to `approved_at` + 30 days at the moment of approval — the spec's
+  // literal "rollback available for 30 days" as a real, queryable deadline
+  // rather than a comment; Epic 13 (the actual execute/rollback
+  // implementation) reads this column, this epic only ever writes it.
+  rollback_until DateTime? @db.Timestamptz(6)
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  organizations     organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands            brands        @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  agent_runs        agent_runs    @relation(fields: [agent_run_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  agent_events      agent_events  @relation(fields: [agent_event_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  approved_by_user  users?        @relation("agent_pending_actions_approved_by", fields: [approved_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([agent_run_id], map: "idx_agent_pending_actions_run")
+  @@index([organization_id, status], map: "idx_agent_pending_actions_org_status")
 }
 
 // ============================================================================

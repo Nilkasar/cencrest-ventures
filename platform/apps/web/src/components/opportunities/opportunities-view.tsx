@@ -30,6 +30,8 @@ import type { Opportunity, OpportunityPriority, OpportunityStatus, OpportunityTy
 import { OPPORTUNITY_STATUS_LABEL, OPPORTUNITY_TYPE_LABEL, PRIORITY_LABEL, scoreBand, type ScoreBand } from "@/data/opportunities/labels";
 import { generateRecommendation, listRecommendations, updateRecommendationStatus } from "@/data/recommendations/client";
 import type { Recommendation, RecommendationStatus } from "@/data/recommendations/types";
+import { approvePendingAction, listPendingActionsByRecommendationId } from "@/data/agents/client";
+import type { AgentPendingAction } from "@/data/agents/types";
 import { OpportunityCard } from "./opportunity-card";
 
 const STATUS_FILTERS: Array<OpportunityStatus | "all"> = ["all", "new", "in_progress", "completed", "dismissed"];
@@ -98,6 +100,28 @@ export function OpportunitiesView() {
   );
   const [generatingRecommendationId, setGeneratingRecommendationId] = useState<string | null>(null);
   const [updatingRecommendationId, setUpdatingRecommendationId] = useState<string | null>(null);
+
+  // Epic 12 — Level 3's one-click approval, surfaced inline here rather than
+  // a separate approval inbox. See `recommendations-view.tsx`'s identical
+  // join and `listPendingActionsByRecommendationId`'s header comment for the
+  // N+1-over-a-recent-window rationale.
+  const { reload: reloadPendingActions, ...pendingActionsState } = useAsyncData(() => listPendingActionsByRecommendationId(), []);
+  const pendingActionsByRecommendationId: Map<string, { pendingAction: AgentPendingAction; agentRunId: string }> =
+    pendingActionsState.status === "success" ? pendingActionsState.data : new Map();
+
+  async function handleApprovePendingAction(agentRunId: string) {
+    try {
+      await approvePendingAction(agentRunId);
+      toast({ title: "Action approved", description: "A 30-day rollback window has started. This has not published anything." });
+      reloadPendingActions();
+    } catch (err) {
+      toast({
+        title: "Couldn't approve that action",
+        description: err instanceof Error ? err.message : "Something went wrong — try again.",
+        variant: "danger",
+      });
+    }
+  }
 
   const recommendationsByOpportunityId = useMemo(() => {
     const map = new Map<string, Recommendation>();
@@ -355,20 +379,26 @@ export function OpportunitiesView() {
 
           {state.status === "success" && visibleOpportunities.length > 0 && (
             <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
-              {visibleOpportunities.map((opportunity) => (
-                <OpportunityCard
-                  key={opportunity.id}
-                  opportunity={opportunity}
-                  updating={updatingId === opportunity.id}
-                  onStatusChange={handleStatusChange}
-                  recommendation={recommendationsByOpportunityId.get(opportunity.id)}
-                  recommendationLoading={recommendationsState.status === "loading"}
-                  generatingRecommendation={generatingRecommendationId === opportunity.id}
-                  onGenerateRecommendation={handleGenerateRecommendation}
-                  updatingRecommendationStatus={updatingRecommendationId === recommendationsByOpportunityId.get(opportunity.id)?.id}
-                  onRecommendationStatusChange={handleRecommendationStatusChange}
-                />
-              ))}
+              {visibleOpportunities.map((opportunity) => {
+                const recommendation = recommendationsByOpportunityId.get(opportunity.id);
+                const pending = recommendation ? pendingActionsByRecommendationId.get(recommendation.id) : undefined;
+                return (
+                  <OpportunityCard
+                    key={opportunity.id}
+                    opportunity={opportunity}
+                    updating={updatingId === opportunity.id}
+                    onStatusChange={handleStatusChange}
+                    recommendation={recommendation}
+                    recommendationLoading={recommendationsState.status === "loading"}
+                    generatingRecommendation={generatingRecommendationId === opportunity.id}
+                    onGenerateRecommendation={handleGenerateRecommendation}
+                    updatingRecommendationStatus={updatingRecommendationId === recommendation?.id}
+                    onRecommendationStatusChange={handleRecommendationStatusChange}
+                    pendingAction={pending?.pendingAction}
+                    onApprovePendingAction={pending ? () => handleApprovePendingAction(pending.agentRunId) : undefined}
+                  />
+                );
+              })}
             </div>
           )}
         </CardContent>

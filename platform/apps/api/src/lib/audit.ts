@@ -111,4 +111,11 @@ export const ALWAYS_AUDITED_ACTIONS = [
   'agency_client.revoked',
   'integration.connected',
   'integration.disconnected',
+  // Epic 11 (Content Intelligence & Generation) addition — SECURITY.md's
+  // list already names `content.published` (Epic 13's concern); this epic
+  // never publishes, but its own spec explicitly calls out that "the
+  // approval action itself should be logged now" — a human approving a
+  // draft is the privileged decision this epic's whole ADR-007 gate exists
+  // to record, distinct from (and a prerequisite to) the eventual publish.
+  'content.approved',
 ] as const;

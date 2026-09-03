@@ -1521,3 +1521,176 @@ applied to a database. `apps/api`'s consumption (the template-driven
 brief generation, the `action_type`/effort/impact/priority_rank derivation,
 the idempotent generate route, and the three routes) is documented in
 `platform/docs/epics/10-recommendation-engine-backend.md`.
+
+## 25. Epic 11 (Content Intelligence & Generation) schema additions
+
+`docs/epics/11-content-intelligence-generation.md`'s domain model: a content
+brief generated FROM an approved, content-type recommendation (§24's
+`opportunity_recommendations`), then versioned draft generations against
+that brief, each carrying its own stored quality-check results, gated by an
+explicit human approval that never itself publishes anything (ADR-007).
+
+**`content_briefs` already existed** (ported in Epic 0 from
+`docs/06-database/SCHEMA.md`'s Content section — checked directly against
+schema.prisma first, per this epic's own task brief: "check schema.prisma
+first, may already have some of this ported"), but had no way to trace back
+to the recommendation it came from at all. Added: `recommendation_id`
+(required FK -> `opportunity_recommendations`, `Restrict` — a brief is a
+durable artifact of its own once drafts/approvals exist under it, so the
+source recommendation being later dismissed/completed must never be able to
+cascade-delete it), `evidence_summary`/`implementation_notes` (denormalized
+COPIES of the recommendation's own fields, snapshotted at brief-creation
+time — same "snapshot, don't re-read live" reasoning `ai_runs.providers`
+already uses — so a brief keeps saying what it was actually built from even
+if the source recommendation is edited/regenerated later; this is what
+lets the brief "carry forward the recommendation's dual SEO+GEO
+implementation_notes" per this epic's end-to-end flow step 1), and
+`research_notes` (JSON — the brand_claims/opportunity_evidence gathered at
+generation time, this epic's pipeline step 2, made visible/auditable rather
+than silently discarded once the outline is built).
+`@@unique([organization_id, recommendation_id])` — one brief per
+recommendation, ever, same idempotency discipline every generation step in
+this codebase already has (§22's `unified_opportunities`, §24's
+`opportunity_recommendations`).
+
+**`content_drafts` is a NEW table, not a retrofit of the pre-existing
+`generated_content`.** Checked directly against schema.prisma before
+writing this (same "do not guess" rule): `generated_content` was also
+already ported in Epic 0 under the Content Intelligence section, but its
+column set has no `version` or `prompt_version` at all — this epic's DoD
+literally tests "regenerating creates version 2, version 1 remains
+readable, never overwritten," which needs the same schema surgery either
+way. Two further reasons NOT to retrofit it: (1) `generated_content.status`'s
+existing vocabulary is `draft|approved|published|rejected` — a `'published'`
+value in this epic's own draft-status vocabulary is precisely the ADR-007
+line this epic's DoD requires be structurally absent, not just avoided by
+convention; `content_drafts.status` only ever reaches `generated|approved`
+(enforced by `chk_content_drafts_status`). (2) A concurrent epic may still
+want `generated_content`'s current shape for a different purpose (most
+likely Epic 12's agent-generated output, given `geo_agent_actions`/
+`seo_agent_actions` already reference `content_briefs` directly). Same
+"a different, wrong-shaped table for a different concern, left completely
+alone" resolution §22/§24 already use for the legacy `opportunities`/
+`recommendations` tables — `generated_content` (and `publish_jobs`, see
+below) are untouched by this epic. `@@unique([brief_id, version])` is both
+the version-ordering guarantee and the collision guard for `POST
+/content-briefs/:id/draft` always inserting the next version rather than
+computing one racily.
+
+**`content_quality_checks`** — one row per `(draft_id, check_type)` per
+generation, for this epic's explicit DoD requirement that every quality
+check's OWN result be stored, "not just a pass/fail flag... a reviewer
+approving a draft needs to see what was checked, not just that something
+was." `check_type` is CHECK-constrained to the spec's literal 5-check list
+(`fact_check`, `brand_voice`, `duplicate_content`, `seo_checklist`,
+`geo_structure`); `details` (JSON) holds each check's own evidence (which
+brand_claims were checked, which crawled page collided, which GEO
+structuring signals were found), never discarded once a `pass|fail|warning`
+status is derived from it. Cascade from `content_drafts` — a check result
+has zero independent meaning once its draft is gone, same composition-child
+reasoning as `opportunity_evidence` (§5/§22).
+
+**`content_approvals` is a NEW, dedicated table — deliberately NOT the
+pre-existing `publish_jobs`.** `publish_jobs` (also already ported in Epic 0,
+for Epic 13's later publishing workflow) already has `approved_by`/
+`approved_at`/`rejection_reason` columns that look approval-shaped, but they
+sit alongside `destination`/`destination_config`/`published_at`/
+`published_url`/`publish_log` — the act of publishing itself. This epic's
+DoD requires the publish boundary be enforced "by absence of any publish
+call, not by convention": writing this epic's approval into a table
+literally named `publish_jobs`, even never touching its publish-shaped
+columns, blurs exactly the line the DoD asks be structurally clear.
+`content_approvals` has no destination/published/schedule concept anywhere
+in it — `@unique` on `draft_id` (one approval per draft VERSION, ever, per
+this epic's literal domain-model bullet: "who approved, when, at what draft
+version"), `approved_role` snapshotted at approval time (an org changing a
+member's role later must never retroactively rewrite what role actually
+authorized a past approval — same snapshot reasoning `content_briefs.
+evidence_summary` above uses). `publish_jobs` is left completely untouched;
+Epic 13 owns it.
+
+**RLS** — `prisma/migrations/0015_content_intelligence_generation/rls.sql`
+adds the standard `tenant_isolation` policy to the three genuinely new
+tables (`content_briefs` already has one from 0000_init). **CHECK
+constraints** — `.../checks.sql` adds `content_drafts.status` and
+`content_quality_checks.check_type`/`.status`.
+
+As with every other section: `prisma validate`/`generate` only — nothing
+applied to a database. `apps/api`'s consumption (brief generation from an
+approved recommendation, mocked-provider draft generation via
+`AIProviderRegistry`, the five quality checks, and the approve endpoint) is
+documented in
+`platform/docs/epics/11-content-intelligence-generation-backend.md`.
+
+## 26. Epic 12 (GEO Agent / SEO Agent / Growth Agent) schema additions
+
+`docs/epics/12-agents.md`'s domain model calls for `agent_runs`/
+`agent_events` — genuinely new tables. Checked directly against
+schema.prisma first, per this epic's own "always verify against
+schema.prisma directly" instruction: the ported schema already has
+`geo_agent_runs`/`seo_agent_runs`/`growth_agent_runs`/`geo_agent_actions`/
+`seo_agent_actions` (three separate per-agent-type run tables, keyed into
+the legacy `geo_gaps`/legacy `opportunities`/legacy `keywords`/
+`content_briefs` pipeline, with no event log, no autonomy level, and no
+approval/rollback mechanics), but the bare names `agent_runs`/
+`agent_events` themselves were confirmed UNCLAIMED — unlike
+`opportunities`/`recommendations`/`ai_responses`, no disambiguating prefix
+was needed here. All five legacy tables are left completely untouched, same
+treatment every other "old table, new epic" collision in this document
+gets.
+
+**Three new tables**, all following the standard hardening rules
+(`organization_id` + `brand_id` denormalized, RLS FORCEd, indexed):
+`agent_runs` (`agent_name`/`status`/`triggered_by` as VARCHAR+CHECK, same
+"closed but may grow" reasoning `crawl_jobs.status` already uses;
+`autonomy_level SmallInt` CHECK `IN (1, 2, 3)` — **never 4**, defense in
+depth on top of the application-level hard block in
+`apps/api/src/lib/agents/autonomy.ts`; `triggered_by_id` required only when
+`triggered_by = 'user'`, CHECK-enforced, same "required attribution when a
+human causes it" pattern `crawl_jobs.created_by`/`ai_runs.created_by` use
+via NOT NULL, expressed as a CHECK here because the column must stay
+nullable for the other two trigger kinds); `agent_events` (genuinely
+append-only — no `created_by`/`updated_by`/`deleted_at`, this IS the
+literal mechanism behind AGENT_ARCHITECTURE.md's "customers can see what
+the agent did, step-by-step" transparency requirement, not just a
+convention); `agent_pending_actions` (Level 3 mechanics — `status`/
+`approved_by`/`approved_at`/`rollback_until` CHECK-enforced to only ever be
+populated together, never partially; `rollback_until` is a real, queryable
+30-day deadline this epic only ever WRITES, Epic 13's job to read).
+
+**RLS** — `prisma/migrations/0014_agents/rls.sql` adds the standard
+`tenant_isolation` policy to all three (genuinely new, no earlier
+migration's policy could have covered any of them). **CHECK constraints**
+— `.../checks.sql`: `agent_name`/`status`/`triggered_by` vocabularies,
+the `triggered_by_id`-required-for-`user` invariant, `autonomy_level IN (1,
+2, 3)`, `agent_events.type`, `agent_pending_actions.status`, and the
+approval-fields-all-or-nothing invariant. **Indexing** — `.../indexes.sql`
+adds one partial index, `idx_agent_pending_actions_pending` (`WHERE status
+= 'pending'`), the approval-queue read pattern, not expressible in Prisma's
+`@@index` DSL (§11's recurring reason).
+
+**Migration numbering collision, flagged rather than silently
+resolved.** This folder (`0014_agents`) and Epic 11's own
+`0015_content_intelligence_generation` (see §25) were both created as
+`0014_*` within the same build wave — checked by file timestamp, this
+folder was written first (08:34 vs. 08:36 in this run's local clock).
+Following the exact renumbering precedent this document already
+establishes twice (§14's CRM `0001`→`0002`, §17's Website Intelligence
+`0004`→`0005` — in both cases the SECOND-landed folder renumbers, not the
+first), this folder correctly keeps `0014`. It was deliberately NOT
+possible to renumber Epic 11's folder from here without risking a
+collision with that epic's own concurrent, in-progress edits to its files
+and to this same document — flagged here instead so whoever runs the first
+real `prisma migrate deploy` (or a later audit pass) renumbers
+`0015_content_intelligence_generation` to `0015_content_intelligence_
+generation` before applying both, exactly as the two prior collisions in
+this document were resolved. Neither folder is a real Prisma-generated
+migration (hand-written SQL only, same as every other folder in this
+package), so nothing is functionally broken by the collision existing
+transiently in the repo — only the eventual apply order needs the rename.
+
+As with every other section: `prisma validate`/`generate` only — nothing
+applied to a database. `apps/api`'s consumption (three thin-orchestrator
+agents, the autonomy-level hard block, the tool-permission allowlist, the
+runner, and the four routes) is documented in
+`platform/docs/epics/12-agents-backend.md`.

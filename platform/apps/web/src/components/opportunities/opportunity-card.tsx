@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { Badge, Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Textarea } from "@bebest/ui";
 import type { Opportunity, OpportunityStatus } from "@/data/opportunities/types";
 import type { Recommendation, RecommendationStatus } from "@/data/recommendations/types";
+import type { AgentPendingAction } from "@/data/agents/types";
 import {
   OPPORTUNITY_STATUS_BADGE_VARIANT,
   OPPORTUNITY_STATUS_LABEL,
@@ -64,6 +65,8 @@ export function OpportunityCard({
   onGenerateRecommendation,
   updatingRecommendationStatus,
   onRecommendationStatusChange,
+  pendingAction,
+  onApprovePendingAction,
 }: {
   opportunity: Opportunity;
   updating: boolean;
@@ -76,6 +79,11 @@ export function OpportunityCard({
   onGenerateRecommendation: (opportunity: Opportunity) => void;
   updatingRecommendationStatus: boolean;
   onRecommendationStatusChange: (recommendation: Recommendation, status: RecommendationStatus) => void;
+  /** Epic 12's Level 3 one-click approval for this opportunity's
+   *  recommendation, if any agent run has proposed one — see
+   *  `recommendation-card.tsx`'s identical prop for the full rationale. */
+  pendingAction?: AgentPendingAction;
+  onApprovePendingAction?: () => Promise<void>;
 }) {
   const [showEvidence, setShowEvidence] = useState(false);
   const { state: evidenceState, load: loadEvidence } = useEvidenceTrail(opportunity.id);
@@ -230,6 +238,8 @@ export function OpportunityCard({
         updatingStatus={updatingRecommendationStatus}
         onStatusChange={(status) => recommendation && onRecommendationStatusChange(recommendation, status)}
         onViewEvidence={openEvidence}
+        pendingAction={pendingAction}
+        onApprovePendingAction={onApprovePendingAction}
       />
     </div>
   );

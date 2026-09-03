@@ -16,6 +16,7 @@ import {
   Handshake,
   Network,
   Sparkles,
+  Bot,
 } from "lucide-react";
 
 export interface NavItem {
@@ -51,8 +52,9 @@ export const navGroups: NavGroup[] = [
     label: "Execution",
     items: [
       { href: "/recommendations", label: "Recommendations", icon: Sparkles },
+      { href: "/agents", label: "Agents", icon: Bot },
       { href: "/actions", label: "Actions", icon: ListChecks, epic: 13 },
-      { href: "/content", label: "Content", icon: FileText, epic: 11 },
+      { href: "/content", label: "Content", icon: FileText },
       { href: "/reports", label: "Reports", icon: BarChart3, epic: 15 },
     ],
   },

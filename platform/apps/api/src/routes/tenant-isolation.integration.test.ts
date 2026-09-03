@@ -488,3 +488,45 @@ describe.skip('Epic 18 tenant isolation — agency_clients / integrations / whit
       '(logo/colors/custom domain) never leaks into orgA\'s GET /orgs/me/settings/white-label',
   );
 });
+
+/**
+ * Epic 12 (GEO Agent / SEO Agent / Growth Agent). `agent_runs`/
+ * `agent_events`/`agent_pending_actions` use the standard single-
+ * `organization_id` `tenant_isolation` policy (no two-tenant special case
+ * like Epic 18's `agency_clients`) — see @bebest/database schema.prisma's
+ * "EPIC 12 — Agent Runner" comment block. Real coverage still matters
+ * specifically for `agent_events`: it is genuinely append-only (no
+ * `deleted_at`, never UPDATEd after insert), so a cross-tenant leak here
+ * would expose another org's full step-by-step agent transparency log —
+ * this epic's own "trust differentiator" — not just a single summary row.
+ * `routes/agents.test.ts`/`routes/agent-run-details.test.ts` already prove
+ * the mocked-Prisma version of this (a foreign-org id 404s); this block is
+ * the real-RLS proof those unit tests cannot provide.
+ */
+describe.skip('Epic 12 tenant isolation — agent_runs / agent_events / agent_pending_actions (NEEDS LIVE DB)', () => {
+  it.todo(
+    'app.current_org = orgA sees ZERO agent_runs rows for a brand belonging to orgB, even when ' +
+      'orgA and orgB each have their own brand and their own completed geo_agent run',
+  );
+
+  it.todo(
+    'app.current_org = orgA cannot read orgB\'s agent_events via any agent_run_id, including one ' +
+      'guessed/enumerated from orgA\'s own sequential-looking run ids — GET /agent-runs/:id\'s own ' +
+      'explicit organization_id WHERE clause plus RLS both have to independently agree to return zero',
+  );
+
+  it.todo(
+    'inserting an agent_runs (or agent_events, or agent_pending_actions) row with organization_id ' +
+      'set to a foreign org is rejected by WITH CHECK, even when brand_id/agent_run_id correctly ' +
+      'point at real rows the caller genuinely owns in their OWN org — proves the tenant column ' +
+      'itself is enforced, not just the FK relationships',
+  );
+
+  it.todo(
+    'CRITICAL: with a Level-3 agent_pending_actions row seeded for orgB, POST ' +
+      '/agent-runs/:id/approve called with app.current_org = orgA (a real org that exists, just not ' +
+      'the owner) returns 404 (via the explicit organization_id-scoped lookup), and the underlying ' +
+      'row\'s status remains \'pending\' — confirms cross-tenant approval is impossible even for a ' +
+      'run id that is not itself secret',
+  );
+});

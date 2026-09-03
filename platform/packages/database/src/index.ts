@@ -78,6 +78,15 @@ export {
   // Epic 10 (Recommendation Engine)
   type opportunity_recommendations,
   type recommendation_action_type,
+  // Epic 11 (Content Intelligence & Generation)
+  type content_briefs,
+  type content_drafts,
+  type content_quality_checks,
+  type content_approvals,
+  // Epic 12 (Agents)
+  type agent_runs,
+  type agent_events,
+  type agent_pending_actions,
   // Epic 18 (Agency / White Label / Integrations)
   type agency_clients,
   type white_label_configs,

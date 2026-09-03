@@ -6,13 +6,9 @@ import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog, writeManualAuditEvent } from '../middleware/audit-log.js';
 import { getBrandForOrg, NO_BRAND_ERROR } from '../lib/brand-context.js';
-import { checkUsageLimit, EntitlementLimitError, resolvePlanLimits } from '../lib/entitlements.js';
-import {
-  CATEGORY_META,
-  generateCandidateQueries,
-  type QueryGeneratorBrandProfile,
-  type QueryTemplateCategory,
-} from '../lib/query-generator.js';
+import { checkUsageLimit, EntitlementLimitError } from '../lib/entitlements.js';
+import { CATEGORY_META, type QueryTemplateCategory } from '../lib/query-generator.js';
+import { activateQuerySetRow, generateQuerySetForBrand } from '../lib/query-sets/generate.js';
 import type { AppEnv } from '../types/context.js';
 import type { query_sets, queries } from '@bebest/database';
 
@@ -127,97 +123,21 @@ querySetsRoute.post('/generate', requireAuth, requireOrgFromToken('viewer'), req
 
   const org = c.get('org');
   const user = c.get('user');
-  const brand = await getBrandForOrg(org.organizationId);
-  if (!brand) return c.json(NO_BRAND_ERROR, 404);
 
-  // Load the exact Epic 2 profile fields the generator reads from — done
-  // BEFORE any row is written, and the plan limit is resolved BEFORE the
-  // candidate list is even sliced, so a capped generation never touches
-  // the database for the queries it isn't going to keep (the epic's step
-  // 2: "check the cap going in," not generate-then-truncate).
-  const [useCases, competitors, { plan, limits }] = await Promise.all([
-    withOrgContext(org.organizationId, (tx) =>
-      tx.use_cases.findMany({ where: { organization_id: org.organizationId, brand_id: brand.id, deleted_at: null } }),
-    ),
-    withOrgContext(org.organizationId, (tx) =>
-      tx.competitors.findMany({ where: { organization_id: org.organizationId, brand_id: brand.id, deleted_at: null } }),
-    ),
-    resolvePlanLimits(org.organizationId),
-  ]);
-
-  const profile: QueryGeneratorBrandProfile = {
-    name: brand.name,
-    categories: brand.categories,
-    differentiators: brand.differentiators,
-    markets: brand.markets,
-    useCases: useCases.map((uc) => ({
-      title: uc.title,
-      industries: uc.industries,
-      companySizes: uc.company_sizes,
-      painPoints: uc.pain_points,
-      solutions: uc.solutions,
-    })),
-    competitors: competitors.map((comp) => ({ name: comp.name })),
-  };
-
-  // Post-verification fix: computed from the uncapped candidate list once,
-  // then sliced here, rather than calling `generateQueryUniverse` (which
-  // discards the uncapped length) — the frontend's `QuerySet.potentialCount`
-  // needs that uncapped count preserved, not just the capped result. The
-  // cap is still applied BEFORE any row is written (the epic's step 2:
-  // "check the cap going in"), just via `slice` in the route instead of
-  // inside the generator function.
-  const allCandidates = generateCandidateQueries(profile);
-  const generated =
-    limits.queries_per_query_set === null ? allCandidates : allCandidates.slice(0, limits.queries_per_query_set);
-  // A plan with no configured cap has nothing to "explain" as a limit — the
-  // effective limit is simply how many were produced. See
-  // packages/database/DECISIONS.md §18.
-  const planLimit = limits.queries_per_query_set ?? allCandidates.length;
-  const input = parsed.data;
-
-  const created = await withOrgContext(org.organizationId, (tx) =>
-    tx.query_sets.create({
-      data: {
-        organization_id: org.organizationId,
-        brand_id: brand.id,
-        name: input.name ?? `${brand.name} Query Universe`,
-        description: input.description ?? null,
-        query_count: generated.length,
-        version: 1,
-        status: 'draft',
-        plan_tier: plan,
-        plan_limit: planLimit,
-        potential_count: allCandidates.length,
-        created_by: user.id,
-        queries: {
-          create: generated.map((q) => ({
-            organization_id: org.organizationId,
-            text: q.text,
-            intent_type: q.intentType,
-            category: q.category,
-            tags: q.tags,
-            priority: q.priority,
-            source: 'generated',
-            created_by: user.id,
-          })),
-        },
-      },
-    }),
-  );
+  // Epic 12 reuses this exact function (`lib/query-sets/generate.ts`) for
+  // its own agents' "generate query universe if none active" step — see
+  // that file's header comment.
+  const result = await generateQuerySetForBrand(org.organizationId, user.id, parsed.data);
+  if ('error' in result) return c.json(NO_BRAND_ERROR, 404);
 
   await writeManualAuditEvent(c, {
     action: 'query_set.generated',
     entityType: 'query_set',
-    entityId: created.id,
+    entityId: result.querySet.id,
   });
 
-  const rows = await withOrgContext(org.organizationId, (tx) =>
-    tx.queries.findMany({ where: { query_set_id: created.id, deleted_at: null }, orderBy: { created_at: 'asc' } }),
-  );
-
   return c.json(
-    { querySet: serializeQuerySet(created), queries: rows.map(serializeQuery) },
+    { querySet: serializeQuerySet(result.querySet), queries: result.queries.map(serializeQuery) },
     201,
   );
 });
@@ -232,47 +152,28 @@ querySetsRoute.patch(
   async (c) => {
     const org = c.get('org');
     const id = c.req.param('id');
-    const querySet = await getQuerySet(org.organizationId, id);
-    if (!querySet) return c.json(NO_QUERY_SET_ERROR, 404);
+    const user = c.get('user');
 
-    if (querySet.status !== 'draft') {
+    // Post-verification fix (backend bug #1, preserved by this extraction —
+    // see `lib/query-sets/generate.ts`'s `activateQuerySetRow`): the
+    // frontend's original fixture layer always archived the brand's
+    // previously-active set on activation, but the real route never did,
+    // and nothing in the schema prevented two simultaneously-active sets
+    // for the same brand. Both writes happen in one `withOrgContext` call
+    // (already a single `db.$transaction`), so a concurrent activate on a
+    // second draft can't observe a moment where two sets are both `active`.
+    // Epic 12 reuses this exact function for its own agents' "activate the
+    // generated query universe" step.
+    const result = await activateQuerySetRow(org.organizationId, id, user.id);
+    if ('error' in result && result.error === 'not_found') return c.json(NO_QUERY_SET_ERROR, 404);
+    if ('error' in result) {
       return c.json(
-        { error: 'query_set_not_draft', message: `Only a draft query set can be activated (this one is ${querySet.status}).` },
+        { error: 'query_set_not_draft', message: `Only a draft query set can be activated (this one is ${result.current.status}).` },
         409,
       );
     }
 
-    const user = c.get('user');
-    const now = new Date();
-
-    // Post-verification fix (backend bug #1): the frontend's original
-    // fixture layer (`client.ts`'s `activateQuerySet`, since replaced —
-    // see the frontend completion doc's "Post-verification fixes") always
-    // archived the brand's previously-active set on activation, but the
-    // real route never did, and nothing in the schema prevented two
-    // simultaneously-active sets for the same brand. Both writes happen in
-    // one `withOrgContext` call (already a single `db.$transaction`), so a
-    // concurrent activate on a second draft can't observe a moment where
-    // two sets are both `active`.
-    const updated = await withOrgContext(org.organizationId, async (tx) => {
-      await tx.query_sets.updateMany({
-        where: {
-          organization_id: org.organizationId,
-          brand_id: querySet.brand_id,
-          status: 'active',
-          id: { not: querySet.id },
-          deleted_at: null,
-        },
-        data: { status: 'archived', archived_at: now, updated_by: user.id, updated_at: now },
-      });
-
-      return tx.query_sets.update({
-        where: { id: querySet.id },
-        data: { status: 'active', activated_at: now, updated_by: user.id, updated_at: now },
-      });
-    });
-
-    return c.json(serializeQuerySet(updated));
+    return c.json(serializeQuerySet(result.querySet));
   },
 );
 
