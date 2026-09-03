@@ -184,7 +184,7 @@
       <a href="/about.html" class="nav-link">About</a>
       <a href="/resources.html" class="nav-link">Resources</a>
     </div>
-    <a href="#apply" class="nav-apply" data-cta="1">Get Free Snapshot</a>
+    <a href="https://app.bebestwithai.com/snapshot" class="nav-apply" data-cta="1">Get Free Snapshot</a>
   </nav>
   </header>
 
@@ -207,7 +207,7 @@
         <h1 class="hero-h1-anim" style="font-family: var(--fd); font-weight: 900; font-size: clamp(34px, 4.6vw, 72px); line-height: 1.05; letter-spacing: -.03em; margin: 0; text-wrap: pretty;">Become the Brand<br>AI Recommends.</h1>
         <p class="hero-p-anim" style="font-family: var(--fs); font-size: clamp(15px, 1.3vw, 18px); line-height: 1.7; color: var(--dim); max-width: 460px; margin: 24px 0 0;">We help businesses understand, measure, and improve how AI assistants like ChatGPT, Claude, Gemini and Perplexity discover, trust and recommend their brand.</p>
         <div class="hero-cta-anim" style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 36px;">
-          <a href="#apply" class="film-cta-primary" data-cta="1">Get Your Free AI Visibility Snapshot →</a>
+          <a href="https://app.bebestwithai.com/snapshot" class="film-cta-primary" data-cta="1">Get Your Free AI Visibility Snapshot →</a>
           <a href="#method" class="film-cta-secondary">See How It Works</a>
         </div>
         <div class="hero-trust-strip hero-trust-anim">
@@ -264,7 +264,7 @@
           <span style="font-family: var(--fm); font-size: 11px; color: #8E97B4; letter-spacing: .04em;">68%</span>
         </div>
 
-        <a href="#apply" class="hero-card-cta" data-cta="1">GET YOUR FREE SNAPSHOT →</a>
+        <a href="https://app.bebestwithai.com/snapshot" class="hero-card-cta" data-cta="1">GET YOUR FREE SNAPSHOT →</a>
       </div>
 
     </div>
@@ -293,6 +293,7 @@
         <div class="chorus-prompt-text">
           <span id="chorus-prompt-text"></span><span class="chorus-caret">▍</span>
         </div>
+        <span class="tag-illustrative">Illustrative example · not a live query</span>
       </div>
 
       <div class="chorus-grid" data-chorus="1">
@@ -797,28 +798,29 @@
   <section id="index" data-screen-label="10 Index">
     <div class="index-inner">
       <div class="index-eyebrow">AI Visibility Insights</div>
+      <p class="index-note">Illustrative example — read what's actually published on <a href="/blog.html">the blog</a>.</p>
       <h2 class="index-h2">Research on how AI recommends brands.</h2>
       <div class="index-grid">
-        <div class="index-entry">
+        <a class="index-entry" href="/blog.html">
           <div class="index-entry-num">01</div>
           <div class="index-entry-category">LOGISTICS</div>
           <div class="index-entry-title">How 3 brands captured 72% of AI recommendations in mid-market logistics</div>
           <div class="index-entry-meta">AUG 2026 · 12 MIN READ</div>
-        </div>
+        </a>
 
-        <div class="index-entry">
+        <a class="index-entry" href="/blog.html">
           <div class="index-entry-num">02</div>
           <div class="index-entry-category">FINTECH</div>
           <div class="index-entry-title">The AI trust threshold required for consistent recommendation by leading AI assistants</div>
           <div class="index-entry-meta">JUL 2026 · 8 MIN READ</div>
-        </div>
+        </a>
 
-        <div class="index-entry">
+        <a class="index-entry" href="/blog.html">
           <div class="index-entry-num">03</div>
           <div class="index-entry-category">CYBERSECURITY</div>
           <div class="index-entry-title">Why most security credentials are invisible to AI assistants — and how to fix it</div>
           <div class="index-entry-meta">JUN 2026 · 15 MIN READ</div>
-        </div>
+        </a>
       </div>
     </div>
   </section>
@@ -877,40 +879,53 @@
   <!-- APPLY FORM SECTION -->
   <section id="apply" data-screen-label="11 Apply">
     <div class="apply-inner">
-      <div class="apply-eyebrow">Free AI Visibility Snapshot</div>
+      <div class="apply-eyebrow">Talk To Us</div>
       <h2 class="apply-h2">Ready to Become the Brand AI Recommends?</h2>
-      <p class="apply-sub">Get a free AI Visibility Snapshot and discover how AI assistants currently perceive, trust and recommend your business. Contact Nilesh at <a href="mailto:hello@bebestwithai.com" style="color: var(--ember); text-decoration: none;">hello@bebestwithai.com</a> or complete the form below.</p>
+      <p class="apply-sub">Tell us about your brand, your category and what you want to achieve, and we'll get back to you within 24 hours to scope an AI Visibility Audit or Monitoring engagement. Contact Nilesh directly at <a href="mailto:hello@bebestwithai.com" style="color: var(--ember); text-decoration: none;">hello@bebestwithai.com</a>, or complete the form below.</p>
 
-      <form class="apply-form" onsubmit="event.preventDefault(); alert('Request received. The BeBest team will be in touch within 24 hours.');">
+      <div class="apply-snapshot-nudge">
+        <span class="apply-snapshot-nudge-text">Just want to see where you stand first? No form to scope, no wait for a reply.</span>
+        <a href="https://app.bebestwithai.com/snapshot" class="film-cta-secondary">Get your free AI Visibility Snapshot →</a>
+      </div>
+
+      <form class="apply-form" novalidate>
         <div class="form-group">
           <label class="form-label" for="app-name">Your Name</label>
-          <input type="text" id="app-name" class="form-input" placeholder="e.g. Sarah Jenkins" required>
+          <input type="text" id="app-name" name="name" class="form-input" placeholder="e.g. Sarah Jenkins" required maxlength="255" autocomplete="name">
         </div>
 
         <div class="form-group">
           <label class="form-label" for="app-email">Work Email</label>
-          <input type="email" id="app-email" class="form-input" placeholder="sarah@company.com" required>
+          <input type="email" id="app-email" name="email" class="form-input" placeholder="sarah@company.com" required autocomplete="email">
         </div>
 
         <div class="form-group">
           <label class="form-label" for="app-company">Company Name</label>
-          <input type="text" id="app-company" class="form-input" placeholder="Acme Logistics Inc." required>
+          <input type="text" id="app-company" name="company" class="form-input" placeholder="Acme Logistics Inc." required maxlength="255" autocomplete="organization">
         </div>
 
         <div class="form-group">
           <label class="form-label" for="app-category">Your Industry / Category</label>
-          <input type="text" id="app-category" class="form-input" placeholder="e.g. SaaS / Logistics / Fintech" required>
+          <input type="text" id="app-category" name="category" class="form-input" placeholder="e.g. SaaS / Logistics / Fintech" maxlength="100">
         </div>
 
         <div class="form-group full">
-          <label class="form-label" for="app-notes">Key Competitors or AI Questions You Want to Rank For</label>
-          <textarea id="app-notes" class="form-textarea" placeholder="List 2-3 primary competitors or the buying questions your customers ask AI assistants..."></textarea>
+          <label class="form-label" for="app-notes">Key Competitors, or What You'd Like to Discuss</label>
+          <textarea id="app-notes" name="notes" class="form-textarea" placeholder="List 2-3 primary competitors, the buying questions your customers ask AI assistants, or anything else that would help us scope this..." maxlength="5000"></textarea>
+        </div>
+
+        <div class="hp-field" aria-hidden="true">
+          <label for="app-hp">Leave this field blank</label>
+          <input type="text" id="app-hp" name="hp_field" tabindex="-1" autocomplete="off">
         </div>
 
         <div class="form-submit">
-          <button type="submit" class="apply-btn">Request Free Snapshot →</button>
+          <button type="submit" class="apply-btn">Send Request →</button>
           <div class="form-note">REPLIES WITHIN 24 HOURS · CONFIDENTIALITY ASSURED</div>
         </div>
+
+        <div class="form-status form-status--success" data-form-success role="status" aria-live="polite" hidden></div>
+        <div class="form-status form-status--error" data-form-error role="alert" aria-live="assertive" hidden></div>
       </form>
     </div>
   </section>

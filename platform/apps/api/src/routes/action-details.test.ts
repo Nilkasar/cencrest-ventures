@@ -31,6 +31,12 @@ const db = {
       return { ...row };
     }),
   },
+  // Epic 14 (Measurement & Learning Loop) — `getCurrentScoreSnapshot`
+  // (called from POST /:id/approve) reads these; empty by default so a
+  // freshly-approved action's before_score snapshot is `{ geo: null, seo:
+  // null, capturedAt }`, never a crash from an unmocked table.
+  ai_runs: { findFirst: vi.fn().mockResolvedValue(null) },
+  seo_analyses: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
   published_content: {
     findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
       const row = pcRows.find((r) => matches(r, where));
@@ -58,6 +64,15 @@ vi.mock('@bebest/database', () => ({
   withUserContext: vi.fn(async (_userId: string, fn: (tx: unknown) => unknown) => fn(tx)),
   withOrgContext: vi.fn(async (_organizationId: string, fn: (tx: unknown) => unknown) => fn(tx)),
 }));
+
+// Epic 14's 4-week re-measurement trigger — mocked out here so THESE route
+// tests assert only the approve/execute/rollback invariants (this file's
+// own concern), never the measurement pipeline itself (covered by
+// lib/measurement/*.test.ts). Same "mock the background job, assert only
+// PREPARE/QUEUE" precedent routes/ai-runs.test.ts already sets for
+// `runAiVisibilityRun`.
+const scheduleRemeasurement = vi.fn();
+vi.mock('../lib/measurement/schedule-remeasurement.js', () => ({ scheduleRemeasurement }));
 
 async function buildApp() {
   const { default: actionDetails } = await import('./action-details.js');
@@ -91,6 +106,8 @@ function makeAction(overrides: Record<string, unknown> = {}): Record<string, unk
     executed_at: null,
     rolled_back_at: null,
     result: null,
+    before_score: null,
+    before_score_captured_at: null,
     created_at: new Date('2026-03-01'),
     updated_at: new Date('2026-03-01'),
     deleted_at: null,
@@ -198,6 +215,64 @@ describe('POST /actions/:id/approve', () => {
     expect(body.alreadyApproved).toBe(true);
     expect(db.actions.update).not.toHaveBeenCalled();
     expect(db.audit_events.create).not.toHaveBeenCalled();
+  });
+
+  // ── Epic 14 (Measurement & Learning Loop): the before-score snapshot —
+  // captured HERE, at approval, per that epic's own non-negotiable. ────────
+  describe('Epic 14 — before-score snapshot', () => {
+    it('captures a non-null before_score/before_score_captured_at even when the brand has no AI-visibility/SEO data at all yet', async () => {
+      actRows = [makeAction()];
+      const app = await buildApp();
+      const res = await app.request('/actions/action-1/approve', { method: 'POST', headers: await authHeader('user-1', 'org-1') });
+      expect(res.status).toBe(200);
+      expect(actRows[0]!.before_score).toEqual({ geo: null, seo: null, capturedAt: expect.any(String) });
+      expect(actRows[0]!.before_score_captured_at).toBeInstanceOf(Date);
+    });
+
+    it('snapshots the brand\'s REAL current AI-visibility score (Epic 7\'s own ai_runs data), never a reimplementation', async () => {
+      actRows = [makeAction()];
+      db.ai_runs.findFirst.mockResolvedValue({
+        id: 'run-1',
+        ai_visibility_score: '48.50',
+        mention_score: '40.00',
+        recommendation_score: '50.00',
+        position_score: '45.00',
+        coverage_score: '55.00',
+        scoring_formula_version: '1.0',
+        completed_at: new Date('2026-02-15T00:00:00.000Z'),
+        created_at: new Date('2026-02-15T00:00:00.000Z'),
+      });
+      const app = await buildApp();
+      await app.request('/actions/action-1/approve', { method: 'POST', headers: await authHeader('user-1', 'org-1') });
+
+      const beforeScore = actRows[0]!.before_score as { geo: { aiVisibilityScore: number; aiRunId: string } };
+      expect(beforeScore.geo.aiVisibilityScore).toBe(48.5);
+      expect(beforeScore.geo.aiRunId).toBe('run-1');
+    });
+
+    it('never recomputes/overwrites before_score on a second (idempotent) approve call', async () => {
+      const originalSnapshot = { geo: { aiVisibilityScore: 40 }, seo: null, capturedAt: '2026-01-01T00:00:00.000Z' };
+      actRows = [
+        makeAction({
+          status: 'approved',
+          approved_by: 'user-1',
+          approved_at: new Date('2026-01-01'),
+          before_score: originalSnapshot,
+          before_score_captured_at: new Date('2026-01-01'),
+        }),
+      ];
+      // If approve re-ran the snapshot logic, this would be picked up —
+      // asserting it is NOT proves the idempotent branch short-circuits
+      // before ever touching before_score again.
+      db.ai_runs.findFirst.mockResolvedValue({
+        id: 'run-mutated', ai_visibility_score: '99.00', mention_score: null, recommendation_score: null, position_score: null, coverage_score: null,
+        scoring_formula_version: '1.0', completed_at: new Date(), created_at: new Date(),
+      });
+      const app = await buildApp();
+      const res = await app.request('/actions/action-1/approve', { method: 'POST', headers: await authHeader('user-1', 'org-1') });
+      expect(res.status).toBe(200);
+      expect(actRows[0]!.before_score).toEqual(originalSnapshot);
+    });
   });
 
   it('rejects a Level 4 action even at approve time (extra hardening on top of the required execute-path block below)', async () => {
@@ -322,6 +397,36 @@ describe('POST /actions/:id/execute', () => {
     expect(body.alreadyExecuted).toBe(true);
     expect(pcRows).toHaveLength(1); // still just one — never published twice
     expect(db.audit_events.create).toHaveBeenCalledTimes(1); // still just the one content.published event
+  });
+
+  // ── Epic 14 (Measurement & Learning Loop): the 4-week re-measurement
+  // trigger — scheduled from HERE, execute, per that epic's own spec
+  // ("4 weeks after an actions row's executed_at"). ────────────────────────
+  describe('Epic 14 — schedules the re-measurement trigger', () => {
+    it('schedules exactly one re-measurement, for this action/org, on a REAL (first-time) execute', async () => {
+      actRows = [makeAction({ status: 'approved', approved_by: 'user-1', approved_at: new Date('2026-03-02') })];
+      const app = await buildApp();
+      const res = await app.request('/actions/action-1/execute', { method: 'POST', headers: await authHeader('user-1', 'org-1') });
+      expect(res.status).toBe(201);
+      expect(scheduleRemeasurement).toHaveBeenCalledTimes(1);
+      expect(scheduleRemeasurement).toHaveBeenCalledWith('action-1', 'org-1');
+    });
+
+    it('never schedules a second, redundant re-measurement on an idempotent repeat execute call', async () => {
+      actRows = [makeAction({ status: 'approved', approved_by: 'user-1', approved_at: new Date('2026-03-02') })];
+      const app = await buildApp();
+      await app.request('/actions/action-1/execute', { method: 'POST', headers: await authHeader('user-1', 'org-1') });
+      await app.request('/actions/action-1/execute', { method: 'POST', headers: await authHeader('user-1', 'org-1') });
+      expect(scheduleRemeasurement).toHaveBeenCalledTimes(1);
+    });
+
+    it('never schedules a re-measurement when execute is rejected (no prior approval)', async () => {
+      actRows = [makeAction({ approved_at: null, approved_by: null })];
+      const app = await buildApp();
+      const res = await app.request('/actions/action-1/execute', { method: 'POST', headers: await authHeader('user-1', 'org-1') });
+      expect(res.status).toBe(409);
+      expect(scheduleRemeasurement).not.toHaveBeenCalled();
+    });
   });
 });
 

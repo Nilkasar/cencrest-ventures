@@ -923,6 +923,20 @@ a, [data-cta] {
 }
 .chorus-verdict.visible { opacity: 1; }
 
+.tag-illustrative {
+  font-family: var(--fm);
+  font-size: 9px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ember);
+  white-space: nowrap;
+  margin-left: auto;
+}
+@media (max-width: 640px) {
+  .chorus-prompt-bar { flex-wrap: wrap; row-gap: 8px; }
+  .tag-illustrative { margin-left: 0; }
+}
+
 @media (max-width: 1100px) {
   .chorus-grid { grid-template-columns: 1fr 1fr !important; }
   #chorus [data-chorus] > div { padding: 24px !important; border-right: 1px solid var(--hair) !important; border-bottom: 0; }
@@ -1883,6 +1897,17 @@ a, [data-cta] {
   animation-range: entry 8% cover 26%;
 }
 
+.index-note {
+  font-family: var(--fm);
+  font-size: 11px;
+  letter-spacing: .06em;
+  color: var(--smoke);
+  max-width: 480px;
+  margin: -8px 0 32px;
+}
+.index-note a { color: var(--ember); border-bottom: 1px solid rgba(217,184,124,.4); }
+.index-note a:hover { color: var(--ember-2); }
+
 .index-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1891,11 +1916,18 @@ a, [data-cta] {
 }
 
 .index-entry {
+  display: block;
+  cursor: pointer;
   padding: 32px 32px 32px 0;
   border-right: 1px solid var(--hair);
   animation: slideRow 620ms var(--eo) both;
   animation-timeline: view();
   animation-range: entry 6% cover 26%;
+}
+.index-entry:hover .index-entry-title { color: var(--ember); }
+.index-entry:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 4px;
 }
 .index-entry:last-child { border-right: 0; padding-right: 0; }
 .index-entry:not(:first-child) { padding-left: 32px; }
@@ -2064,6 +2096,77 @@ a, [data-cta] {
   letter-spacing: .08em;
   color: var(--smoke);
   line-height: 1.6;
+}
+
+/* Honeypot — never shown or announced to real visitors; a bot that fills
+   every DOM field still populates it. display:none is skipped by screen
+   readers and by any browser rendering CSS, which is exactly the visitor
+   population this must stay invisible to. */
+.hp-field {
+  grid-column: 1 / -1;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.apply-btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+.apply-btn:disabled:hover { background: var(--ember); }
+
+.apply-btn-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 10px;
+  vertical-align: -2px;
+  border: 2px solid rgba(10,14,24,.35);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: spinRing .7s linear infinite;
+}
+
+.form-status {
+  grid-column: 1 / -1;
+  font-family: var(--fm);
+  font-size: 13px;
+  line-height: 1.7;
+  letter-spacing: .01em;
+  padding: 14px 18px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+}
+.form-status[hidden] { display: none; }
+.form-status--success {
+  color: var(--success);
+  background: rgba(110,155,135,.10);
+  border-color: rgba(110,155,135,.30);
+}
+.form-status--error {
+  color: var(--danger);
+  background: rgba(192,112,92,.10);
+  border-color: rgba(192,112,92,.30);
+}
+
+.apply-snapshot-nudge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  border: 1px solid var(--hair-2);
+  border-radius: 8px;
+  padding: 20px 24px;
+  margin-bottom: 48px;
+}
+.apply-snapshot-nudge-text {
+  font-family: var(--fs);
+  font-size: 14px;
+  color: var(--dim);
 }
 
 @media (max-width: 640px) {

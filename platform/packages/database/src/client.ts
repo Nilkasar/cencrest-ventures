@@ -274,6 +274,9 @@ export type {
   // Epic 13 (Action Center & Controlled Publishing)
   actions,
   published_content,
+  // Epic 14 (Measurement & Learning Loop)
+  measurements,
+  outcome_records,
 } from '@prisma/client';
 
 export type PrismaTransactionClient = Prisma.TransactionClient;

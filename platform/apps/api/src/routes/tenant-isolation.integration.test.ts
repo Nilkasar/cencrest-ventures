@@ -582,3 +582,52 @@ describe.skip('Epic 13 tenant isolation — actions / published_content (NEEDS L
       'tenant boundary',
   );
 });
+
+/**
+ * Epic 14 (Measurement & Learning Loop). `measurements` and
+ * `outcome_records` (both genuinely new, 0017's own rls.sql) use the
+ * standard single-`organization_id` `tenant_isolation` policy — see
+ * @bebest/database schema.prisma's "MEASUREMENT & LEARNING LOOP" comment
+ * block. `actions.before_score`/`.before_score_captured_at` are plain
+ * columns on an already-RLS-protected table (0000_init), not repeated
+ * here. Mocked-Prisma coverage already exists (`lib/measurement/*.test.ts`,
+ * `routes/measurements.test.ts`, `routes/action-measurement.test.ts`,
+ * including the immutability proof in `lib/measurement/
+ * immutability.test.ts`); this block is the real-RLS proof those unit
+ * tests cannot provide — specifically that RLS itself, not just each
+ * route's own explicit WHERE clause, independently blocks a cross-tenant
+ * read/write on these two new tables.
+ */
+describe.skip('Epic 14 tenant isolation — measurements / outcome_records (NEEDS LIVE DB)', () => {
+  it.todo(
+    'app.current_org = orgA sees ZERO rows for orgB\'s brand in GET /brands/me/measurements, even ' +
+      'when orgB has at least one real, measured action',
+  );
+
+  it.todo(
+    'GET /actions/:id/measurement for an orgB action, called with app.current_org = orgA, returns ' +
+      '404 (via the route\'s own explicit organization_id WHERE clause on actions) — never leaking ' +
+      'the existence of orgB\'s action OR its measurement via a 403 or a measured:false response ' +
+      'for a real foreign row',
+  );
+
+  it.todo(
+    'inserting a measurements (or outcome_records) row with organization_id set to a foreign org is ' +
+      'rejected by WITH CHECK, even when action_id/brand_id/measurement_id correctly point at real ' +
+      'rows the caller genuinely owns in their OWN org — proves the tenant column itself is ' +
+      'enforced, not just the FK relationships',
+  );
+
+  it.todo(
+    'CRITICAL: with an orgB action approved (before_score captured) and later measured, the ' +
+      'background re-measurement job (runMeasurementForAction) running under app.current_org = ' +
+      'orgB never becomes visible to, or writable by, an orgA session — a query for orgB\'s ' +
+      'measurement/outcome_records rows with app.current_org = orgA returns zero rows',
+  );
+
+  it.todo(
+    'a background job (system-triggered re-measurement, no HTTP request/session) still runs every ' +
+      'query through withOrgContext(organizationId, ...) exactly like a request-triggered route ' +
+      'does — confirms the 4-week trigger never bypasses RLS just because it has no Hono context',
+  );
+});

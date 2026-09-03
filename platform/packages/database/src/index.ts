@@ -96,4 +96,7 @@ export {
   // Epic 13 (Action Center & Controlled Publishing)
   type actions,
   type published_content,
+  // Epic 14 (Measurement & Learning Loop)
+  type measurements,
+  type outcome_records,
 } from './client.js';

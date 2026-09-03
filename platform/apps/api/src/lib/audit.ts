@@ -131,4 +131,12 @@ export const ALWAYS_AUDITED_ACTIONS = [
   // is the same class of security-relevant action as the event itself.
   'action.approved',
   'action.rolled_back',
+  // Epic 14 (Measurement & Learning Loop) addition — a system-triggered
+  // re-measurement is an autonomous agent action in the same sense
+  // `agent.action` already covers (SECURITY.md's "autonomous agent
+  // actions" always-audit entry) — this epic's own transparency
+  // requirement, verbatim: "must be observable (log/event) per the
+  // transparency principle every agent epic follows." See
+  // `lib/measurement/run-measurement.ts`.
+  'measurement.completed',
 ] as const;

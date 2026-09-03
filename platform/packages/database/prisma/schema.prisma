@@ -72,6 +72,8 @@ model organizations {
 
   account_health            account_health?
   actions                   actions[]
+  measurements              measurements[]
+  outcome_records           outcome_records[]
   // Epic 1 (CRM) additions — see DECISIONS.md "Epic 1 — CRM" section for
   // the full reasoning. `leads`/`deals`/`activities` all carry a NOT NULL
   // organization_id used purely for RLS tenant-scoping, which ALWAYS
@@ -1305,6 +1307,7 @@ model brands {
   organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
   actions                 actions[]
+  measurements            measurements[]
   ai_responses            ai_responses[]
   // Epic 7 (AI Visibility Engine) additions
   ai_runs                 ai_runs[]
@@ -2416,6 +2419,10 @@ model ai_runs {
   competitors        competitors?         @relation(fields: [competitor_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   ai_run_responses   ai_run_responses[]
   brand_observations brand_observations[]
+  // Epic 14 (Measurement & Learning Loop) addition — set when a
+  // measurement's "after" GEO component came from a fresh re-run of THIS
+  // run (never the brand's normal, human-triggered `ai_runs` history).
+  measurements       measurements[]
 
   @@index([organization_id], map: "idx_ai_runs_organization")
   @@index([brand_id], map: "idx_ai_runs_brand")
@@ -3789,6 +3796,27 @@ model actions {
   content_draft_id        String? @unique @db.Uuid
   agent_pending_action_id String? @unique @db.Uuid
 
+  // ── Epic 14 (Measurement & Learning Loop) addition ─────────────────────
+  // The immutable "before" baseline this epic's whole non-negotiable exists
+  // to protect: "the before-score must be snapshotted AT APPROVAL TIME, not
+  // measurement time." Written ONLY by `POST /actions/:id/approve` (see
+  // routes/action-details.ts), from the brand's CURRENT already-computed
+  // AI-visibility/SEO scores at that exact moment
+  // (`lib/measurement/current-score-snapshot.ts`'s `getCurrentScoreSnapshot`
+  // — reads Epic 7's `ai_runs`/Epic 4's `seo_analyses`, never recomputes
+  // anything) — never re-read live at measurement time, which is exactly
+  // the corruption this non-negotiable guards against ("a score that
+  // already changed for unrelated reasons corrupts the comparison"). No
+  // other code path in this build ever writes to these two columns after
+  // approval (confirmed by grep before this epic's first edit) — set
+  // together, all-or-nothing (`chk_actions_before_score_together`,
+  // checks.sql). `measurements.before_score` is a SECOND, independent copy
+  // taken from this column at measurement-creation time, never from live
+  // brand data — see that model's own comment for why the snapshot lives
+  // in two places. Full reasoning: DECISIONS.md §28.
+  before_score             Json?
+  before_score_captured_at DateTime? @db.Timestamptz(6)
+
   assigned_to_user     users?                 @relation("actions_assigned_to", fields: [assigned_to], references: [id], onDelete: SetNull, onUpdate: NoAction)
   created_by_user      users?                 @relation("actions_created_by", fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
   updated_by_user      users?                 @relation("actions_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -3800,6 +3828,7 @@ model actions {
   agent_pending_actions agent_pending_actions? @relation(fields: [agent_pending_action_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   publish_jobs         publish_jobs[]
   published_content    published_content?
+  measurements         measurements[]
 
   @@index([brand_id], map: "idx_actions_brand")
   @@index([priority], map: "idx_actions_priority")
@@ -3877,6 +3906,154 @@ model published_content {
 
   @@index([organization_id, brand_id], map: "idx_published_content_brand")
   @@index([status], map: "idx_published_content_status")
+}
+
+// ============================================================================
+// MEASUREMENT & LEARNING LOOP (Epic 14) — the RE-MEASURE -> LEARN -> IMPROVE
+// stages, closing the loop back to Epic 9's REPEAT. Full reasoning:
+// DECISIONS.md §28.
+// ============================================================================
+
+// The RE-MEASURE step's own durable record: one `actions` row's real
+// before/after AI-visibility/SEO comparison, plus an honest, confidence-
+// labeled attribution ESTIMATE (never asserted as proof) of whether this
+// specific action plausibly caused the change. `docs/13-agents/
+// AGENT_ARCHITECTURE.md`'s Measurement Agent + this epic's spec, verbatim.
+model measurements {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String @db.Uuid
+  // Denormalized (not read through action_id -> actions -> brand_id) —
+  // same "denormalize the tenant/brand key so a list route never needs a
+  // join to scope itself" precedent `opportunity_recommendations.brand_id`
+  // already sets (DECISIONS.md §22/§24). Also what `GET /brands/:id/
+  // measurements`'s own literal route addresses by.
+  brand_id String @db.Uuid
+  // Restrict (never Cascade): a measurement is a durable evidence record —
+  // same "outlives any one reference" reasoning `content_briefs.
+  // recommendation_id` already documents — it must survive even if
+  // something else tried to remove its parent action. Not `@unique`: a
+  // brand could in principle be re-measured more than once (a future
+  // "re-run the 4-week check" manual trigger); nothing in this build
+  // relies on at-most-one-measurement-per-action.
+  action_id String @db.Uuid
+
+  // ── The non-negotiable: before = the score AT APPROVAL TIME, snapshotted
+  // then, never recomputed from possibly-changed live data. ──────────────
+  // A SECOND, independent copy of `actions.before_score`/
+  // `.before_score_captured_at`, taken at THIS ROW's creation time — never
+  // re-read from the (mutable) `actions` row or from live brand data. Two
+  // independent copies (one on `actions`, captured at approval; one here,
+  // captured at measurement-creation, itself copied only from the first)
+  // mean a hypothetical future bug that mutated the `actions` column after
+  // approval could corrupt only a NOT-YET-CREATED measurement, never an
+  // already-written one — this row, once created, cannot be affected by
+  // anything that happens to `actions` afterward. See
+  // `lib/measurement/run-measurement.ts`'s own header comment for the
+  // actual read/copy code path, and DECISIONS.md §28 for the full
+  // "column vs. separate mechanism" design writeup this epic's task
+  // required.
+  before_score             Json
+  before_score_captured_at DateTime @db.Timestamptz(6)
+  // The RE-RUN result: Epic 7's real `runAiVisibilityStep`/
+  // `runAiVisibilityRun` (GEO, same query set) and/or Epic 4's real
+  // `runTechnicalChecklist`/`runContentChecklist` (SEO) — never a
+  // reimplementation of either. Same shape as `before_score` (see
+  // `lib/measurement/current-score-snapshot.ts`'s `ScoreSnapshot`), so a
+  // caller can diff the two directly field-for-field.
+  after_score Json
+  // Set when this measurement's GEO component came from a fresh re-run —
+  // the real `ai_runs` row that produced `after_score.geo`, so a caller can
+  // trace the after-side evidence exactly the way `after_score` itself
+  // already lets a caller trace the raw comparison. Null when GEO could not
+  // be re-run (no active query set, or an entitlement limit blocked it —
+  // `after_score.geo` is null in that case too, never fabricated).
+  after_ai_run_id String? @db.Uuid
+  // Pure function of (before_score, after_score) —
+  // `lib/measurement/scoring.ts`'s `computeScoreDelta`, unit-tested in
+  // isolation with zero database/AI-provider/clock dependency. Nullable:
+  // a delta is genuinely uncomputable when neither side has a comparable
+  // GEO or SEO component (e.g. the brand had no baseline data at all when
+  // the action was approved) — left null rather than coerced to a
+  // misleading 0.
+  score_delta Decimal? @db.Decimal(6, 2)
+  // Reuses `claim_confidence` (high|medium|low) — the identical closed
+  // vocabulary `brand_observations.extraction_confidence` already uses
+  // (Epic 7) for "how much should a reader trust this derived value,"
+  // rather than a second enum with the exact same three values (DECISIONS.md
+  // §6's "don't duplicate a vocabulary that already exists under a generic
+  // enough name" precedent). Set by `lib/measurement/attribution.ts`'s
+  // `estimateAttribution` — deliberately never asserts causal certainty
+  // (this epic's own non-negotiable #4): "did THIS action plausibly cause
+  // the change, or did something else move," per AGENT_ARCHITECTURE.md's
+  // own "attribution estimate," not proof.
+  attribution_confidence claim_confidence
+  // Plain-language explanation of the confidence level above — ALWAYS
+  // phrased as an estimate ("likely," "plausibly," "cannot rule out"),
+  // never as a proof of causation. See `attribution.ts`'s own doc comment
+  // for the exact rules that produce this text.
+  attribution_notes String
+  measured_at        DateTime @default(now()) @db.Timestamptz(6)
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+
+  organizations   organizations     @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands          brands            @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  actions         actions           @relation(fields: [action_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  ai_runs         ai_runs?          @relation(fields: [after_ai_run_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  outcome_records outcome_records[]
+
+  @@index([brand_id, measured_at], map: "idx_measurements_brand_measured_at")
+  @@index([action_id], map: "idx_measurements_action")
+  @@index([organization_id], map: "idx_measurements_org")
+}
+
+// The LEARN step's own durable record — spec's literal domain model,
+// verbatim: "recording the outcome (opportunity_type x action_type x
+// observed score delta) in a queryable table, NOT a real ML model." This
+// table IS the honest scope boundary this epic's spec draws around "the
+// learning model": a real pattern-recognition/formula-refinement system
+// (`PRODUCT_VISION.md` Layer 8) is documented future work this table's own
+// data would eventually feed, alongside Epic 8's `competitor_visibility`
+// change feed (the spec's own "two feeds a real learning system would
+// eventually consume") — nothing in this build reads these rows back to
+// change any formula or recommendation.
+//
+// `opportunity_type`/`action_type` are the REAL enums Epic 9/Epic 10 already
+// defined (`unified_opportunity_type`, `recommendation_action_type`) reused
+// directly, never re-typed as a guessed string — this epic's own explicit
+// "not guessed or hardcoded" instruction. Written ONLY when the measured
+// action's `recommendation_id` resolves through the real chain
+// (actions -> opportunity_recommendations -> unified_opportunities); a
+// Level 1-3 agent-originated action with no recommendation of its own
+// produces a `measurements` row but deliberately NO `outcome_records` row —
+// see `lib/measurement/run-measurement.ts`'s own header comment and this
+// epic's backend doc's "not done" list for the honest reasoning.
+model outcome_records {
+  id                String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id   String @db.Uuid
+  // The measurement this outcome derives from — not in the spec's own
+  // literal domain-model bullet, but required by its "written alongside the
+  // measurements row" instruction (same "handoff FK the domain model
+  // doesn't name but the spec's own non-negotiable requires" precedent
+  // Epic 13's `content_draft_id`/`agent_pending_action_id` already set,
+  // DECISIONS.md §27). Cascade: an outcome record has no independent
+  // meaning without the measurement it summarizes — same composition-child
+  // reasoning `opportunity_evidence` already uses under its parent
+  // opportunity.
+  measurement_id  String                     @db.Uuid
+  opportunity_type unified_opportunity_type
+  action_type      recommendation_action_type
+  score_delta      Decimal?                  @db.Decimal(6, 2)
+  created_at       DateTime                  @default(now()) @db.Timestamptz(6)
+
+  organizations organizations @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  measurements  measurements  @relation(fields: [measurement_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  // The future cross-customer pattern-learning query this table exists
+  // for, verbatim from the spec's own parenthetical: "opportunity_type x
+  // action_type x observed score delta."
+  @@index([opportunity_type, action_type], map: "idx_outcome_records_type_pair")
+  @@index([organization_id], map: "idx_outcome_records_org")
+  @@index([measurement_id], map: "idx_outcome_records_measurement")
 }
 
 // ============================================================================

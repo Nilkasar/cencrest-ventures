@@ -15,6 +15,7 @@ import {
 import { isWithinRollbackWindow, rollbackDeadline } from "@/data/actions/rollback-window";
 import { formatDateTime } from "@/lib/format";
 import { ActionOrigin } from "./action-origin";
+import { MeasurementPanel } from "./measurement-panel";
 
 /**
  * One row in any of the Action Center's four sections. A single component,
@@ -114,7 +115,15 @@ export function ActionCard({
       )}
 
       {(action.status === "completed" || action.status === "rolled_back") && (
-        <Outcome action={action} publishedContent={publishedContent} canPublish={canPublish} busy={busy} onRollback={onRollback} />
+        <>
+          <Outcome action={action} publishedContent={publishedContent} canPublish={canPublish} busy={busy} onRollback={onRollback} />
+          {/* Epic 14 — the before/after delta this action produced, with
+             attribution confidence visibly labeled. Rendered for a
+             rolled-back action too: rollback reverts the publish record,
+             not any measurement already taken of the action's effect while
+             it was live. */}
+          <MeasurementPanel action={action} />
+        </>
       )}
     </div>
   );

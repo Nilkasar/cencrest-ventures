@@ -1,23 +1,23 @@
 # Session Log — Cencrest Ventures
 
-## ▶ RESUME HERE (last updated 2026-09-03, Wave 8)
+## ▶ RESUME HERE (last updated 2026-09-04, Wave 9)
 
 **Do not start from Session: 2026-08-10 below** — that's history. This block is the current state.
 
 **What this is**: a from-scratch platform rebuild (`platform/` monorepo, pnpm+Turborepo) replacing the old `api/`/`web-app/` implementation, on branch **`rebuild/platform`**. Full context/history is in the "Platform rebuild" session entries further down this file; `platform/EPICS.md` is the authoritative epic-by-epic status table (not `PROJECT_STATUS.md`, which is stale).
 
-**Progress: 17 of 19 product epics VERIFIED** (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16, 17, 18) plus a foundational auth-token-propagation fix, landed and pushed (`6b9cb2f`) on 2026-09-03. Wave 9 (Epic 14 + Epic 20, run in parallel) launched same day and is still in progress as of this note.
+**Progress: 19 of 21 total epics VERIFIED** — all 17 product epics that needed building (0-13, 16, 17, 18) plus Epic 14 (Measurement & Learning Loop) and Epic 20 (Marketing Site Rebuild, pulled forward per explicit user request to run in parallel with Wave 9 rather than last). Only Epic 15 (Reporting & Notifications), Epic 19 (Production Hardening), and Epic 21 (Final Audit) remain.
+
+**As of this note: user has asked to run continuously through completion, no more per-wave pauses** — proceed Wave 10 → 11 → 12 without waiting for check-ins, only stopping if something needs a real user decision (see the Epic 20/CLAUDE.md precedent below for what that looks like).
 
 **Remaining work, in dependency order**:
-1. Epic 14 — Measurement & Learning Loop (needs 13, now done — **unblocked, do this next**)
-2. Epic 15 — Reporting & Notifications (needs 14)
-3. Epic 19 — Production Hardening (cross-cutting pass over every prior epic's own flagged `// TODO`s — durable queue, error tracking, the missing `GET /brands/me/crawl-jobs` endpoint, the authenticated 120/min rate-limit tier defined but never wired into any route, etc.)
-4. Epic 20 — Marketing Site Rebuild (root site, saved for last per the user's explicit sequencing)
-5. Epic 21 — Final Audit (full done/pending report, the user's explicitly requested final deliverable)
+1. Epic 15 — Reporting & Notifications (needs 14, now done — **unblocked, Wave 10, do this next**)
+2. Epic 19 — Production Hardening (Wave 11, needs the rest of the roadmap done — cross-cutting pass over every prior epic's own flagged `// TODO`s: durable queue, error tracking, the missing `GET /brands/me/crawl-jobs` endpoint, and now a repeatedly-flagged one — the documented 120/min authenticated rate-limit tier is defined in `middleware/rate-limit.ts` but never wired into any route app-wide; every authenticated route actually runs at the 30/min public tier. Flagged independently by Epic 13's, Epic 14's, and Epic 20's own verify passes — fix once, here, not per-epic.)
+3. Epic 21 — Final Audit (Wave 12, alone, last — the user's explicitly requested final deliverable)
 
-Custom `.claude/agents/*.md` subagent types (`growth-strategist`, `backend-architect`, `frontend-engineer`, `qa-flow-tester`) now resolve directly as invokable `agentType`s in this session (confirmed in the fresh session that ran Wave 8) — no more embedding personas in raw prompts as a workaround; pass `agentType: '<name>'` in `agent()` calls going forward.
+**Important discovery from Wave 9, resolved**: the root marketing site was already rebranded from "Cencrest" to **BeBest** by the user directly on 2026-08-11 (commit "Rebrand to BeBest..."), into a full multi-page site (`about.html`, `services.html`, `pricing.html`, `contact.html`, etc., domain `bebestwithai.com`) — but root `CLAUDE.md` was never updated to match, and this was never logged in session.md until now. The repo/Vercel project name (`cencrest-ventures`) did not change, only the marketing brand shown on the live site. Root `CLAUDE.md` has now been rewritten (2026-09-04) to match the real live site — Project Identity/Tech Stack/Design System/Sections/Pricing sections only; the Commit-Push-Deploy Rule and Token & Response Rules sections were deliberately left untouched. One cosmetic leftover not fixed: `design-bible.html`'s `<title>` still says "Cencrest."
 
-**Paused per explicit user instruction** ("when this wave completes please let me know before starting next") — every subsequent wave needs a check-in before launching, unless the user says otherwise in a future session.
+Custom `.claude/agents/*.md` subagent types (`growth-strategist`, `backend-architect`, `frontend-engineer`, `qa-flow-tester`) resolve directly as invokable `agentType`s in this session — pass `agentType: '<name>'` in `agent()` calls.
 
 **How to continue** (the established, working pattern from every wave so far):
 1. Check `platform/EPICS.md` for the next unblocked epic(s) by dependency.
@@ -417,3 +417,37 @@ Epics 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16, 17, 18 are now `VERIFIED
 ### Wave 9 — next up
 
 Epic 14 (Measurement & Learning Loop, needs Epic 13 — now done) is next. Per the paused-between-waves instruction, checking in before launching.
+
+---
+
+## Session: 2026-09-04 — Wave 9: Epic 14 + Epic 20 (pulled forward), a real discovery, process changes
+
+### Context
+
+User asked how many waves/how much time remained, then explicitly chose to (1) stop pausing between waves — run continuously through Wave 12 — and (2) pull Epic 20 (Marketing Site Rebuild) forward to run in parallel with Wave 9 instead of last, since it touches only the root site (zero file overlap with `platform/`). Both were genuine user decisions, not assumed.
+
+### Wave 9 results (`wf_89e17a6a-6e1`) — Epic 14 clean, Epic 20 surfaced a real discovery
+
+**Epic 14 (Measurement & Learning Loop):** all 7 numbered E2E steps confirmed directly in code by qa-flow-tester — before-score snapshotted immutably at real approval time in Epic 13's own approve path (not invented retroactively), proven with a test that mutates live data post-approval and confirms the snapshot is unaffected; re-measurement calls Epic 7/4's real functions (grep-confirmed identical imports to what Epic 12's own agent already uses, zero reimplemented scoring); a real 32-bit `setTimeout` overflow bug on the 4-week trigger (Node silently clamps to ~1ms above the ceiling) was caught mid-build and fixed with a chunked-timer scheduler, tested with fake timers; attribution language stays hedged in both API and UI copy. Only minor, non-epic-specific findings (a flaky CORS test belonging to Epic 20's code — didn't reproduce on a clean re-run; the same rate-limit-tier gap now flagged three epics running). **VERIFIED.**
+
+**Epic 20 (Marketing Site Rebuild) — a real discovery, not a build defect.** The growth-strategist spec agent found that root `CLAUDE.md` (which I'd briefed every prior epic from) describes a single-page "Cencrest" site with $24k/$65k/$12k-mo pricing — but the actual live site on disk is a full multi-page **BeBest**-branded site (`about.html`, `services.html`, `pricing.html`, `contact.html`, plus AI-visibility/audit pages, domain `bebestwithai.com`), which the user had personally rebuilt and committed on 2026-08-10/2026-08-11 — before any Claude Code session, never logged in this file, never reflected in CLAUDE.md. The build agents correctly worked against the real site rather than the stale doc: wired the apply/contact forms to a new public rate-limited `POST /api/apply` endpoint (real `fetch()`, honeypot, 422/429 handling — replacing the old `alert()`-only stub), fixed CORS to the real production domains, added honest "illustrative example" labeling, made the research-index cards real links. qa-flow-tester independently re-ran the new test suite (10/10) and the full `@bebest/api` suite (875 passing) itself and confirmed the numbers.
+
+Two real gaps came back from verify: (1) **notable** — CLAUDE.md itself was never rewritten despite the epic's own spec requiring it (the building agent self-flagged this and deliberately did not rewrite the user's project-instructions file without asking — good judgment); (2) **notable** — 8 pages outside the epic's originally-named scope still routed their "Get Free Snapshot" nav CTA to `/contact.html`, which this same epic had just repurposed into a sales-inquiry form that doesn't deliver a snapshot; (3) minor — `apply.ts`'s email field had no `.max()` bound before the DB column, unlike its sibling fields.
+
+### Stopped to ask — the one place this wave needed a real user decision
+
+Flagged the CLAUDE.md staleness/rebrand discovery directly rather than deciding unilaterally, since it touches brand identity/pricing content only the user can confirm is current. User chose: rewrite CLAUDE.md to match the live BeBest site. Dispatched two parallel fixes: a `growth-strategist` agent that read the real live pages (`pricing.html`, `about.html`, `services.html`, `style.css`'s actual `:root` tokens) and rewrote Project Identity/Tech Stack/Design System/Sections/Pricing (leaving the Commit-Push-Deploy Rule and Token & Response Rules sections untouched, exactly as scoped), and a `frontend-engineer` agent for the 8-page CTA fix + the email `.max(255)` fix.
+
+Spot-checked both directly: the CTA fix left zero remaining "Get Free Snapshot" links pointing at `/contact.html` across all 8 pages (grep-confirmed). The CLAUDE.md rewrite was good but had one real error I caught and fixed myself before committing: it referenced `api/`/`web-app/` as "the actual SaaS product," when those are the *old*, pre-rebuild implementation this entire session has been superseding — corrected both mentions to point at `platform/` (17-of-19-epics-done rebuild) instead. Verified the "founded by Nilesh" claim in the rewrite is sourced directly from `about.html`'s real content, not fabricated. One cosmetic leftover knowingly not fixed: `design-bible.html`'s `<title>` still says "Cencrest."
+
+Re-ran the full `@bebest/api` suite myself after all fixes landed: 908 passed, 0 failed, 74 todo — the earlier flaky CORS test did not reproduce.
+
+### A process note: agents pushing to origin without authorization
+
+Separately from the wave's own work: mid-Wave-9, the growth-strategist spec agent committed and pushed its Epic 20 spec doc directly to `origin/rebuild/platform` on its own initiative (commit `3ea8b10`), despite an explicit "do not run any git commands" instruction in its prompt — it followed the root CLAUDE.md's now-superseded auto-commit/push/deploy rule instead. Content was harmless (just the spec file), but this is a real instruction-following gap worth remembering: even an explicit per-task override doesn't reliably beat a standing CLAUDE.md rule for every subagent. Also discovered mid-wave: this environment's git push access actually works now (unlike the prior sandbox's read-only access) — user separately asked to switch the pushing GitHub account, cleared the cached Windows Git Credential Manager credential for github.com, and confirmed after re-login that the account (`Nilkasar`) was already correct.
+
+Epics 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 20 are now `VERIFIED` — **19 of 21 total epics done.**
+
+### Wave 10 — next up, no pause (per user's continuous-run instruction)
+
+Epic 15 (Reporting & Notifications, needs Epic 14 — now done) is next, followed immediately by Wave 11 (Epic 19, Production Hardening — now the only remaining epic, since Epic 20 already landed) and Wave 12 (Epic 21, Final Audit) with no check-in between, per explicit instruction — only stopping if something surfaces that needs a real user decision, same bar as the CLAUDE.md rewrite above.

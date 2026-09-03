@@ -38,10 +38,13 @@ import agents from './routes/agents.js';
 import agentRunDetails from './routes/agent-run-details.js';
 import actions from './routes/actions.js';
 import actionDetails from './routes/action-details.js';
+import actionMeasurement from './routes/action-measurement.js';
+import measurements from './routes/measurements.js';
 import plans from './routes/plans.js';
 import subscription from './routes/subscription.js';
 import billingWebhooks from './routes/billing-webhooks.js';
 import { createSnapshotRoutes } from './routes/snapshot.js';
+import apply from './routes/apply.js';
 import agency from './routes/agency.js';
 import whiteLabel from './routes/white-label.js';
 import integrations from './routes/integrations.js';
@@ -76,9 +79,17 @@ app.use(
 app.use(
   '*',
   cors({
+    // docs/epics/20-marketing-site-rebuild.md: the marketing site is
+    // actually deployed and canonicalized under bebestwithai.com (see every
+    // <link rel="canonical">/og:url/JSON-LD @id in index.html/contact.html
+    // and docs/05-architecture/ARCHITECTURE.md's bebestwithai.com /
+    // app.bebestwithai.com split) — NOT bebestwith.ai. The previous
+    // allowlist silently CORS-rejected every client-side fetch from the
+    // real deployed site in production, including the new POST /api/apply
+    // below.
     origin:
       process.env.NODE_ENV === 'production'
-        ? ['https://app.bebestwith.ai', 'https://bebestwith.ai', 'https://www.bebestwith.ai']
+        ? ['https://bebestwithai.com', 'https://www.bebestwithai.com', 'https://app.bebestwithai.com']
         : '*',
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
@@ -228,6 +239,22 @@ app.route('/api/agent-runs', agentRunDetails);
 app.route('/api/brands/me/actions', actions);
 app.route('/api/actions', actionDetails);
 
+// Epic 14 — Measurement & Learning Loop. The loop's final stages
+// (RE-MEASURE -> LEARN -> IMPROVE), closing back to Epic 9's REPEAT.
+// `before_score` itself is captured inside Epic 13's own `POST /actions/
+// :id/approve` handler above (see `routes/action-details.ts`'s own header
+// comment) — this epic adds no new mutation route, only the two read
+// routes the spec's API surface names: spec's literal `GET /brands/:id/
+// measurements` adapted to `/brands/me/measurements`, same single-brand-
+// per-org convention every route above uses; `GET /actions/:id/measurement`
+// matches the spec exactly, mounted at the SAME `/api/actions` base as
+// `action-details.ts` (same "two routers, one base path" precedent
+// `/api/opportunities` already sets). The 4-week re-measurement trigger
+// itself (`lib/measurement/schedule-remeasurement.ts`) is internal/
+// scheduled, not a route — see that file's own header comment.
+app.route('/api/brands/me/measurements', measurements);
+app.route('/api/actions', actionMeasurement);
+
 // Epic 16 — Billing. `plans` is public reference data (no auth) for a
 // pricing/upgrade UI. `/api/orgs/me/subscription` follows the same
 // `requireOrgFromToken` "me" convention as every Epic 2+ brand-scoped route
@@ -246,6 +273,15 @@ app.route('/api/webhooks/billing', billingWebhooks);
 // applied to every route above; `GET /snapshot/:token` is looked up by an
 // opaque token hash, never `snapshot_requests.id`.
 app.route('/api/snapshot', createSnapshotRoutes(emailSender));
+
+// Epic 20 — Marketing Site Rebuild. `POST /api/apply` is the "talk to us
+// about an engagement" sales-intent lead from the root marketing site's
+// #apply / contact.html forms — public, unauthenticated, own
+// `applyFormRateLimit` bucket (5/hour/IP) on top of the baseline
+// `publicRateLimit` above, same "route carries its own stricter limit"
+// pattern `POST /snapshot` uses. Deliberately NOT the free-snapshot flow —
+// no website field, no crawl, no AI calls (see routes/apply.ts header).
+app.route('/api/apply', apply);
 
 // Epic 18 — Agency / White Label / Integrations. `agency` composes with
 // (never replaces) Epic 0's tenant-context/RLS — see

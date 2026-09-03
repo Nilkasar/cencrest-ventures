@@ -2,6 +2,122 @@
    CENCREST — Interactive Components & Microinteractions
    ============================================================ */
 
+// Epic 20 (Marketing Site Rebuild) — real backend for the `.apply-form`
+// forms on index.html (#apply) and contact.html. Both post the same
+// sales-intent lead shape to POST /api/apply (see
+// platform/apps/api/src/routes/apply.ts) — never the free-snapshot flow,
+// which stays a plain link to https://app.bebestwithai.com/snapshot.
+//
+// API_ORIGIN is a build-time assumption: no ARCHITECTURE doc in this repo
+// names the deployed API domain, so this follows the app.bebestwithai.com
+// subdomain convention the API's own CORS allowlist already uses
+// (app.ts). Verify against the real deployed API URL before going live —
+// this is the one line to change if it's wrong.
+const API_ORIGIN = (() => {
+  const h = window.location.hostname;
+  if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:3001';
+  return 'https://api.bebestwithai.com';
+})();
+
+function wireApplyForm(form) {
+  if (!form) return;
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const successEl = form.querySelector('[data-form-success]');
+  const errorEl = form.querySelector('[data-form-error]');
+  const submitLabel = submitBtn ? submitBtn.textContent : '';
+
+  const resetStatus = () => {
+    if (successEl) { successEl.hidden = true; successEl.textContent = ''; }
+    if (errorEl) { errorEl.hidden = true; errorEl.textContent = ''; }
+  };
+
+  const showError = (msg) => {
+    if (!errorEl) return;
+    errorEl.textContent = msg;
+    errorEl.hidden = false;
+  };
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    resetStatus();
+
+    // novalidate is set on both forms so this handler always runs; native
+    // constraint validation (required / type=email / maxlength, mirroring
+    // the backend's Zod schema) still gates the actual submit here.
+    if (!form.reportValidity()) return;
+
+    const data = new FormData(form);
+    const get = (name) => (data.get(name) || '').toString().trim();
+
+    // contact.html's form carries an extra "What are you looking for?"
+    // field the /api/apply schema doesn't have a slot for — fold it into
+    // notes rather than silently dropping it.
+    const service = get('service');
+    const rawNotes = get('notes');
+    const notes = [service ? `Interested in: ${service}` : '', rawNotes].filter(Boolean).join('\n\n');
+
+    const payload = {
+      name: get('name'),
+      email: get('email'),
+      company: get('company'),
+    };
+    const category = get('category');
+    if (category) payload.category = category;
+    if (notes) payload.notes = notes;
+    const honeypot = get('hp_field');
+    if (honeypot) payload.hp_field = honeypot;
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="apply-btn-spinner" aria-hidden="true"></span>Sending…';
+    }
+    form.setAttribute('aria-busy', 'true');
+
+    try {
+      const res = await fetch(`${API_ORIGIN}/api/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.status === 201) {
+        const json = await res.json().catch(() => null);
+        if (successEl) {
+          successEl.textContent = (json && json.message) || 'Request received. The BeBest team will be in touch within 24 hours.';
+          successEl.hidden = false;
+        }
+        form.reset();
+        Array.from(form.elements).forEach((el) => {
+          if (el !== submitBtn) el.disabled = true;
+        });
+        if (submitBtn) submitBtn.hidden = true;
+      } else if (res.status === 422) {
+        const json = await res.json().catch(() => null);
+        const issues = json && Array.isArray(json.issues) && json.issues.length
+          ? json.issues.map((i) => i.message).join(' ')
+          : 'Please check the highlighted fields and try again.';
+        showError(issues);
+      } else if (res.status === 429) {
+        const retryAfter = Number(res.headers.get('Retry-After'));
+        const wait = Number.isFinite(retryAfter) && retryAfter > 0
+          ? ` in about ${Math.max(1, Math.ceil(retryAfter / 60))} minute(s)`
+          : ' shortly';
+        showError(`You've sent a few of these already — please try again${wait}, or email hello@bebestwithai.com directly.`);
+      } else {
+        showError('Something went wrong on our end. Please try again, or email hello@bebestwithai.com directly.');
+      }
+    } catch (err) {
+      showError('We could not reach the server. Check your connection and try again, or email hello@bebestwithai.com directly.');
+    } finally {
+      form.removeAttribute('aria-busy');
+      if (submitBtn && !submitBtn.hidden) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = submitLabel;
+      }
+    }
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // 1. Navigation Scroll Backdrop
   const nav = document.getElementById('nav');
@@ -142,4 +258,8 @@ document.addEventListener('DOMContentLoaded', () => {
       barFillEl: document.getElementById('film-bar-fill')
     });
   }
+
+  // 7. Wire every sales-intent lead form (#apply on index.html,
+  // contact.html's form) to the real POST /api/apply backend.
+  document.querySelectorAll('.apply-form').forEach(wireApplyForm);
 });

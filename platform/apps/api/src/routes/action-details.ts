@@ -28,6 +28,8 @@ import { writeManualAuditEvent } from '../middleware/audit-log.js';
 import { getPublishTarget } from '../lib/actions/publish-target.js';
 import { isWithinRollbackWindow } from '../lib/actions/rollback-window.js';
 import { serializeAction, serializePublishedContent } from '../lib/actions/serialize.js';
+import { getCurrentScoreSnapshot } from '../lib/measurement/current-score-snapshot.js';
+import { scheduleRemeasurement } from '../lib/measurement/schedule-remeasurement.js';
 import type { AppEnv } from '../types/context.js';
 
 const actionDetailsRoute = new Hono<AppEnv>();
@@ -77,10 +79,29 @@ actionDetailsRoute.post('/:id/approve', requireAuth, requireOrgFromToken('viewer
   }
 
   const now = new Date();
+
+  // Epic 14 (Measurement & Learning Loop) non-negotiable: the before-score
+  // must be snapshotted AT APPROVAL TIME, not measurement time — this is
+  // that snapshot, the ONLY place it is ever taken (see `actions.
+  // before_score`'s own schema comment and `lib/measurement/current-score-
+  // snapshot.ts`'s header comment for the full reasoning). A read of
+  // whatever is ALREADY computed (Epic 7's latest completed `ai_runs`,
+  // Epic 4's latest `seo_analyses`) — never a trigger of a brand-new AI run
+  // or crawl just to record a baseline.
+  const beforeScore = await getCurrentScoreSnapshot(org.organizationId, action.brand_id);
+
   const updated = await withOrgContext(org.organizationId, (tx) =>
     tx.actions.update({
       where: { id: action.id },
-      data: { approved_by: user.id, approved_at: now, status: 'approved', updated_by: user.id, updated_at: now },
+      data: {
+        approved_by: user.id,
+        approved_at: now,
+        status: 'approved',
+        updated_by: user.id,
+        updated_at: now,
+        before_score: beforeScore as unknown as Prisma.InputJsonValue,
+        before_score_captured_at: now,
+      },
     }),
   );
 
@@ -184,6 +205,14 @@ actionDetailsRoute.post('/:id/execute', requireAuth, requireOrgFromToken('viewer
   // `content.published` — SECURITY.md's ALWAYS_AUDITED_ACTIONS "Publishing
   // content" entry, reused verbatim (this IS that event).
   await writeManualAuditEvent(c, { action: 'content.published', entityType: 'action', entityId: action.id });
+
+  // Epic 14 (Measurement & Learning Loop) — "Triggered automatically 4
+  // weeks after an actions row's executed_at," the spec's own literal
+  // trigger point. Only on this REAL, first-time execution branch — never
+  // on the idempotent `alreadyExecuted` branch above, which would otherwise
+  // schedule a second, redundant re-measurement timer for the same action
+  // on every repeated call.
+  scheduleRemeasurement(action.id, org.organizationId);
 
   return c.json({ alreadyExecuted: false, action: serializeAction(updated), publishedContent: serializePublishedContent(publishedContent) }, 201);
 });

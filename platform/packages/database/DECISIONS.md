@@ -1876,3 +1876,117 @@ applied to a database. `apps/api`'s consumption (the `PublishTarget`
 abstraction, the three lifecycle routes with their guard clauses, and the
 two cross-epic handoffs) is documented in
 `platform/docs/epics/13-action-center-publishing-backend.md`.
+
+## 28. Epic 14 (Measurement & Learning Loop) schema additions
+
+`docs/epics/14-measurement-learning-loop.md`'s domain model: `measurements`
+(`action_id`, `brand_id`, `before_score`/`after_score` JSONB, `score_delta`,
+`attribution_confidence`, `attribution_notes`, `measured_at`) and
+`outcome_records` (`opportunity_type`, `action_type`, `score_delta`,
+`organization_id`) — two genuinely new tables, no prior-epic near-namesake
+to resolve (unlike §22/§25/§27's repeated "a different, wrong-shaped table
+already exists, leave it alone" situation — checked directly against
+schema.prisma first, same "check the schema first" discipline every section
+here applies: the legacy `measurement_points`/`measurement_annotations`/
+`experiment_measurements` tables (ported in Epic 0, System schema group)
+have **zero application code touching them anywhere**, confirmed by grep,
+and are shaped for a different concern entirely — `measurement_points` is a
+named, batch-keyed AI-visibility snapshot with no `action_id`/before-vs-
+after concept at all, `experiment_measurements` is an A/B-test metric log.
+Reusing either would be the same "different, wrong-shaped table for a
+concern this epic doesn't own" mistake §25/§27 already decline to make. Left
+completely untouched.
+
+### The non-negotiable: column vs. separate mechanism for `before_score`
+
+This epic's task brief leaves the design open ("either as a new column on
+actions or in a way measurements can read back later; your call, document
+the reasoning") with one hard constraint: before must be snapshotted AT
+APPROVAL TIME, immutably, never recomputed from live data at measurement
+time. Resolved as **both, deliberately** — not a compromise between two
+options, but two independent copies serving two different guarantees:
+
+1. **`actions.before_score`/`.before_score_captured_at`** (new columns,
+   nullable) — the CANONICAL snapshot, written exactly once, only by `POST
+   /actions/:id/approve` (`routes/action-details.ts`). Living on `actions`
+   itself (rather than requiring a separate row to exist before a
+   measurement is even possible) means the snapshot is readable immediately
+   after approval — `GET /actions/:id/measurement` can report `measured:
+   false` while still showing `beforeScoreCapturedAt` (see `routes/
+   action-measurement.ts`) — and, more importantly, it's set inside the
+   SAME transaction-shaped call that flips `approved_by`/`approved_at`, so
+   there is no window where an action is "approved" but its baseline
+   hasn't been captured yet.
+2. **`measurements.before_score`/`.before_score_captured_at`** — a SECOND,
+   independent copy, taken from column (1) at MEASUREMENT-CREATION time
+   (`lib/measurement/run-measurement.ts`), never re-read from live brand
+   data. This is what actually gets compared against `after_score` and
+   returned by both read routes.
+
+Why both, not just one: a single canonical column is sufficient on its own
+for the "captured once, at approval" half of the guarantee, but this
+epic's own Definition of Done demands something stronger and independently
+TESTABLE — "mutating the live brand's current score after approval must
+not change what a LATER MEASUREMENT compares against." With two
+independent copies, the property holds by construction: even a
+hypothetical future bug that mutated column (1) after approval could
+corrupt only a not-yet-created measurement, never one already written —
+`measurements.before_score` is a physically distinct row nothing can
+retroactively edit once it exists. `lib/measurement/immutability.test.ts`
+is the literal proof: it drives the real approve handler to capture 40,
+mutates the mocked "live" `ai_runs` table to 90, then runs the real
+measurement and asserts the stored `before_score` still reads 40. No
+Postgres trigger enforces true column-level immutability on (1) (this
+codebase has none anywhere — CHECK constraints and RLS only); the
+all-or-nothing pairing is enforced by `chk_actions_before_score_together`
+(checks.sql) and, in practice, by the fact that grep confirms exactly one
+call site (`POST /actions/:id/approve`) ever writes to these two columns.
+
+### `attribution_confidence` reuses `claim_confidence`, not a new enum
+
+`high|medium|low` is `claim_confidence`'s exact, existing vocabulary
+(`brand_observations.extraction_confidence`, Epic 7) — reused directly per
+§6's "don't duplicate a vocabulary that already exists under a generic
+enough name" precedent, the same reasoning §22's `opportunity_recommendations`
+reuses `effort_level` for `impact` under.
+
+### `opportunity_type`/`action_type` reuse the REAL Epic 9/10 enums
+
+`outcome_records.opportunity_type unified_opportunity_type` and
+`.action_type recommendation_action_type` are the identical enums §22/§24
+already defined for `unified_opportunities.type`/`opportunity_recommendations.
+action_type` — reused directly, never re-typed as a guessed string, per this
+epic's own explicit "not guessed or hardcoded" instruction. `outcome_records.
+measurement_id` (a real FK, Cascade — an outcome record has no independent
+meaning without the measurement it summarizes, same composition-child
+reasoning `opportunity_evidence` already uses) is the traversal path: a row
+is written only when `actions.recommendation_id` resolves through
+`opportunity_recommendations` -> `unified_opportunities`; a Level 1-3
+agent-originated action with no recommendation of its own (`recommendation_id`
+null — see §27's own handoff-wiring note) produces a `measurements` row but
+deliberately no `outcome_records` row, rather than guessing a pair. See
+`apps/api/src/lib/measurement/run-measurement.ts`'s own header comment.
+
+### `score_delta` is nullable on both tables
+
+A delta is genuinely uncomputable when neither side of a `before_score`/
+`after_score` pair has a comparable GEO or SEO component (e.g. a brand's
+very first approved action, with zero AI-visibility/SEO data existing yet
+at approval time) — left `null` rather than coerced to a misleading 0, the
+same "null means no data" convention `unified_opportunities.seo_demand_score`/
+`.geo_gap_score` already establish.
+
+### RLS / CHECK
+
+`prisma/migrations/0017_measurement_learning_loop/rls.sql` adds the standard
+`tenant_isolation` policy to both new tables (`actions` already has RLS from
+0000_init — the two new columns on it don't need a new policy). `.../
+checks.sql`: `chk_actions_before_score_together` (all-or-nothing, same
+"set together or not at all" discipline `chk_actions_approval_fields_together`
+(§27) already establishes).
+
+As with every other section: `prisma validate`/`generate` only — nothing
+applied to a database. `apps/api`'s consumption (the before-score capture
+inside Epic 13's approve handler, the 4-week trigger, the pure scoring/
+attribution functions, and the two read routes) is documented in
+`platform/docs/epics/14-measurement-learning-loop-backend.md`.
