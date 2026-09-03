@@ -53,7 +53,12 @@ export interface OpportunityScoringResult {
   formulaVersion: typeof SCORING_FORMULA_VERSION;
 }
 
-const MIN_EFFORT_DENOMINATOR = 1e-6;
+/** Exported so Epic 9's Opportunity Engine merge (`lib/opportunities/
+ * merge-scoring.ts`) can apply the identical epsilon floor when it
+ * re-runs this formula's own weighted-combination shape over an already-
+ * computed pair of standalone (SEO, GEO) results, rather than inventing a
+ * second, slightly different floor value. */
+export const MIN_EFFORT_DENOMINATOR = 1e-6;
 
 function clampScore(n: number): number {
   return Math.min(100, Math.max(0, n));

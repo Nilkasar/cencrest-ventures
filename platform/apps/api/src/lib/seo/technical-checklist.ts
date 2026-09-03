@@ -48,6 +48,25 @@
 
 import type { issue_severity, issue_type, page_issues, pages } from '@bebest/database';
 
+/**
+ * The minimal shape `runTechnicalChecklist` actually reads (`url`,
+ * `schema_types`, and each existing issue's `issue_type`/`severity`/
+ * `detail`) — deliberately narrower than the full `pages`/`page_issues`
+ * Prisma models so the function stays reusable anywhere a page has been
+ * fetched but was never persisted as a real `pages` row (Epic 17's
+ * free-snapshot orchestrator, which crawls a small, unauthenticated sample
+ * with no `brand_id`/`organization_id` to attach a real row to — see
+ * `lib/free-snapshot/seo-analysis.ts`). A real `pages & { page_issues }`
+ * row (this epic's own `routes/seo.ts` caller) already structurally
+ * satisfies this interface, so narrowing the parameter type changes
+ * nothing about how Epic 4's own callers behave.
+ */
+export interface TechnicalChecklistPageInput {
+  url: string;
+  schema_types: string[];
+  page_issues: Array<Pick<page_issues, 'issue_type' | 'severity' | 'detail'>>;
+}
+
 export interface ChecklistCheck {
   id: string;
   passed: boolean;
@@ -91,7 +110,7 @@ function deduct(score: number, severity: issue_severity): number {
  * and independently unit-testable.
  */
 export function runTechnicalChecklist(
-  page: pages & { page_issues: page_issues[] },
+  page: TechnicalChecklistPageInput,
   isHomepage: boolean,
 ): TechnicalAnalysisResult {
   const existingTypes = new Set(page.page_issues.map((issue) => issue.issue_type));
@@ -158,7 +177,11 @@ export interface ContentAnalysisResult {
  */
 const THIN_CONTENT_WORD_MIN = 300;
 
-export function runContentChecklist(pages_: pages[]): ContentAnalysisResult {
+/** Same narrowing rationale as `TechnicalChecklistPageInput` above — only
+ * `word_count`/`schema_types` are ever read. */
+export type ContentChecklistPageInput = Pick<pages, 'word_count' | 'schema_types'>;
+
+export function runContentChecklist(pages_: ContentChecklistPageInput[]): ContentAnalysisResult {
   const pagesAnalyzed = pages_.length;
   if (pagesAnalyzed === 0) {
     return {

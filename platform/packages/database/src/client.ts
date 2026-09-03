@@ -221,6 +221,9 @@ export type {
   lead_status,
   deal_stage,
   activity_type,
+  // Epic 17 (Free AI + SEO Growth Snapshot)
+  snapshot_requests,
+  snapshot_status,
   // Epic 5 (Intent & Query Universe)
   query_sets,
   queries,
@@ -246,6 +249,10 @@ export type {
   ai_runs,
   ai_run_responses,
   brand_observations,
+  // Epic 9 (Opportunity Engine)
+  unified_opportunities,
+  opportunity_evidence,
+  unified_opportunity_type,
 } from '@prisma/client';
 
 export type PrismaTransactionClient = Prisma.TransactionClient;

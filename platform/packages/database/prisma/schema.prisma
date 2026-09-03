@@ -143,6 +143,9 @@ model organizations {
   seo_keywords              seo_keywords[]
   seo_analyses              seo_analyses[]
   seo_opportunities         seo_opportunities[]
+  // Epic 9 (Opportunity Engine) additions
+  unified_opportunities     unified_opportunities[]
+  opportunity_evidence      opportunity_evidence[]
   learning_insights         learning_insights[]
   learning_signals          learning_signals[]
   marketing_campaigns       marketing_campaigns[]
@@ -274,6 +277,8 @@ model users {
   seo_keywords_created        seo_keywords[]             @relation("seo_keywords_created_by")
   seo_keywords_updated        seo_keywords[]             @relation("seo_keywords_updated_by")
   seo_opportunities_updated   seo_opportunities[]        @relation("seo_opportunities_updated_by")
+  // Epic 9 (Opportunity Engine) addition
+  unified_opportunities_updated unified_opportunities[]  @relation("unified_opportunities_updated_by")
 
   @@index([email], map: "idx_users_email")
 }
@@ -498,6 +503,19 @@ model snapshot_requests {
   expires_at          DateTime        @default(dbgenerated("(now() + '30 days'::interval)")) @db.Timestamptz(6)
   created_at          DateTime        @default(now()) @db.Timestamptz(6)
   updated_at          DateTime        @default(now()) @db.Timestamptz(6)
+
+  // Epic 17 (Free AI + SEO Growth Snapshot) addition. `GET /snapshot/:token`
+  // is a public, unauthenticated endpoint (docs/epics/17-free-snapshot.md's
+  // explicit "not the lead's real ID — don't leak enumerable IDs on a
+  // public endpoint" instruction) — `id` above is a sequential-enough,
+  // FK-linked UUID an authenticated CRM user can already see via
+  // `leads.snapshot_id`, so it is never accepted as the public lookup key.
+  // Only the SHA-256 hash of a 32-byte random token is stored, same
+  // "generate once, hash at rest, hand the raw value to the caller a single
+  // time" pattern `lib/tokens.ts`'s `generateOpaqueToken`/`hashToken` already
+  // establishes for magic links and refresh tokens — a leaked database
+  // export still cannot be used to enumerate/guess a live report URL.
+  token_hash String @unique(map: "snapshot_requests_token_hash_unique") @db.VarChar(64)
 
   organizations organizations? @relation(fields: [converted_to_org_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
   leads         leads[] // Epic 1 (CRM): a CRM lead optionally originates from a free-snapshot request
@@ -1249,6 +1267,8 @@ model brands {
   keyword_groups          keyword_groups[]
   seo_analyses            seo_analyses[]
   seo_opportunities       seo_opportunities[]
+  // Epic 9 (Opportunity Engine) addition
+  unified_opportunities   unified_opportunities[]
   learning_insights       learning_insights[]
   learning_signals        learning_signals[]
   measurement_annotations measurement_annotations[]
@@ -2198,6 +2218,8 @@ model queries {
   // every configured provider once per `ai_runs` run.
   ai_run_responses   ai_run_responses[]
   brand_observations brand_observations[]
+  // Epic 9 (Opportunity Engine) addition — the merge's per-intent key.
+  unified_opportunities unified_opportunities[]
 
   @@index([query_set_id], map: "idx_queries_query_set")
   @@index([organization_id], map: "idx_queries_organization")
@@ -3024,6 +3046,128 @@ model opportunities {
   @@index([status], map: "idx_opportunities_status")
   @@index([brand_id, priority_tier], map: "idx_opportunities_tier")
   @@index([organization_id, unified_score(sort: Desc)], map: "idx_opportunities_org_score")
+}
+
+// ============================================================================
+// Epic 9 — OPPORTUNITY ENGINE (unified SEO + GEO merge)
+// ============================================================================
+// The ported `opportunities` model directly above is NOT this epic's table —
+// same naming collision, same resolution, as every prior epic that hit one
+// (Epic 2's entities/brand_entities, Epic 5's queries vs questions, Epic 7's
+// ai_responses/ai_run_responses, Epic 8's geo_gaps left untouched): that
+// table keys off `gap_id -> gap_analysis -> intents/analyses`, the LEGACY
+// pipeline, and its own field list (`unified_score`, `priority_tier`,
+// `action_type`, `expected_impact`...) does not match this epic's literal
+// spec field list (`type`, `intent`, `seo_demand_score`, `geo_gap_score`,
+// `effort_score`, `impact_score`, `opportunity_score`, `priority`) — not a
+// naming quibble, a different table for a different, untouched pipeline.
+// Epic 4 hit the identical situation for "opportunities" and resolved it the
+// same way, naming its own table `seo_opportunities` — that name is now ALSO
+// taken by a real, narrower (SEO-only) table, so this epic's wider merge
+// output (SEO-only, GEO-only, AND unified rows) gets its own disambiguated
+// name: `unified_opportunities`. See DECISIONS.md's Epic 9 section for the
+// full reasoning, and for why `opportunity_evidence` (a genuinely unclaimed
+// name) needed no disambiguation at all.
+model unified_opportunities {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String @db.Uuid
+  brand_id        String @db.Uuid
+  // The Epic 5 `queries` row this opportunity's "intent" IS — the epic
+  // spec's literal merge key ("for each intent in the brand's Query
+  // Universe"). Required + Restrict (not Cascade): same "outlives any one
+  // reference" default DECISIONS.md §5 gives `ai_run_responses.query_id`;
+  // the unique constraint below also needs a stable, non-null key for
+  // idempotent recompute to upsert against.
+  query_id String @db.Uuid
+  // Snapshotted at write time so the row (and its evidence sentences) stay
+  // meaningful even if the query's own text is edited later — same
+  // "snapshot, don't re-read live" reasoning as `ai_runs.providers`.
+  intent_text String @db.VarChar(1000)
+
+  type unified_opportunity_type
+
+  // 0-100, null when that signal has NO data for this intent at all (never
+  // the same as a real 0 — "no keyword matched" vs. "keyword matched, zero
+  // volume"). Epic 4's `computeOpportunityScore` "value" output when an SEO
+  // signal exists.
+  seo_demand_score Decimal? @db.Decimal(5, 2)
+  // 0-100, null when there is no GEO gap classification for this intent —
+  // Epic 8's `classifyIntentGaps` finding's competitor mention-rate delta
+  // when one does exist.
+  geo_gap_score Decimal? @db.Decimal(5, 2)
+
+  effort_score            Decimal @db.Decimal(5, 2)
+  impact_score            Decimal @db.Decimal(5, 2)
+  opportunity_score       Decimal @db.Decimal(5, 2)
+  scoring_formula_version String  @default("1.0") @db.VarChar(20)
+
+  // Reuses the identical `opportunity_status` enum every other opportunity
+  // table in this schema already uses (`seo_opportunities`, the legacy
+  // `opportunities`) — same closed `new|in_progress|completed|dismissed`
+  // vocabulary, same DECISIONS.md §6 "don't duplicate a vocabulary that
+  // already exists under a generic enough name" precedent.
+  status opportunity_status @default(new)
+  // 1=high/2=medium/3=low — plain ranking int validated at the API
+  // boundary, same precedent as `queries.priority`/`competitors.priority`
+  // (DECISIONS.md §15/§16), not a DB enum.
+  priority Int @default(2) @db.SmallInt
+  // Captured on transition to 'dismissed' (this epic's end-to-end flow step
+  // 5: "dismiss with a reason") — same pattern as `deals.lost_reason`.
+  dismissal_reason String?
+
+  title String @db.VarChar(255)
+
+  updated_by String?  @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  organizations        organizations          @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  brands               brands                 @relation(fields: [brand_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  queries              queries                @relation(fields: [query_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  updated_by_user      users?                 @relation("unified_opportunities_updated_by", fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  opportunity_evidence opportunity_evidence[]
+
+  // The idempotency key this epic's DoD explicitly tests: one opportunity
+  // row per (brand, intent), ever — `POST .../recompute` always upserts
+  // against this, never inserts a second row for the same query.
+  @@unique([organization_id, brand_id, query_id], map: "uq_unified_opportunities_brand_query")
+  @@index([brand_id], map: "idx_unified_opportunities_brand")
+  @@index([status], map: "idx_unified_opportunities_status")
+  @@index([type], map: "idx_unified_opportunities_type")
+  @@index([organization_id, opportunity_score(sort: Desc)], map: "idx_unified_opportunities_org_score")
+}
+
+// Links a `unified_opportunities` row back to the SPECIFIC row(s) that
+// justified it — `PRODUCT_VISION.md`'s evidence-sentence example, one
+// clause per row. `source_table`/`source_id` is the same open, polymorphic
+// reference pattern DECISIONS.md §6 already documents as deliberately
+// unconstrained elsewhere (`action_type`, `source`/`source_id` generally) —
+// a fixed enum of source tables would have to be widened every time a
+// future epic adds a new evidence kind.
+model opportunity_evidence {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String @db.Uuid
+  opportunity_id  String @db.Uuid
+  // 'seo_keywords' | 'ai_runs' (aggregated per-competitor GEO evidence — see
+  // `docs/epics/09-opportunity-engine-backend.md` for why not
+  // `brand_observations` directly) — open, not enumerated, same reasoning
+  // as this model's own header comment.
+  source_table String @db.VarChar(50)
+  source_id    String @db.Uuid
+  // The exact evidence sentence — e.g. "CompetitorA appears in 84% of
+  // responses at position 1, you appear in 2% of responses." — never a
+  // generic summary (the epic spec's explicit instruction).
+  summary  String
+  raw_data Json?
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  organizations         organizations         @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  // True composition child — an evidence row has zero independent meaning
+  // once its opportunity is gone (DECISIONS.md §5's Cascade rule).
+  unified_opportunities unified_opportunities @relation(fields: [opportunity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([opportunity_id], map: "idx_opportunity_evidence_opportunity")
 }
 
 // ============================================================================
@@ -3920,4 +4064,19 @@ enum usage_metric {
   crawl_pages
   users
   brands
+}
+
+// Epic 9 (Opportunity Engine). All five values from the epic spec's literal
+// domain model are added now, even though this epic's own merge logic only
+// ever produces `seo`/`geo`/`unified` — `content`/`technical` are additive,
+// forward-reserved for Epic 10/11 (Recommendation/Content Intelligence),
+// which the spec explicitly lists as consumers of this same table's `type`
+// column. Adding them now (schema never applied to a database yet) avoids
+// a later widening migration for a value the domain model already names.
+enum unified_opportunity_type {
+  seo
+  geo
+  unified
+  content
+  technical
 }

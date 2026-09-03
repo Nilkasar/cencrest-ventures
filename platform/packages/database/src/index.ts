@@ -43,6 +43,9 @@ export {
   type lead_status,
   type deal_stage,
   type activity_type,
+  // Epic 17 (Free AI + SEO Growth Snapshot)
+  type snapshot_requests,
+  type snapshot_status,
   // Epic 5 (Intent & Query Universe)
   type query_sets,
   type queries,
@@ -68,4 +71,8 @@ export {
   type ai_runs,
   type ai_run_responses,
   type brand_observations,
+  // Epic 9 (Opportunity Engine)
+  type unified_opportunities,
+  type opportunity_evidence,
+  type unified_opportunity_type,
 } from './client.js';

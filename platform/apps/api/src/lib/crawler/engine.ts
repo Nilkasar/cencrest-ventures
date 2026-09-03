@@ -263,14 +263,29 @@ async function updateProgress(
   );
 }
 
-async function recordPageIssues(
-  organizationId: string,
-  brandId: string,
-  pageId: string,
-  statusCode: number,
+export interface DetectedPageIssue {
+  issue_type: issue_type;
+  severity: issue_severity;
+  detail: string | null;
+}
+
+/**
+ * The Page Analysis Checklist items derivable from a single fetched page,
+ * with no other page/crawl state needed — pure so it can be reused
+ * anywhere a page has been fetched and extracted but there is no
+ * `pages`/`page_issues` row to persist against (Epic 17's free-snapshot
+ * orchestrator, which crawls a small, unauthenticated sample and never
+ * writes to this epic's tenant-scoped tables — see
+ * `lib/free-snapshot/crawl.ts`). `recordPageIssues` below is the ONLY
+ * caller that persists this function's output; extracting it did not
+ * change what gets written to `page_issues` for a real, authenticated
+ * crawl in any way.
+ */
+export function detectPageIssues(
   extracted: ReturnType<typeof extractPageData>,
-): Promise<void> {
-  const issues: Array<{ issue_type: issue_type; severity: issue_severity; detail: string | null }> = [];
+  statusCode: number,
+): DetectedPageIssue[] {
+  const issues: DetectedPageIssue[] = [];
 
   if (statusCode >= 400) {
     issues.push({ issue_type: 'broken_link', severity: 'high', detail: `HTTP ${statusCode}` });
@@ -309,6 +324,17 @@ async function recordPageIssues(
     });
   }
 
+  return issues;
+}
+
+async function recordPageIssues(
+  organizationId: string,
+  brandId: string,
+  pageId: string,
+  statusCode: number,
+  extracted: ReturnType<typeof extractPageData>,
+): Promise<void> {
+  const issues = detectPageIssues(extracted, statusCode);
   if (issues.length === 0) return;
 
   await withOrgContext(organizationId, (tx) =>

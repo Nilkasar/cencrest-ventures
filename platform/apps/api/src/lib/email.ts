@@ -13,6 +13,15 @@ export interface EmailSender {
     organizationName: string;
     inviteUrl: string;
   }): Promise<void>;
+  /**
+   * Epic 17 (Free AI + SEO Growth Snapshot) — step 4 of the epic's flow:
+   * "send an email with a link to the web report" once the orchestrated
+   * pipeline (crawl + queries + AI run + SEO analysis + report) finishes.
+   * Same swappable-provider contract as the other two methods: dev/test
+   * gets `ConsoleEmailSender` below, a later epic wires a real
+   * `ResendEmailSender` with zero route/orchestrator changes.
+   */
+  sendSnapshotReady(params: { to: string; reportUrl: string }): Promise<void>;
 }
 
 /**
@@ -38,5 +47,10 @@ export class ConsoleEmailSender implements EmailSender {
     console.log(
       `[dev email] invitation for ${params.to} to join "${params.organizationName}": ${params.inviteUrl}`,
     );
+  }
+
+  async sendSnapshotReady({ to, reportUrl }: { to: string; reportUrl: string }): Promise<void> {
+    // eslint-disable-next-line no-console -- deliberate: this class IS the dev-mode "delivery"
+    console.log(`[dev email] AI Visibility Snapshot ready for ${to}: ${reportUrl}`);
   }
 }

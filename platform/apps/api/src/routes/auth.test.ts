@@ -27,6 +27,7 @@ class FakeEmailSender implements EmailSender {
     this.sent.push({ to, url: magicLinkUrl });
   }
   async sendInvitation(): Promise<void> {}
+  async sendSnapshotReady(): Promise<void> {}
 }
 
 async function buildApp() {

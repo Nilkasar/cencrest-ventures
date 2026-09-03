@@ -25,13 +25,22 @@ import aiRuns from './routes/ai-runs.js';
 import aiRunDetails from './routes/ai-run-details.js';
 import competitorAiRuns from './routes/competitor-ai-runs.js';
 import competitiveIntelligence from './routes/competitive-intelligence.js';
+import opportunities from './routes/opportunities.js';
+import opportunityDetails from './routes/opportunity-details.js';
 import plans from './routes/plans.js';
 import subscription from './routes/subscription.js';
 import billingWebhooks from './routes/billing-webhooks.js';
+import { createSnapshotRoutes } from './routes/snapshot.js';
 import { ConsoleEmailSender } from './lib/email.js';
 import type { AppEnv } from './types/context.js';
 
 const app = new Hono<AppEnv>();
+
+// Single `EmailSender` construction site (per lib/email.ts's own header
+// comment: "swapping in Resend later means... changing the single call
+// site... no route or handler changes") — shared by every route that sends
+// an email, never a fresh `new ConsoleEmailSender()` per route module.
+const emailSender = new ConsoleEmailSender();
 
 // Security headers — matches docs/08-security/SECURITY.md's required
 // header list exactly.
@@ -73,7 +82,7 @@ app.use('*', requestLogger);
 app.use('*', publicRateLimit);
 
 app.route('/api/health', health);
-app.route('/api/auth', createAuthRoutes(new ConsoleEmailSender()));
+app.route('/api/auth', createAuthRoutes(emailSender));
 app.route('/api/orgs', orgs);
 
 // Epic 1 — CRM. Internal-ops tool (docs/epics/01-crm.md's Entitlements
@@ -139,6 +148,16 @@ app.route('/api/ai-runs', aiRunDetails);
 app.route('/api/brands/me/competitors', competitorAiRuns);
 app.route('/api/brands/me', competitiveIntelligence);
 
+// Epic 9 — Opportunity Engine. Merges Epic 4's SEO demand signal with Epic
+// 8's GEO gap classification per intent (Epic 5's `queries`). Same
+// single-brand-per-org convention as every route above: the spec's literal
+// `POST /brands/:id/opportunities/recompute` and `GET /brands/:id/
+// opportunities` are adapted to `/brands/me/...`; `/api/opportunities/:id`
+// matches the spec exactly — a `unified_opportunities` row is addressed by
+// its own id, not a brand's, same as `/api/crawl-jobs/:id`/`/api/ai-runs/:id`.
+app.route('/api/brands/me/opportunities', opportunities);
+app.route('/api/opportunities', opportunityDetails);
+
 // Epic 16 — Billing. `plans` is public reference data (no auth) for a
 // pricing/upgrade UI. `/api/orgs/me/subscription` follows the same
 // `requireOrgFromToken` "me" convention as every Epic 2+ brand-scoped route
@@ -149,6 +168,14 @@ app.route('/api/brands/me', competitiveIntelligence);
 app.route('/api/plans', plans);
 app.route('/api/orgs/me/subscription', subscription);
 app.route('/api/webhooks/billing', billingWebhooks);
+
+// Epic 17 — Free AI + SEO Growth Snapshot. Public, unauthenticated by
+// design (docs/epics/17-free-snapshot.md's whole point is a top-of-funnel
+// endpoint with no login) — `POST /snapshot` carries its own stricter
+// `freeSnapshotRateLimit` (1/hour/IP) on top of the baseline `publicRateLimit`
+// applied to every route above; `GET /snapshot/:token` is looked up by an
+// opaque token hash, never `snapshot_requests.id`.
+app.route('/api/snapshot', createSnapshotRoutes(emailSender));
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 

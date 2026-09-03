@@ -1167,3 +1167,169 @@ CHECK constraints getting a dedicated migration folder, 0006).
 resolve the tracked entity from `run.competitor_id`, the two new routes, the
 Competitive Gap / Share of AI Voice / gap-classification math) is documented
 in `platform/docs/epics/08-competitive-intelligence-backend.md`.
+
+---
+
+## 22. Epic 17 (Free AI + SEO Growth Snapshot) schema addition
+
+`docs/epics/17-free-snapshot.md`'s API surface adds `GET /snapshot/:token` —
+public, unauthenticated, and explicit that the lookup key must NOT be
+`snapshot_requests.id` ("don't leak enumerable IDs on a public endpoint").
+The ported schema's `snapshot_requests` table (already present, already
+correctly left off the RLS list — §12/§1 — as a pre-signup public flow) had
+no token column at all: `id` was the only addressable key.
+
+**The addition**: `snapshot_requests.token_hash String @unique @db.VarChar(64)`
+— the SHA-256 hex digest of a 32-byte random token, the exact same
+"generate once with `lib/tokens.ts`'s `generateOpaqueToken`, store only the
+hash, hand the raw value to the caller a single time" pattern already
+established for `magic_link_tokens`/`refresh_tokens`/`password_reset_tokens`
+(§1's "pure user-scoped security artifacts" list) — not a new pattern
+invented for this table. `POST /snapshot` is the only place the raw token
+ever exists outside the requester's own browser/inbox; `GET /snapshot/:token`
+re-hashes the path param and looks up by `token_hash`, so a leaked database
+export is as useless for enumerating live report URLs as it already is for
+forging a magic link.
+
+`prisma/migrations/0011_free_snapshot/checks.sql` adds one CHECK
+(`token_hash ~ '^[0-9a-f]{64}$'`) — the one piece a plain `@unique` can't
+express itself, same "Prisma's schema DSL can't express a regex shape
+constraint" reasoning as every other `checks.sql` in this package (§6).
+
+`apps/api`'s consumption (the orchestrator wiring Epics 1/3/4/5/7 together,
+the lightweight report shape, the rate-limit/SSRF reuse) is documented in
+`platform/docs/epics/17-free-snapshot-backend.md`.
+
+## 22. Epic 9 (Opportunity Engine) schema additions
+
+`docs/epics/09-opportunity-engine.md` is explicitly a MERGE epic: for every
+`intent` in the brand's Query Universe (Epic 5's `queries`) that has SEO
+demand data (Epic 4's `seo_keywords`/`seo_opportunities`) and/or a GEO gap
+classification (Epic 8's `classifyIntentGaps`, computed live off
+`ai_runs`/`brand_observations` — no persisted GEO-gap table to read from),
+write one merged opportunity row typed `seo`/`geo`/`unified` accordingly,
+plus evidence rows citing the specific data behind it. The spec's own domain
+model section names the table `opportunities` with a literal field list
+(`type`, `intent`, `seo_demand_score`, `geo_gap_score`, `effort_score`,
+`impact_score`, `opportunity_score`, `scoring_formula_version`, `status`,
+`priority`) and a companion `opportunity_evidence` table.
+
+**The `opportunities` naming collision — resolved the same way §16/§19/§21
+resolved theirs, but two levels deep this time.** The ported schema already
+has an `opportunities` model (checked before writing this section, per the
+recurring "do not guess, read the actual schema.prisma" rule): it keys off
+`gap_id -> gap_analysis -> intents/analyses`, the LEGACY pipeline §21 already
+carved a line around for `geo_gaps`/`gap_analysis` themselves, and its actual
+column set (`unified_score`, `priority_tier`, `action_type`,
+`expected_impact`, `keyword_or_query`) does not match this epic's literal
+field list at all — not a naming quibble, a different table for a different,
+untouched pipeline, left completely alone (same treatment as every other
+"old table, new epic" collision in this document). **Epic 4 already hit this
+exact situation for the same name** and resolved it by calling its own table
+`seo_opportunities` (§20) — which means by the time this epic runs, BOTH the
+legacy `opportunities` AND `seo_opportunities` are taken, and neither is this
+epic's actual table (Epic 4's is real but deliberately SEO-only; this epic's
+output is wider — SEO-only, GEO-only, AND unified rows in one table, per the
+spec's own `type` column). Resolution: a third, disambiguated name,
+**`unified_opportunities`**, for this epic's actual merge output.
+`opportunity_evidence` needed no disambiguation — a grep confirmed the name
+was completely unclaimed.
+
+**Merge key: `unified_opportunities.query_id -> queries`, not a text match.**
+The epic's own wording ("for each `intent` in the brand's Query Universe")
+points straight at Epic 5's `queries` table — each row IS one intent. This is
+also what makes idempotent recompute tractable: `@@unique([organization_id,
+brand_id, query_id])` gives `POST .../recompute` a real upsert key, so
+"re-running updates existing rows in place, never duplicates" (this epic's
+explicitly-called-out easy-to-get-wrong DoD requirement) falls out of a
+single `findFirst` + create-or-update per query, not a fragile
+text-similarity dedupe. `intent_text` (a snapshot of `queries.text`) is
+stored alongside so the row and its evidence sentences stay readable even if
+the source query is edited later — same "snapshot, don't re-read live"
+precedent as `ai_runs.providers`. FK is `Restrict`, not `Cascade`: a query
+outlives any one epic's reference to it (`ai_run_responses.query_id`'s
+exact precedent, §19).
+
+**Why the join to Epic 4's SEO signal is a text match, and the join to
+Epic 8's GEO signal is not.** `seo_keywords` (Epic 4) has no FK to `queries`
+(Epic 5) — the two tables were built by different epics with no shared key,
+confirmed by reading both epics' actual schema sections rather than assuming
+one existed. `apps/api`'s merge logic matches a query's `text` against
+`seo_keywords.text` case-insensitively (trimmed, exact match — not fuzzy;
+documented as a known v1 limitation, not silently guessed past) to find its
+SEO signal. The GEO signal needs no such matching: Epic 8's
+`classifyIntentGaps` (`lib/ai-visibility/competitive.ts`) already operates
+directly on `queries.id` via `loadCompetitiveDataset`'s `dataset.queries`,
+so the merge route reuses that exact function/data path with zero new
+join logic — see `platform/docs/epics/09-opportunity-engine-backend.md` for
+the full mechanics and the reused-function list.
+
+**Table shapes**, following the standard hardening rules
+(`organization_id` + `brand_id` denormalized, RLS FORCEd, indexed):
+
+- **`unified_opportunities`** — `seo_demand_score`/`geo_gap_score` are
+  independently nullable (never both non-null unless `type = 'unified'`,
+  never a `0` standing in for "no signal" — §1's repeated "a nullable,
+  dual-purpose column is where mistakes happen" caution does not apply here
+  because neither column is ever the RLS-scoping column, and NULL genuinely
+  means "no data," a distinct state from a real zero score). `status` reuses
+  the existing `opportunity_status` enum (`new|in_progress|completed|
+  dismissed`) — same four-state vocabulary `seo_opportunities.status`
+  already reuses from the legacy `opportunities` table (§20's own
+  precedent) — rather than a fourth copy of an identical closed vocabulary
+  (§6). `priority` is a plain `SmallInt` (1/2/3), validated at the API
+  boundary, matching `competitors.priority`/`queries.priority` (§15/§16) —
+  not a DB enum, not `priority_tier`'s `P1`/`P2`/`P3` (a differently-scoped
+  enum already tied to the legacy `opportunities` table's own semantics).
+  `dismissal_reason` (nullable, free text) follows the `deals.lost_reason`
+  precedent (§14) for this epic's own explicitly-required "dismiss with a
+  reason" flow. `updated_by` is nullable + `SetNull` — status transitions
+  are usually a human action (§4's rule, same as `seo_opportunities`), but
+  `POST .../recompute` can also revert a `dismissed` row back to `new` when
+  the underlying signal materially changes (see the backend doc's
+  idempotency section) — that specific transition is system-caused, so
+  `updated_by` is left `null` for it rather than lying about a human
+  actor.
+- **`opportunity_evidence`** — `source_table`/`source_id` stays an open,
+  unconstrained pair (no enum, no CHECK) — the exact same "don't invent a
+  closed taxonomy for an extensible classification" reasoning §6 and
+  `queries.category` (§16) already established, because a future epic
+  (content/technical-typed opportunities per the `type` enum's forward-
+  reserved values) will cite source tables this epic doesn't know about yet.
+  `Cascade` from `unified_opportunities` (true composition child, §5) — an
+  evidence row has zero independent meaning once its opportunity is deleted.
+  No `deleted_at`/`created_by`/`updated_by` — like `seo_opportunities`'
+  own `evidence` JSONB blob, this is pipeline output describing a specific
+  computed fact, not human-authored content (§3/§4's "immutable pipeline
+  output" rule); unlike that JSONB blob, this epic's spec explicitly calls
+  for real linkable rows ("opportunity_evidence rows citing the SPECIFIC
+  keyword/AI-response data"), so it is its own table rather than a second
+  JSON column.
+
+**`unified_opportunity_type`** — new enum, all five of the spec's literal
+values (`seo|geo|unified|content|technical`) added now even though this
+epic's own merge logic only ever produces the first three; `content`/
+`technical` are forward-reserved for Epic 10 (Recommendation Engine) and
+Epic 11 (Content Intelligence), which the spec explicitly names as future
+writers of this same table's `type` column — additive now, while the schema
+has never been applied to a database, rather than a widening migration
+later for a value the domain model already documents.
+
+**RLS** — `prisma/migrations/0010_opportunity_engine/rls.sql` adds the
+standard `tenant_isolation` policy to both new tables (both are genuinely
+new — no earlier migration's policy could have covered either). **Indexing**
+— `prisma/migrations/0010_opportunity_engine/indexes.sql` adds one partial
+index, `idx_unified_opportunities_open_score` (`WHERE status != 'dismissed'`)
+— the Opportunities screen's default ranked-list read pattern, not
+expressible in Prisma's `@@index` DSL (§11's recurring reason). No CHECK
+constraints were needed: `unified_opportunity_type`/`opportunity_status` are
+native Postgres enums (self-enforcing), and `priority`/the two nullable
+score columns follow the established "plain int/nullable decimal, no CHECK"
+precedents (§15/§16) rather than inventing a new range constraint no other
+epic's equivalent column has either.
+
+As with every other section: `prisma validate`/`generate` only — nothing
+applied to a database. `apps/api`'s consumption (the merge algorithm, the
+scoring-combination formula, the idempotent recompute route, evidence
+generation, and the four routes) is documented in
+`platform/docs/epics/09-opportunity-engine-backend.md`.

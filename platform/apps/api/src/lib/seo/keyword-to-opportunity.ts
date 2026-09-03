@@ -39,8 +39,11 @@ const DEFAULT_COVERAGE_FOR_NEW_KEYWORD = 0;
 /** No difficulty means no provider signal at all — 50 (the midpoint) is a
  * neutral placeholder, not a real estimate; deliberately not 0 (which would
  * make the opportunity look effort-free) or 100 (which would make it look
- * maximally hard). */
-const DEFAULT_TECHNICAL_DIFFICULTY = 50;
+ * maximally hard). Exported (Epic 9's Opportunity Engine merge reuses this
+ * exact constant for its own no-difficulty-signal case, rather than
+ * inventing a second placeholder with the same value under a different
+ * name — see `lib/opportunities/merge-scoring.ts`). */
+export const DEFAULT_TECHNICAL_DIFFICULTY = 50;
 
 /**
  * `demand_score` (0-100) from a raw `monthlyVolume` estimate. `NullSEODataProvider`'s
