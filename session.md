@@ -339,5 +339,12 @@ Dispatched a dedicated fix (`wf_48ae002d-4d3`, not yet landed as of this entry) 
 Epics 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 17, 18 are now `VERIFIED` — 14 of 19 product epics done.
 
 ### Open items for next session
-- Confirm the session/token wiring fix lands cleanly before starting Wave 7 (Epic 11: Content Intelligence, Epic 12: Agents — both benefit from a corrected apiClient pattern being in place before more frontend code is built on top of it).
 - Epic 17's white-label-into-report gap (Epic 18's own flagged limitation) will resolve naturally once Epic 15 (Reporting) is built.
+
+### Session/token fix landed (commit `87eb90c`)
+
+New `lib/auth-state.ts` (access token in-memory only, refresh token in `localStorage`, cross-tab logout sync via `storage` events — tradeoff argued explicitly in the new `apps/web/DECISIONS.md`). `apiClient` now attaches `Authorization: Bearer` on every request and does single-flight refresh-on-401 with one retry — spot-checked directly in code (the dedup logic so concurrent 401s trigger exactly one `/auth/refresh` call, not one per request). Real magic-link request/verify flow wired (previously a stubbed fake wait), real logout, and Epic 18's flagged org-switch token gap closed. This was genuinely foundational — every epic's frontend from here on inherits a working auth layer instead of building on top of a silently-broken one.
+
+### Wave 7 — next up
+
+Epic 11 (Content Intelligence & Generation, needs Epic 6 + Epic 10 — both done) and Epic 12 (Agents, needs Epic 4 + Epic 7 + Epic 9 + Epic 10 — all done) build next in parallel.
