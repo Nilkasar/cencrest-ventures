@@ -1,5 +1,33 @@
 # Session Log — Cencrest Ventures
 
+## ▶ RESUME HERE (last updated 2026-09-03)
+
+**Do not start from Session: 2026-08-10 below** — that's history. This block is the current state.
+
+**What this is**: a from-scratch platform rebuild (`platform/` monorepo, pnpm+Turborepo) replacing the old `api/`/`web-app/` implementation, on branch **`rebuild/platform`**. Full context/history is in the "Platform rebuild" session entries further down this file; `platform/EPICS.md` is the authoritative epic-by-epic status table (not `PROJECT_STATUS.md`, which is stale).
+
+**Progress: 16 of 19 product epics VERIFIED** (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 18) plus a foundational auth-token-propagation fix. All committed on `rebuild/platform` through commit `0a91776`. **Nothing has been pushed to the remote** — this sandbox has read-only git access; the user pushes manually.
+
+**Remaining work, in dependency order**:
+1. Epic 13 — Action Center & Controlled Publishing (needs 11+12, both done — **unblocked, do this next**)
+2. Epic 14 — Measurement & Learning Loop (needs 13)
+3. Epic 15 — Reporting & Notifications (needs 14)
+4. Epic 19 — Production Hardening (cross-cutting pass over every prior epic's own flagged `// TODO`s — durable queue, error tracking, the missing `GET /brands/me/crawl-jobs` endpoint, etc.)
+5. Epic 20 — Marketing Site Rebuild (root site, saved for last per the user's explicit sequencing)
+6. Epic 21 — Final Audit (full done/pending report, the user's explicitly requested final deliverable)
+
+**Paused per explicit user instruction** ("when this wave completes please let me know before starting next") — every subsequent wave needs a check-in before launching, unless the user says otherwise in a future session.
+
+**How to continue** (the established, working pattern from every wave so far):
+1. Check `platform/EPICS.md` for the next unblocked epic(s) by dependency.
+2. If un-specced, write a spec first (`platform/docs/epics/NN-name.md`) following the exact format of existing specs — domain model, API surface, UI surface, and a **mandatory numbered "End-to-end flow" section** (standing rule, see `EPICS.md`).
+3. Launch a `Workflow` (not ad hoc `Agent` calls) with **backend fully first, then frontend wires directly to the real deployed routes** (standing rule — parallel fixture-building caused 3 straight rounds of rework before this rule existed), then a `qa-flow-tester`-persona verify stage per epic, `effort: 'high'`. Independent epics run in parallel via `pipeline()`. See any `bebest-wave-*` script in this session's history for the exact template (repo context block, hard constraints block, verify schema).
+4. Custom `.claude/agents/*.md` subagent types (`growth-strategist`, `backend-architect`, `frontend-engineer`, `qa-flow-tester`) still don't resolve as invokable `agentType`s in this sandbox — personas are embedded directly in each agent prompt as a workaround. Worth re-checking in a fresh session.
+5. When a wave completes: read the full `journal.jsonl` for the run (the notification result is truncated), **spot-check at least the highest-stakes claim(s) directly in code** before trusting a verdict, update `platform/EPICS.md`'s status rows, commit, update this file, then commit again.
+6. Hard rules that must never change: no git commands inside any dispatched agent (orchestrator handles all git), no database connections/migrations ever executed (schema/migration files generated and committed only — applying them is the user's own step), no real network calls to any external provider, nothing written outside `platform/`, `api/`/`web-app/`/root marketing site untouched until Epic 20.
+
+---
+
 ## Session: 2026-08-10
 
 ### Context
