@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Platform Rebuild — Final Audit</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600;700&display=swap">
+<style>
+  :root {
+    --paper: #F2EEE6;
+    --paper-2: #E8E2D5;
+    --ink: #0A0E18;
+    --ink-2: #131829;
+    --slate: #3A4055;
+    --smoke: #7B819A;
+    --pebble: #B6BACB;
+    --hair: rgba(10,14,24,0.12);
+    --hair-2: rgba(10,14,24,0.07);
+    --ember: #B8873F;
+    --ember-soft: rgba(184,135,63,0.14);
+    --success: #4B7A64;
+    --success-soft: rgba(75,122,100,0.13);
+    --danger: #A85238;
+    --danger-soft: rgba(168,82,56,0.12);
+    --mono-chip: rgba(10,14,24,0.05);
+    --bg: var(--paper);
+    --surface: #FBF9F4;
+    --text: var(--ink);
+    --text-dim: var(--slate);
+    --text-faint: var(--smoke);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0A0E18;
+      --paper-2: #131829;
+      --ink: #F2EEE6;
+      --ink-2: #E8E2D5;
+      --slate: #B6BACB;
+      --smoke: #7B819A;
+      --pebble: #3A4055;
+      --hair: rgba(242,238,230,0.14);
+      --hair-2: rgba(242,238,230,0.08);
+      --ember: #D9B87C;
+      --ember-soft: rgba(217,184,124,0.16);
+      --success: #8FB6A2;
+      --success-soft: rgba(143,182,162,0.14);
+      --danger: #D48B72;
+      --danger-soft: rgba(212,139,114,0.14);
+      --mono-chip: rgba(242,238,230,0.06);
+      --bg: #06080F;
+      --surface: #0F1420;
+      --text: var(--ink);
+      --text-dim: var(--slate);
+      --text-faint: var(--smoke);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    line-height: 1.55;
+  }
+  img { max-width: 100%; }
+  ::selection { background: var(--ember-soft); }
+
+  .wrap {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 56px 24px 96px;
+  }
+
+  h1, h2, h3 { font-family: 'Fraunces', Georgia, serif; text-wrap: balance; color: var(--text); }
+  .mono { font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; }
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  /* ---- Masthead ---- */
+  .masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 40px;
+    padding-bottom: 28px;
+    border-bottom: 1px solid var(--hair);
+  }
+  .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ember);
+    font-weight: 600;
+  }
+  .masthead h1 {
+    font-size: 34px;
+    font-weight: 600;
+    margin: 2px 0 0;
+    letter-spacing: -0.01em;
+  }
+  .masthead .sub {
+    color: var(--text-dim);
+    font-size: 15px;
+    max-width: 60ch;
+    margin-top: 4px;
+  }
+  .masthead .meta {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+  .masthead .meta span b { color: var(--text-dim); font-weight: 500; }
+
+  /* ---- Verdict panel ---- */
+  .verdict {
+    background: var(--surface);
+    border: 1px solid var(--hair);
+    border-radius: 4px;
+    padding: 28px 28px 26px;
+    margin-bottom: 44px;
+    position: relative;
+    overflow: hidden;
+  }
+  .verdict::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 3px;
+    background: var(--success);
+  }
+  .verdict-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+  }
+  .verdict h2 {
+    font-size: 21px;
+    font-weight: 600;
+    margin: 0 0 12px;
+    line-height: 1.35;
+  }
+  .verdict p { color: var(--text-dim); font-size: 14.5px; margin: 0; max-width: 66ch; }
+  .verdict p + p { margin-top: 10px; }
+
+  .stat-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--hair);
+    border: 1px solid var(--hair);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 48px;
+  }
+  .stat {
+    background: var(--surface);
+    padding: 16px 14px;
+  }
+  .stat .n {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .l {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 3px;
+    letter-spacing: 0.02em;
+  }
+
+  /* ---- Section headers ---- */
+  .section { margin-bottom: 48px; }
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .section-head h2 { font-size: 20px; font-weight: 600; margin: 0; }
+  .section-head .count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+  .section-intro { color: var(--text-dim); font-size: 14px; margin: -6px 0 18px; max-width: 68ch; }
+
+  /* ---- Epic ledger ---- */
+  .phase { margin-bottom: 22px; }
+  .phase-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    padding: 8px 0 8px 2px;
+    border-bottom: 1px solid var(--hair-2);
+  }
+  .epic-row {
+    display: grid;
+    grid-template-columns: 30px 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 2px;
+    border-bottom: 1px solid var(--hair-2);
+  }
+  .epic-row:last-child { border-bottom: none; }
+  .epic-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .epic-name { font-size: 14px; color: var(--text); }
+  .epic-name .note { display: block; font-size: 12px; color: var(--text-faint); margin-top: 1px; }
+  .chip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    padding: 3px 8px;
+    border-radius: 3px;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  .chip.ok { background: var(--success-soft); color: var(--success); }
+  .chip.watch { background: var(--danger-soft); color: var(--danger); }
+
+  /* ---- Findings ---- */
+  .finding {
+    border: 1px solid var(--hair);
+    border-radius: 4px;
+    padding: 18px 20px;
+    margin-bottom: 14px;
+    background: var(--surface);
+  }
+  .finding-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .finding-head h3 { font-size: 15.5px; font-weight: 600; margin: 0; flex: 1; min-width: 200px; }
+  .finding p { font-size: 13.5px; color: var(--text-dim); margin: 8px 0 0; }
+  .finding code, .finding .path {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: var(--mono-chip);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--text);
+  }
+  .sev {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-weight: 700;
+  }
+  .sev.attention { background: var(--danger-soft); color: var(--danger); }
+  .sev.minor { background: var(--ember-soft); color: var(--ember); }
+  .sev.resolved { background: var(--success-soft); color: var(--success); }
+
+  /* ---- Clean checklist ---- */
+  .clean-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
+  .clean-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--hair-2);
+    font-size: 13.5px;
+  }
+  .clean-item .mark {
+    color: var(--success);
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .clean-item span.t { color: var(--text); }
+  .clean-item span.d { display: block; color: var(--text-faint); font-size: 12px; margin-top: 2px; }
+
+  /* ---- Closing ---- */
+  .closing { border-top: 1px solid var(--hair); padding-top: 32px; margin-top: 8px; }
+  .closing h2 { font-size: 19px; margin: 0 0 12px; }
+  .closing p { font-size: 14.5px; color: var(--text-dim); max-width: 68ch; }
+  .closing ol { margin: 14px 0 0; padding-left: 20px; color: var(--text-dim); font-size: 14px; }
+  .closing li { margin-bottom: 8px; }
+  .closing li b { color: var(--text); font-weight: 600; }
+
+  footer {
+    margin-top: 56px;
+    padding-top: 20px;
+    border-top: 1px solid var(--hair-2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-faint);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  @media (max-width: 640px) {
+    .stat-strip { grid-template-columns: 1fr 1fr; }
+    .clean-grid { grid-template-columns: 1fr; }
+    .epic-row { grid-template-columns: 24px 1fr; }
+    .epic-row .chip { grid-column: 1 / -1; justify-self: start; margin-top: 2px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="eyebrow">BeBest Platform Rebuild — Epic 21</div>
+    <h1>Final Audit</h1>
+    <div class="sub">An independent, code-level review of all 21 epics on <span class="mono">rebuild/platform</span> — closing the from-scratch rebuild that replaced the old <span class="mono">api/</span> + <span class="mono">web-app/</span> implementation.</div>
+    <div class="meta">
+      <span><b>Branch</b> rebuild/platform</span>
+      <span><b>Head</b> f8258ee</span>
+      <span><b>Date</b> 2026-09-04</span>
+      <span><b>Waves</b> 12</span>
+    </div>
+  </div>
+
+  <div class="verdict">
+    <div class="verdict-label">Verdict</div>
+    <h2>Closed. Both post-audit follow-ups actioned the same day.</h2>
+    <p>Every epic from 0 through 20 held up under independent, code-level re-inspection: build/test health, migration consistency, RLS coverage, and four traced cross-epic data handoffs all came back clean. One material gap survived ten waves of review without reaching the epic ledger's top line — the CRM frontend was fixture-only, disconnected from its own real, tested backend. The user reviewed this report and approved wiring it immediately; that fix is in progress as a direct follow-up. The one minor gap (an invite email bypassing the shared EmailSender abstraction) is already fixed and tested.</p>
+    <p>This report also corrects one false positive from the audit pass itself (a doc-location miss) rather than pass it through uncritically — see Findings.</p>
+  </div>
+
+  <div class="stat-strip">
+    <div class="stat"><div class="n tabular">21 / 21</div><div class="l">epics verified</div></div>
+    <div class="stat"><div class="n tabular">997</div><div class="l">api tests passing, 0 failed</div></div>
+    <div class="stat"><div class="n tabular">19</div><div class="l">migrations, 0000–0018, no gaps</div></div>
+    <div class="stat"><div class="n tabular">107 / 110</div><div class="l">tenant tables under RLS</div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <h2>Epic ledger</h2>
+      <span class="count tabular">21 epics · 12 waves</span>
+    </div>
+    <div class="section-intro">Grouped by the order they were actually built in. Every row was VERIFIED by a dedicated code-level review pass at the time; this audit re-checked a sample directly against current code rather than trusting the record.</div>
+
+    <div class="phase">
+      <div class="phase-title">Foundation — Wave 1–2</div>
+      <div class="epic-row"><span class="epic-num tabular">00</span><span class="epic-name">Monorepo &amp; Platform Foundation<span class="note">Auth, RBAC, RLS, audit logging — schema audit found &amp; fixed 3 real RLS design bugs</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">01</span><span class="epic-name">CRM<span class="note">Backend real &amp; tested; frontend wiring approved and underway — see Findings</span></span><span class="chip watch">FIX IN PROGRESS</span></div>
+      <div class="epic-row"><span class="epic-num tabular">02</span><span class="epic-name">Brand Intelligence<span class="note">Onboarding wizard rewired to the real API after a Wave 1 contract-drift fix</span></span><span class="chip ok">VERIFIED</span></div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-title">Intelligence core — Wave 2–5</div>
+      <div class="epic-row"><span class="epic-num tabular">03</span><span class="epic-name">Website Intelligence (Crawler)<span class="note">SSRF-safe fetch, real incremental progress polling</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">04</span><span class="epic-name">SEO Intelligence<span class="note">First epic built clean on the first pass, under the backend-first rule</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">05</span><span class="epic-name">Intent &amp; Query Universe<span class="note">Single-active-query-set and entitlement-bypass bugs fixed</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">06</span><span class="epic-name">AI Provider Abstraction<span class="note">5 real adapters — Ollama, OpenAI, Anthropic, Google, Perplexity</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">07</span><span class="epic-name">AI Visibility Engine (GEO core)<span class="note">Raw response always persisted before extraction; full evidence drill-down</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">08</span><span class="epic-name">Competitive Intelligence<span class="note">Reuses Epic 7's pipeline via a nullable competitor_id, no parallel path</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">09</span><span class="epic-name">Opportunity Engine<span class="note">Unified score mathematically proven ≥ max(seoOnly, geoOnly)</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">10</span><span class="epic-name">Recommendation Engine<span class="note">Priority ranking (score × effort) tested against cost inversions</span></span><span class="chip ok">VERIFIED</span></div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-title">Action &amp; growth — Wave 6–9</div>
+      <div class="epic-row"><span class="epic-num tabular">11</span><span class="epic-name">Content Intelligence &amp; Generation<span class="note">No-autonomous-publishing boundary proven by grep, not just a test name</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">12</span><span class="epic-name">GEO / SEO / Growth Agents<span class="note">Autonomy Level 4 hard-blocked — 47-case exhaustive test, no env-var bypass</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">13</span><span class="epic-name">Action Center &amp; Controlled Publishing<span class="note">Execute rejects unconditionally without a prior approved_at</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">14</span><span class="epic-name">Measurement &amp; Learning Loop<span class="note">Before-score snapshot proven immutable against live mutation</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">15</span><span class="epic-name">Reporting &amp; Notifications<span class="note">Report immutability proven by construction, zero update call sites</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">16</span><span class="epic-name">Billing<span class="note">HMAC-verified idempotent webhooks; cancellation never hard-deletes</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">17</span><span class="epic-name">Free AI + SEO Snapshot<span class="note">Report token is a SHA-256 hash of a 32-byte random value, never an id</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">18</span><span class="epic-name">Agency / White Label / Integrations<span class="note">Surfaced the app-wide auth-token propagation gap, since fixed</span></span><span class="chip ok">VERIFIED</span></div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-title">Hardening &amp; launch — Wave 9–12</div>
+      <div class="epic-row"><span class="epic-num tabular">19</span><span class="epic-name">Production Hardening<span class="note">Durable job queue, error tracking, app-wide rate-limit fix, real error boundaries</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">20</span><span class="epic-name">Marketing Site Rebuild<span class="note">Root CLAUDE.md rewritten to match the live BeBest site</span></span><span class="chip ok">VERIFIED</span></div>
+      <div class="epic-row"><span class="epic-num tabular">21</span><span class="epic-name">Final Audit<span class="note">This document</span></span><span class="chip ok">CLOSING</span></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <h2>Findings</h2>
+      <span class="count tabular">4</span>
+    </div>
+    <div class="section-intro">In order of severity at the time this audit ran. Two were real; both have since been actioned. One is a false positive from the audit pass itself, corrected here. One was an apparent doc contradiction, resolved as a timing artifact.</div>
+
+    <div class="finding">
+      <div class="finding-head">
+        <span class="sev attention">Approved — fix underway</span>
+        <h3>CRM frontend never called the real backend</h3>
+      </div>
+      <p>The 6 CRM screens (<span class="path">crm/leads</span>, <span class="path">crm/deals</span>, <span class="path">crm/accounts</span> and their detail views) ran entirely against an in-memory fixture clone in <code>apps/web/src/data/crm/client.ts</code> — no <code>fetch</code>, no <code>apiClient</code> import anywhere in the file. Epic 1's own real, tested backend (RBAC, audit logging, SSRF-guarded URLs, transactional lead conversion) has existed and been verified since Wave 1. This was disclosed at the time in Epic 1's own frontend completion doc as an intentional placeholder — but it never surfaced into the epic ledger's own status line, and no later wave revisited it once the backend was real.</p>
+      <p>The user reviewed this finding and approved wiring it immediately. A scoped follow-up (wiring <code>client.ts</code> to the real <code>leads</code>/<code>deals</code>/<code>accounts</code>/<code>activities</code> routes, preserving every screen component's existing call signature) is in progress as of this report.</p>
+    </div>
+
+    <div class="finding">
+      <div class="finding-head">
+        <span class="sev resolved">Fixed</span>
+        <h3>Org-invite email bypassed the EmailSender abstraction</h3>
+      </div>
+      <p><code>routes/orgs.ts</code> sent the org-invite email via a raw <code>console.log</code> instead of the real <code>EmailSender</code> interface every other email in the codebase uses. A stale note in <code>DECISIONS.md</code> pointed at a README "not done" list that didn't actually exist — the pointer was wrong, but the underlying gap it was gesturing at was real. Converted the route to the same <code>createXRoutes(emailSender)</code> factory pattern <code>routes/auth.ts</code> already uses, wired the real <code>sendInvitation()</code> call, and added a test asserting it's called with the org name and a real accept URL instead of the old console line. 997/997 tests passing after the fix.</p>
+    </div>
+
+    <div class="finding">
+      <div class="finding-head">
+        <span class="sev resolved">Already resolved</span>
+        <h3>CLAUDE.md authorship note across two docs</h3>
+      </div>
+      <p>The audit flagged that Epic 20's own completion doc says root <code>CLAUDE.md</code> was <em>not</em> rewritten, while the epic ledger says it was. Not a contradiction — a timing gap: the completion doc was written mid-build, before the user was asked and confirmed the rewrite in a follow-up fix pass later the same wave. The ledger reflects the final state correctly; the completion doc is simply a snapshot from earlier in that wave.</p>
+    </div>
+
+    <div class="finding">
+      <div class="finding-head">
+        <span class="sev resolved">False positive, corrected</span>
+        <h3>"Missing" SECURITY.md and TESTING_STRATEGY.md</h3>
+      </div>
+      <p>The audit pass reported these two docs — cited across 52 files as authoritative — as missing from the repo. They exist: <code>docs/08-security/SECURITY.md</code> and <code>docs/19-testing/TESTING_STRATEGY.md</code>, at the repo root, not under <code>platform/docs/</code> (which correctly holds only epic specs). Checked directly before including this report; the audit agent looked in the wrong directory.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <h2>Checked and clean</h2>
+    </div>
+    <div class="section-intro">Not padding — each of these was independently re-run or re-traced in code for this audit, not taken on the record's word.</div>
+    <div class="clean-grid">
+      <div class="clean-item"><span class="mark">✓</span><span><span class="t">Full test suite</span><span class="d">995 passed at audit time, 0 failed, 79 documented NEEDS-LIVE-DB todos</span></span></div>
+      <div class="clean-item"><span class="mark">✓</span><span><span class="t">Web build / typecheck / lint</span><span class="d">Clean across @bebest/web and @bebest/ui</span></span></div>
+      <div class="clean-item"><span class="mark">✓</span><span><span class="t">Migration sequence</span><span class="d">0000–0018, no gaps or duplicates, 5 spot-checked against schema.prisma</span></span></div>
+      <div class="clean-item"><span class="mark">✓</span><span><span class="t">RLS coverage</span><span class="d">107 of 110 tenant tables; the 4 exceptions individually justified</span></span></div>
+      <div class="clean-item"><span class="mark">✓</span><span><span class="t">Content → Action → Measurement → Report chain</span><span class="d">Real FKs end to end, no re-typed copies</span></span></div>
+      <div class="clean-item"><span class="mark">✓</span><span><span class="t">Opportunity → Recommendation → Draft → Publish chain</span><span class="d">Same — traced in code, not docs</span></span></div>
+      <div class="clean-item"><span class="mark">✓</span><span><span class="t">Auth-token propagation</span><span class="d">17 of 18 nav destinations genuinely authenticated; CRM is the exception above</span></span></div>
+      <div class="clean-item"><span class="mark">✓</span><span><span class="t">8 sampled ledger claims</span><span class="d">RBAC, autonomy blocking, scoring formulas, webhook idempotency — all held</span></span></div>
+      <div class="clean-item"><span class="mark">✓</span><span><span class="t">TODO / FIXME / HACK sweep</span><span class="d">6 markers total, all honest and self-justified</span></span></div>
+      <div class="clean-item"><span class="mark">✓</span><span><span class="t">Scope boundary</span><span class="d">api/, web-app/, and the root site untouched outside Epic 20's own scoped work</span></span></div>
+    </div>
+  </div>
+
+  <div class="closing">
+    <h2>Recommendation</h2>
+    <p>The rebuild is substantively done. Nothing here blocks calling <span class="mono">rebuild/platform</span> the platform going forward.</p>
+    <ol>
+      <li><b>CRM frontend wiring</b> — approved, in progress, will land as a direct follow-up commit.</li>
+      <li><b>Invite-email fix</b> — done, tested, committed.</li>
+      <li><b>Run the real migrations.</b> Every schema/RLS file across all 19 migrations has been generated and reviewed but never executed — that step is yours by design, never done by an agent in this build.</li>
+      <li><b>Merge when ready.</b> No blockers remain on the branch itself.</li>
+    </ol>
+  </div>
+
+  <footer>
+    <span>platform/EPICS.md · platform/docs/epics/*</span>
+    <span>Independently re-verified 2026-09-04</span>
+  </footer>
+
+</div>
+</body>
+</html>

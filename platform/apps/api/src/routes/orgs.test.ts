@@ -39,10 +39,17 @@ vi.mock('@bebest/database', () => ({
   withOrgContext: vi.fn(async (_organizationId: string, fn: (tx: unknown) => unknown) => fn(tx)),
 }));
 
+const fakeEmailSender = {
+  sendMagicLink: vi.fn(async () => {}),
+  sendInvitation: vi.fn(async () => {}),
+  sendSnapshotReady: vi.fn(async () => {}),
+  sendNotification: vi.fn(async () => {}),
+};
+
 async function buildApp() {
-  const { default: orgs } = await import('./orgs.js');
+  const { createOrgsRoutes } = await import('./orgs.js');
   const app = new Hono();
-  app.route('/orgs', orgs);
+  app.route('/orgs', createOrgsRoutes(fakeEmailSender));
   return app;
 }
 
@@ -240,6 +247,55 @@ describe('PATCH /orgs/:slug/members/:userId (role change — manage_team)', () =
     expect(db.audit_events.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ action: 'membership.role_changed' }),
+      }),
+    );
+  });
+});
+
+describe('POST /orgs/:slug/invitations (send invite — manage_team)', () => {
+  beforeEach(() => {
+    db.organizations.findUnique.mockResolvedValue({
+      id: 'org-1',
+      slug: 'acme',
+      name: 'Acme',
+      deleted_at: null,
+    });
+  });
+
+  it('403s for a viewer (below manage_team permission)', async () => {
+    db.memberships.findFirst.mockResolvedValue({ role: 'viewer' });
+    const app = await buildApp();
+    const res = await app.request('/orgs/acme/invitations', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(await authHeader('user-1')) },
+      body: JSON.stringify({ email: 'new@example.com' }),
+    });
+    expect(res.status).toBe(403);
+    expect(fakeEmailSender.sendInvitation).not.toHaveBeenCalled();
+  });
+
+  it('an admin invite sends via the real EmailSender, not console.log, with the org name and a real accept URL', async () => {
+    db.memberships.findFirst.mockResolvedValue({ role: 'admin' });
+    db.invitations.deleteMany.mockResolvedValue({});
+    db.invitations.create.mockResolvedValue({});
+
+    const app = await buildApp();
+    const res = await app.request('/orgs/acme/invitations', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(await authHeader('user-1')) },
+      body: JSON.stringify({ email: 'new@example.com', role: 'editor' }),
+    });
+
+    expect(res.status).toBe(201);
+    // The fix under test: this used to be a raw `console.log` call site.
+    // It must now go through the same swappable-provider `EmailSender`
+    // every other email in this codebase uses.
+    expect(fakeEmailSender.sendInvitation).toHaveBeenCalledTimes(1);
+    expect(fakeEmailSender.sendInvitation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'new@example.com',
+        organizationName: 'Acme',
+        inviteUrl: expect.stringContaining('/invitations/accept?token='),
       }),
     );
   });

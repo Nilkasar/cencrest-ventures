@@ -6,7 +6,7 @@ import { requestLogger } from './middleware/logger.js';
 import { publicRateLimit } from './middleware/rate-limit.js';
 import health from './routes/health.js';
 import { createAuthRoutes } from './routes/auth.js';
-import orgs from './routes/orgs.js';
+import { createOrgsRoutes } from './routes/orgs.js';
 import leads from './routes/leads.js';
 import deals from './routes/deals.js';
 import activities from './routes/activities.js';
@@ -112,7 +112,7 @@ app.use('*', publicRateLimit);
 
 app.route('/api/health', health);
 app.route('/api/auth', createAuthRoutes(emailSender));
-app.route('/api/orgs', orgs);
+app.route('/api/orgs', createOrgsRoutes(emailSender));
 
 // Epic 1 — CRM. Internal-ops tool (docs/epics/01-crm.md's Entitlements
 // section) — every route here is gated by requireCrmAccess (the caller's
