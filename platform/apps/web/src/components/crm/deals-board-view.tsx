@@ -296,12 +296,20 @@ export function DealsBoardView() {
             value={lostReason}
             onChange={(event) => setLostReason(event.target.value)}
             autoFocus
+            required
           />
           <DialogFooter>
             <Button type="button" variant="ghost" size="sm" onClick={closeLostPrompt}>
               Cancel
             </Button>
-            <Button type="button" variant="danger" size="sm" loading={lostSubmitting} onClick={confirmLostReason}>
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              loading={lostSubmitting}
+              disabled={!lostReason.trim()}
+              onClick={confirmLostReason}
+            >
               Mark lost
             </Button>
           </DialogFooter>

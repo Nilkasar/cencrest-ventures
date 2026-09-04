@@ -33,7 +33,7 @@ import type { Account } from "@/data/crm/types";
 import { useAsyncData } from "@/lib/use-async-data";
 import { formatCurrency, formatDate } from "@/lib/format";
 
-const PLAN_LABEL: Record<Account["plan"], string> = {
+const PLAN_LABEL: Record<NonNullable<Account["plan"]>, string> = {
   free: "Free",
   starter: "Starter",
   growth: "Growth",
@@ -100,7 +100,9 @@ export function AccountDetailView({ accountId }: { accountId: string }) {
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="font-display text-[22px] font-semibold text-foreground tracking-[-0.01em]">{state.data.account.name}</h1>
-                  <Badge variant="outline" size="sm">{PLAN_LABEL[state.data.account.plan]}</Badge>
+                  {state.data.account.plan && (
+                    <Badge variant="outline" size="sm">{PLAN_LABEL[state.data.account.plan]}</Badge>
+                  )}
                 </div>
                 {state.data.account.domain && (
                   <a

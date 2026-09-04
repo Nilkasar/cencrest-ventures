@@ -340,8 +340,8 @@
 
   <div class="verdict">
     <div class="verdict-label">Verdict</div>
-    <h2>Closed. Both post-audit follow-ups actioned the same day.</h2>
-    <p>Every epic from 0 through 20 held up under independent, code-level re-inspection: build/test health, migration consistency, RLS coverage, and four traced cross-epic data handoffs all came back clean. One material gap survived ten waves of review without reaching the epic ledger's top line — the CRM frontend was fixture-only, disconnected from its own real, tested backend. The user reviewed this report and approved wiring it immediately; that fix is in progress as a direct follow-up. The one minor gap (an invite email bypassing the shared EmailSender abstraction) is already fixed and tested.</p>
+    <h2>Closed. Both post-audit follow-ups fixed and verified the same day.</h2>
+    <p>Every epic from 0 through 20 held up under independent, code-level re-inspection: build/test health, migration consistency, RLS coverage, and four traced cross-epic data handoffs all came back clean. One material gap survived ten waves of review without reaching the epic ledger's top line — the CRM frontend was fixture-only, disconnected from its own real, tested backend. The user reviewed this report and approved wiring it immediately; it's now done — every CRM screen calls the real API, <code>fixtures.ts</code> is deleted, typecheck/lint/build all clean. The one minor gap (an invite email bypassing the shared EmailSender abstraction) is also fixed and tested.</p>
     <p>This report also corrects one false positive from the audit pass itself (a doc-location miss) rather than pass it through uncritically — see Findings.</p>
   </div>
 
@@ -362,7 +362,7 @@
     <div class="phase">
       <div class="phase-title">Foundation — Wave 1–2</div>
       <div class="epic-row"><span class="epic-num tabular">00</span><span class="epic-name">Monorepo &amp; Platform Foundation<span class="note">Auth, RBAC, RLS, audit logging — schema audit found &amp; fixed 3 real RLS design bugs</span></span><span class="chip ok">VERIFIED</span></div>
-      <div class="epic-row"><span class="epic-num tabular">01</span><span class="epic-name">CRM<span class="note">Backend real &amp; tested; frontend wiring approved and underway — see Findings</span></span><span class="chip watch">FIX IN PROGRESS</span></div>
+      <div class="epic-row"><span class="epic-num tabular">01</span><span class="epic-name">CRM<span class="note">Frontend rewired to the real API same-day — fixtures.ts deleted, see Findings</span></span><span class="chip ok">VERIFIED</span></div>
       <div class="epic-row"><span class="epic-num tabular">02</span><span class="epic-name">Brand Intelligence<span class="note">Onboarding wizard rewired to the real API after a Wave 1 contract-drift fix</span></span><span class="chip ok">VERIFIED</span></div>
     </div>
 
@@ -407,11 +407,11 @@
 
     <div class="finding">
       <div class="finding-head">
-        <span class="sev attention">Approved — fix underway</span>
+        <span class="sev resolved">Fixed</span>
         <h3>CRM frontend never called the real backend</h3>
       </div>
       <p>The 6 CRM screens (<span class="path">crm/leads</span>, <span class="path">crm/deals</span>, <span class="path">crm/accounts</span> and their detail views) ran entirely against an in-memory fixture clone in <code>apps/web/src/data/crm/client.ts</code> — no <code>fetch</code>, no <code>apiClient</code> import anywhere in the file. Epic 1's own real, tested backend (RBAC, audit logging, SSRF-guarded URLs, transactional lead conversion) has existed and been verified since Wave 1. This was disclosed at the time in Epic 1's own frontend completion doc as an intentional placeholder — but it never surfaced into the epic ledger's own status line, and no later wave revisited it once the backend was real.</p>
-      <p>The user reviewed this finding and approved wiring it immediately. A scoped follow-up (wiring <code>client.ts</code> to the real <code>leads</code>/<code>deals</code>/<code>accounts</code>/<code>activities</code> routes, preserving every screen component's existing call signature) is in progress as of this report.</p>
+      <p>The user reviewed this finding and approved wiring it immediately. Every function in <code>client.ts</code> now calls the real, flat-mounted routes (<code>/leads</code>, <code>/deals</code>, <code>/accounts</code>, <code>/activities</code> — not <code>/crm/leads</code> as the old placeholder assumed), <code>fixtures.ts</code> is deleted, and typecheck/lint/build are all clean, spot-checked directly. One honest gap surfaced, not introduced, by the rewire: CRM is gated on a single fixed internal BeBest ops org, never per-customer-org-scoped, so switching to a client org (Epic 18's switcher) now correctly shows an actionable error instead of silently faking customer data.</p>
     </div>
 
     <div class="finding">
@@ -462,7 +462,7 @@
     <h2>Recommendation</h2>
     <p>The rebuild is substantively done. Nothing here blocks calling <span class="mono">rebuild/platform</span> the platform going forward.</p>
     <ol>
-      <li><b>CRM frontend wiring</b> — approved, in progress, will land as a direct follow-up commit.</li>
+      <li><b>CRM frontend wiring</b> — done, tested, committed.</li>
       <li><b>Invite-email fix</b> — done, tested, committed.</li>
       <li><b>Run the real migrations.</b> Every schema/RLS file across all 19 migrations has been generated and reviewed but never executed — that step is yours by design, never done by an agent in this build.</li>
       <li><b>Merge when ready.</b> No blockers remain on the branch itself.</li>

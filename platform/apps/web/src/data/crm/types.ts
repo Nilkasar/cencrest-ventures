@@ -100,8 +100,17 @@ export interface Deal {
 
 /** Mirrors `data/types.ts`'s `Organization["plan"]` exactly — an account
  *  literally is an organization for CRM purposes, so this is a type alias,
- *  not a parallel enum that could drift from it. */
-export type AccountPlan = Organization["plan"];
+ *  not a parallel enum that could drift from it.
+ *
+ *  `| null` added when `client.ts` was wired to the real API (Epic 21
+ *  follow-up): `organizations` has no `plan` column in the real schema
+ *  (plan lives on the separate `subscriptions` table, 1:1), and the only
+ *  route that reads it — `GET /orgs/me/subscription` — is scoped to the
+ *  caller's OWN org via the access token, not any org by id. There is no
+ *  route an internal CRM user can call to read a customer org's plan by
+ *  id, so `client.ts` can't populate this field — it's always `null` from
+ *  the real API, not a fabricated guess. */
+export type AccountPlan = Organization["plan"] | null;
 
 export interface AccountContact {
   id: string;

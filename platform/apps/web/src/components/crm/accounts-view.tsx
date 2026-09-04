@@ -24,7 +24,7 @@ import type { Account } from "@/data/crm/types";
 import { useAsyncData } from "@/lib/use-async-data";
 import { formatCompactCurrency, formatCurrency, formatDate } from "@/lib/format";
 
-const PLAN_LABEL: Record<Account["plan"], string> = {
+const PLAN_LABEL: Record<NonNullable<Account["plan"]>, string> = {
   free: "Free",
   starter: "Starter",
   growth: "Growth",
@@ -183,7 +183,11 @@ export function AccountsView() {
                     {account.domain && <p className="text-[12px] text-muted-foreground">{account.domain}</p>}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" size="sm">{PLAN_LABEL[account.plan]}</Badge>
+                    {account.plan ? (
+                      <Badge variant="outline" size="sm">{PLAN_LABEL[account.plan]}</Badge>
+                    ) : (
+                      <span className="text-[12.5px] text-subtle-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     {primaryContact ? (

@@ -175,6 +175,7 @@ export function DealDetailView({ dealId }: { dealId: string }) {
                         value={pendingLostReason}
                         onChange={(e) => setPendingLostReason(e.target.value)}
                         autoFocus
+                        required
                       />
                       <div className="flex justify-end gap-2">
                         <Button variant="ghost" size="sm" onClick={() => setShowLostReasonPrompt(false)}>
@@ -183,6 +184,7 @@ export function DealDetailView({ dealId }: { dealId: string }) {
                         <Button
                           variant="danger"
                           size="sm"
+                          disabled={!pendingLostReason.trim()}
                           onClick={() => {
                             applyStageChange("lost", pendingLostReason.trim() || undefined);
                             setShowLostReasonPrompt(false);
