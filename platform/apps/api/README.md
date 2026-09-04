@@ -150,10 +150,10 @@ skipped silently.
 - **Resend wiring** — `ConsoleEmailSender` is the only `EmailSender`. No
   `RESEND_API_KEY` is read anywhere. Swapping this in is a single new
   class + one line in `app.ts`.
-- **Invitation emails go through `console.log`, not `EmailSender`** —
-  `routes/orgs.ts`'s invitation endpoint predates the `EmailSender`
-  refactor done for magic links; it should be converted to the same
-  factory pattern (`createOrgRoutes(emailSender)`) as a quick follow-up.
+- ~~Invitation emails go through `console.log`, not `EmailSender`~~ —
+  fixed 2026-09-04: `routes/orgs.ts` now uses the same
+  `createOrgsRoutes(emailSender)` factory pattern as magic links, and
+  calls the real `EmailSender.sendInvitation()`.
 - **CSRF protection** — SECURITY.md calls for double-submit-cookie CSRF
   protection for browser/cookie-based sessions. This API is
   bearer-token-only (no cookies are set), which is its own mitigation for
