@@ -2,30 +2,15 @@
 
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Bell, SlidersHorizontal, UserPlus } from "lucide-react";
-import {
-  Avatar,
-  Badge,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-  getInitials,
-} from "@bebest/ui";
+import { Bell, SlidersHorizontal } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@bebest/ui";
 import { PageHeader } from "@/components/patterns/page-header";
 import { ComingSoon } from "@/components/patterns/coming-soon";
-import { StubActionButton } from "@/components/patterns/stub-action-button";
 import { BrandProfilePanel } from "@/components/settings/brand-profile-panel";
 import { BillingPanel } from "@/components/settings/billing-panel";
 import { WhiteLabelPanel } from "@/components/settings/white-label-panel";
 import { IntegrationsPanel } from "@/components/settings/integrations-panel";
-import { currentUser, currentOrganization } from "@/data/fixtures";
+import { TeamPanel } from "@/components/settings/team-panel";
 
 const TAB_VALUES = ["brand", "team", "notifications", "billing", "white-label", "integrations", "autonomy"] as const;
 type TabValue = (typeof TAB_VALUES)[number];
@@ -62,47 +47,7 @@ function SettingsTabs() {
       </TabsContent>
 
       <TabsContent value="team">
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <p className="text-[13px] text-muted-foreground">
-              {currentOrganization.name} · {currentOrganization.plan} plan
-            </p>
-            <StubActionButton
-              label="Invite team member"
-              message="Team invitations depend on Epic 0's auth + RBAC backend, which is landing alongside this frontend."
-              variant="secondary"
-            />
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Member</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow>
-                <TableCell>
-                  <div className="flex items-center gap-2.5">
-                    <Avatar fallback={getInitials(currentUser.name)} size="sm" />
-                    <span className="font-medium">{currentUser.name}</span>
-                  </div>
-                </TableCell>
-                <TableCell className="text-muted-foreground">{currentUser.email}</TableCell>
-                <TableCell>
-                  <Badge variant="accent" size="sm">
-                    {currentUser.role}
-                  </Badge>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-          <p className="flex items-center gap-1.5 text-[12px] text-subtle-foreground">
-            <UserPlus size={13} /> You&apos;re the only member — invites are stubbed until Epic 0&apos;s auth
-            backend ships.
-          </p>
-        </div>
+        <TeamPanel />
       </TabsContent>
 
       <TabsContent value="notifications">
