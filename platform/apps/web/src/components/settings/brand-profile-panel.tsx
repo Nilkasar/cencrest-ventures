@@ -29,7 +29,7 @@ import {
   TableRow,
 } from "@bebest/ui";
 import { useBrandProfile } from "@/hooks/use-brand-profile";
-import { currentOrganization } from "@/data/fixtures";
+import { useCurrentOrg } from "@/lib/session-context";
 import { WIZARD_STEPS } from "@/components/onboarding/steps";
 import { completedStepCount, resumeStep } from "@/lib/onboarding-client";
 import {
@@ -67,7 +67,8 @@ function EditLink({ step }: { step: OnboardingStepKey }) {
 }
 
 export function BrandProfilePanel() {
-  const { profile, loading, error, reload } = useBrandProfile(currentOrganization.id);
+  const org = useCurrentOrg();
+  const { profile, loading, error, reload } = useBrandProfile(org?.id ?? "");
 
   if (loading) {
     return (

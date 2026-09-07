@@ -16,8 +16,10 @@
 
 import {
   getAccessToken,
+  getCurrentOrgSlug,
   getRefreshToken,
   handleSessionExpired,
+  setOrgScopedAccessToken,
   setSession,
 } from "./auth-state";
 
@@ -64,6 +66,25 @@ async function refreshAccessToken(): Promise<boolean> {
 
     const data = (await response.json()) as RefreshResponse;
     setSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
+
+    // After refresh, re-select the org so subsequent requests are org-scoped.
+    const orgSlug = getCurrentOrgSlug();
+    if (orgSlug) {
+      try {
+        const orgResponse = await fetch(`${API_BASE_URL}/auth/select-org`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.accessToken}` },
+          body: JSON.stringify({ slug: orgSlug }),
+        });
+        if (orgResponse.ok) {
+          const orgData = (await orgResponse.json()) as { accessToken: string };
+          setOrgScopedAccessToken(orgData.accessToken);
+        }
+      } catch {
+        // best-effort
+      }
+    }
+
     return true;
   } catch {
     return false;

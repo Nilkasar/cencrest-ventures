@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Button, Card, CardContent } from "@bebest/ui";
 import { useBrandProfile } from "@/hooks/use-brand-profile";
-import { currentOrganization } from "@/data/fixtures";
+import { useCurrentOrg, useSession } from "@/lib/session-context";
 import { AiVisibilityTile } from "./ai-visibility-tile";
 import { SeoHealthTile } from "./seo-health-tile";
 import { OpportunitiesTile } from "./opportunities-tile";
@@ -41,9 +41,11 @@ import { StatTileSkeleton } from "./stat-tile";
  * already use.
  */
 export function OverviewView() {
-  const { profile, loading } = useBrandProfile(currentOrganization.id);
+  const { loading: sessionLoading } = useSession();
+  const org = useCurrentOrg();
+  const { profile, loading } = useBrandProfile(org?.id ?? "");
 
-  if (loading) {
+  if (sessionLoading || loading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {Array.from({ length: 4 }).map((_, i) => (

@@ -8,7 +8,7 @@ import { ErrorPanel } from "@/components/patterns/error-panel";
 import { useAsyncData } from "@/lib/use-async-data";
 import { WhiteLabelForbiddenError, WhiteLabelNotAvailableError, getWhiteLabel, updateWhiteLabel } from "@/data/white-label/client";
 import type { WhiteLabelBranding } from "@/data/white-label/types";
-import { currentUser } from "@/data/fixtures";
+import { useSession } from "@/lib/session-context";
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 
@@ -49,6 +49,7 @@ function ColorField({
  *  register `BillingPanel` uses for `manage_billing`. */
 export function WhiteLabelPanel() {
   const router = useRouter();
+  const { org } = useSession();
   const { reload, ...state } = useAsyncData(getWhiteLabel, []);
   const [form, setForm] = useState<WhiteLabelBranding | null>(null);
   const [saving, setSaving] = useState(false);
@@ -65,7 +66,8 @@ export function WhiteLabelPanel() {
     if (state.status === "success") setForm(state.data);
   }, [state]);
 
-  const isAdmin = currentUser.role === "owner" || currentUser.role === "admin";
+  const myRole = org?.role ?? "member";
+  const isAdmin = myRole === "owner" || myRole === "admin";
 
   function patchField<K extends keyof WhiteLabelBranding>(key: K, value: WhiteLabelBranding[K]) {
     setForm((current) => (current ? { ...current, [key]: value } : current));
@@ -130,7 +132,7 @@ export function WhiteLabelPanel() {
     <div className="flex flex-col gap-6">
       {!isAdmin && (
         <p className="text-[12.5px] text-subtle-foreground">
-          You&apos;re viewing branding as {currentUser.role}. Only an organization admin or owner can change it.
+          You&apos;re viewing branding as {myRole}. Only an organization admin or owner can change it.
         </p>
       )}
 

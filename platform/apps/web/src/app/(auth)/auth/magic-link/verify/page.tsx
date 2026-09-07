@@ -16,7 +16,7 @@ import Link from "next/link";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@bebest/ui";
 import { apiClient, ApiError } from "@/lib/api-client";
-import { setSession } from "@/lib/auth-state";
+import { setCurrentOrgSlug, setOrgScopedAccessToken, setSession } from "@/lib/auth-state";
 
 interface VerifyResponse {
   accessToken: string;
@@ -63,12 +63,29 @@ function VerifyContent() {
 
     apiClient
       .post<VerifyResponse>("/auth/magic-link/verify", { token })
-      .then((data) => {
+      .then(async (data) => {
         setSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
+        try {
+          const orgs = await apiClient.get<Array<{ id: string; slug: string; name: string }>>("/orgs");
+          if (orgs.length > 0) {
+            const first = orgs[0]!;
+            const orgData = await apiClient.post<{ accessToken: string }>("/auth/select-org", { slug: first.slug });
+            setCurrentOrgSlug(first.slug);
+            setOrgScopedAccessToken(orgData.accessToken);
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setStatus({ kind: "success" });
+            router.replace("/overview");
+            return;
+          }
+        } catch {
+          // New user with no org yet → fall through to onboarding
+        }
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setStatus({ kind: "success" });
-        router.replace("/overview");
+        router.replace("/onboarding");
       })
       .catch((err: unknown) => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setStatus({ kind: "error", message: messageFor(err) });
       });
   }, [token, router]);

@@ -28,7 +28,7 @@ import {
 import { ErrorPanel } from "@/components/patterns/error-panel";
 import { useAsyncData } from "@/lib/use-async-data";
 import { formatDate } from "@/lib/format";
-import { currentOrganization, currentUser } from "@/data/fixtures";
+import { useSession } from "@/lib/session-context";
 import { OwnerProtectedError, TeamForbiddenError, changeMemberRole, loadTeamData, removeMember } from "@/data/team/client";
 import { ASSIGNABLE_ROLES, ROLE_LABELS, isAssignableRole, type AssignableRole, type TeamMember } from "@/data/team/types";
 import { InviteTeamMemberDialog } from "./invite-team-member-dialog";
@@ -52,11 +52,13 @@ import { InviteTeamMemberDialog } from "./invite-team-member-dialog";
  * is ever bypassed.
  */
 export function TeamPanel() {
+  const { org } = useSession();
   const { reload, ...state } = useAsyncData(loadTeamData, []);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const canManageTeam = currentUser.role === "owner" || currentUser.role === "admin";
+  const myRole = org?.role ?? "member";
+  const canManageTeam = myRole === "owner" || myRole === "admin";
 
   function memberLabel(member: TeamMember): string {
     return member.name || member.email;
@@ -118,14 +120,14 @@ export function TeamPanel() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-[13px] text-muted-foreground">
-          {currentOrganization.name} · {currentOrganization.plan} plan · {members.length} member{members.length === 1 ? "" : "s"}
+          {org?.name ?? "Your organization"} · {members.length} member{members.length === 1 ? "" : "s"}
         </p>
         <InviteTeamMemberDialog slug={slug} disabled={!canManageTeam} onInvited={reload} />
       </div>
 
       {!canManageTeam && (
         <p className="text-[12.5px] text-subtle-foreground">
-          You&apos;re viewing the team as {currentUser.role}. Only an organization owner or admin can invite, change
+          You&apos;re viewing the team as {myRole}. Only an organization owner or admin can invite, change
           roles, or remove members.
         </p>
       )}

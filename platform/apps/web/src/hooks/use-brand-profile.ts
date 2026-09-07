@@ -32,6 +32,7 @@ export function useBrandProfile(organizationId: string): UseBrandProfileResult {
   const requestId = useRef(0);
 
   useEffect(() => {
+    if (!organizationId) return;
     const id = ++requestId.current;
     getBrandProfile(organizationId)
       .then((result) => {

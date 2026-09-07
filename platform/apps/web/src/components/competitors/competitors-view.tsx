@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/patterns/page-header";
 import { ErrorPanel } from "@/components/patterns/error-panel";
 import { useBrandProfile } from "@/hooks/use-brand-profile";
 import { useAsyncData } from "@/lib/use-async-data";
-import { currentOrganization } from "@/data/fixtures";
+import { useCurrentOrg } from "@/lib/session-context";
 import { addCompetitor, updateCompetitor, removeCompetitor, EntitlementError } from "@/lib/onboarding-client";
 import { competitorLimitFor, isUnlimited } from "@/data/brand-constants";
 import { getCompetitiveGaps } from "@/data/competitive-intelligence/client";
@@ -36,7 +36,9 @@ function capitalize(value: string): string {
  * response, so lifting the fetch avoids requesting it twice.
  */
 export function CompetitorsView() {
-  const { profile, loading, error, reload, setProfile } = useBrandProfile(currentOrganization.id);
+  const org = useCurrentOrg();
+  const orgId = org?.id ?? "";
+  const { profile, loading, error, reload, setProfile } = useBrandProfile(orgId);
   const { toast } = useToast();
   const gapsState = useAsyncData(() => getCompetitiveGaps(), []);
 
@@ -46,7 +48,7 @@ export function CompetitorsView() {
   const [dialogSubmitting, setDialogSubmitting] = useState(false);
   const [removingId, setRemovingId] = useState<string | undefined>(undefined);
 
-  const plan = currentOrganization.plan;
+  const plan = org?.plan ?? "free";
   const limit = competitorLimitFor(plan);
   const competitors = profile?.competitors ?? [];
   const atLimit = competitors.length >= limit;
@@ -68,8 +70,8 @@ export function CompetitorsView() {
     setDialogError(undefined);
     try {
       const updated = editing
-        ? await updateCompetitor(currentOrganization.id, editing.id, values)
-        : await addCompetitor(currentOrganization.id, values);
+        ? await updateCompetitor(orgId, editing.id, values)
+        : await addCompetitor(orgId, values);
       setProfile(updated);
       setDialogOpen(false);
     } catch (err) {
@@ -82,7 +84,7 @@ export function CompetitorsView() {
   async function handleRemove(competitor: Competitor) {
     setRemovingId(competitor.id);
     try {
-      const updated = await removeCompetitor(currentOrganization.id, competitor.id);
+      const updated = await removeCompetitor(orgId, competitor.id);
       setProfile(updated);
       toast({ title: "Competitor removed", description: `${competitor.name} is no longer tracked.` });
     } catch (err) {

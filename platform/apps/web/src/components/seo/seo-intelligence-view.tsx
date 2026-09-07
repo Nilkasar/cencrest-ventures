@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, Skeleton, Button } from "@bebest/ui";
 import { useBrandProfile } from "@/hooks/use-brand-profile";
-import { currentOrganization } from "@/data/fixtures";
+import { useCurrentOrg } from "@/lib/session-context";
 import { TechnicalHealthPanel } from "./technical-health-panel";
 import { KeywordCoveragePanel } from "./keyword-coverage-panel";
 import { OpportunitiesPanel } from "./opportunities-panel";
@@ -26,7 +26,8 @@ import { OpportunitiesPanel } from "./opportunities-panel";
  * brand profile" empty states at once.
  */
 export function SeoIntelligenceView() {
-  const { profile, loading } = useBrandProfile(currentOrganization.id);
+  const org = useCurrentOrg();
+  const { profile, loading } = useBrandProfile(org?.id ?? "");
   const [opportunitiesRefreshKey, setOpportunitiesRefreshKey] = useState(0);
 
   const bumpOpportunities = useCallback(() => setOpportunitiesRefreshKey((k) => k + 1), []);

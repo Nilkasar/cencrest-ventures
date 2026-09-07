@@ -8,7 +8,7 @@ import { useAsyncData } from "@/lib/use-async-data";
 import { formatDateTime } from "@/lib/format";
 import { connectIntegration, disconnectIntegration, listIntegrations } from "@/data/integrations/client";
 import { SUPPORTED_PROVIDERS, type Integration, type IntegrationStatus } from "@/data/integrations/types";
-import { currentUser } from "@/data/fixtures";
+import { useSession } from "@/lib/session-context";
 
 const STATUS_LABEL: Record<IntegrationStatus, string> = {
   connected: "Connected",
@@ -29,11 +29,13 @@ const STATUS_VARIANT: Record<IntegrationStatus, "success" | "neutral" | "danger"
  *  preferring `MockSearchConsoleProvider` over the estimate-only
  *  `NullSEODataProvider` on the next SEO keyword-group generation. */
 export function IntegrationsPanel() {
+  const { org } = useSession();
   const { reload, ...state } = useAsyncData(listIntegrations, []);
   const [busySlug, setBusySlug] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const isAdmin = currentUser.role === "owner" || currentUser.role === "admin";
+  const myRole = org?.role ?? "member";
+  const isAdmin = myRole === "owner" || myRole === "admin";
 
   async function handleConnect(slug: string) {
     setBusySlug(slug);
@@ -75,7 +77,7 @@ export function IntegrationsPanel() {
     <div className="flex flex-col gap-4">
       {!isAdmin && (
         <p className="text-[12.5px] text-subtle-foreground">
-          You&apos;re viewing integrations as {currentUser.role}. Only an organization admin or owner can connect or
+          You&apos;re viewing integrations as {myRole}. Only an organization admin or owner can connect or
           disconnect one.
         </p>
       )}

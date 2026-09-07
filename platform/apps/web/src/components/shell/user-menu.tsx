@@ -11,14 +11,16 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Skeleton,
   getInitials,
 } from "@bebest/ui";
-import { currentUser } from "@/data/fixtures";
 import { apiClient } from "@/lib/api-client";
 import { clearSession, getRefreshToken } from "@/lib/auth-state";
+import { useSession } from "@/lib/session-context";
 
 export function UserMenu() {
   const router = useRouter();
+  const { user, loading } = useSession();
   const [signingOut, setSigningOut] = useState(false);
 
   async function handleSignOut() {
@@ -40,18 +42,25 @@ export function UserMenu() {
     }
   }
 
+  if (loading) {
+    return <Skeleton className="size-7 rounded-full" />;
+  }
+
+  const displayName = user?.name ?? "User";
+  const displayEmail = user?.email ?? "";
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label="Account menu"
       >
-        <Avatar fallback={getInitials(currentUser.name)} size="sm" />
+        <Avatar fallback={getInitials(displayName)} size="sm" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
         <DropdownMenuLabel className="flex flex-col gap-0.5 normal-case tracking-normal">
-          <span className="text-[13px] font-medium text-foreground">{currentUser.name}</span>
-          <span className="text-[12px] text-muted-foreground font-normal">{currentUser.email}</span>
+          <span className="text-[13px] font-medium text-foreground">{displayName}</span>
+          <span className="text-[12px] text-muted-foreground font-normal">{displayEmail}</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => router.push("/settings")}>

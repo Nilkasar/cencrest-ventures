@@ -20,6 +20,7 @@
  */
 
 const REFRESH_TOKEN_STORAGE_KEY = "bebest.auth.refreshToken.v1";
+const CURRENT_ORG_SLUG_KEY = "bebest.auth.currentOrgSlug.v1";
 
 let accessToken: string | null = null;
 
@@ -87,10 +88,33 @@ export function hasStoredSession(): boolean {
   return getRefreshToken() !== null;
 }
 
-/** Clears both tokens. Safe to call even if nothing was ever set. */
+export function getCurrentOrgSlug(): string | null {
+  if (!hasLocalStorage()) return null;
+  try {
+    return window.localStorage.getItem(CURRENT_ORG_SLUG_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setCurrentOrgSlug(slug: string | null): void {
+  if (!hasLocalStorage()) return;
+  try {
+    if (slug) {
+      window.localStorage.setItem(CURRENT_ORG_SLUG_KEY, slug);
+    } else {
+      window.localStorage.removeItem(CURRENT_ORG_SLUG_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+/** Clears both tokens and current org slug. Safe to call even if nothing was ever set. */
 export function clearSession(): void {
   setAccessToken(null);
   setRefreshToken(null);
+  setCurrentOrgSlug(null);
 }
 
 const AUTH_PAGE_PREFIXES = ["/login", "/auth/magic-link/verify"];

@@ -21,14 +21,15 @@ import { StepActions } from "@/components/onboarding/step-actions";
 import { previousStepHref, nextStepHref } from "@/components/onboarding/steps";
 import { addCompetitor, updateCompetitor, removeCompetitor, markStepComplete, EntitlementError } from "@/lib/onboarding-client";
 import { competitorLimitFor, isUnlimited, COMPETITOR_PRIORITY_LABEL, COMPETITOR_PRIORITY_VARIANT } from "@/data/brand-constants";
-import { currentOrganization } from "@/data/fixtures";
+import { useCurrentOrg } from "@/lib/session-context";
 import type { Competitor } from "@/data/types";
 
 export default function CompetitorsStep() {
   const router = useRouter();
   const { organizationId, profile, setProfile } = useOnboarding();
   const { toast } = useToast();
-  const plan = currentOrganization.plan;
+  const org = useCurrentOrg();
+  const plan = org?.plan ?? "free";
   const limit = competitorLimitFor(plan);
   const competitors = profile!.competitors;
 

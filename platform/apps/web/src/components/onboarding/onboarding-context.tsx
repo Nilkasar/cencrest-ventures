@@ -3,7 +3,7 @@
 import { createContext, useContext, useMemo } from "react";
 import type { BrandProfile } from "@/data/types";
 import { useBrandProfile } from "@/hooks/use-brand-profile";
-import { currentOrganization } from "@/data/fixtures";
+import { useCurrentOrg } from "@/lib/session-context";
 
 interface OnboardingContextValue {
   organizationId: string;
@@ -17,7 +17,8 @@ interface OnboardingContextValue {
 const OnboardingContext = createContext<OnboardingContextValue | null>(null);
 
 export function OnboardingProvider({ children }: { children: React.ReactNode }) {
-  const organizationId = currentOrganization.id;
+  const org = useCurrentOrg();
+  const organizationId = org?.id ?? "";
   const { profile, loading, error, reload, setProfile } = useBrandProfile(organizationId);
 
   const value = useMemo(

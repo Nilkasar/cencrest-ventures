@@ -1,15 +1,24 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { AlertCircle } from "lucide-react";
 import { Button, EmptyState, Skeleton, SkeletonText } from "@bebest/ui";
 import { OnboardingProvider, useOnboarding } from "@/components/onboarding/onboarding-context";
 import { Stepper } from "@/components/onboarding/stepper";
+import { SessionProvider } from "@/lib/session-context";
 
 function WizardFrame({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const pathname = usePathname();
   const { profile, loading, error, reload } = useOnboarding();
   const showStepper = pathname !== "/onboarding" && pathname !== "/onboarding/done";
+
+  useEffect(() => {
+    if (!loading && profile?.status === "completed" && pathname !== "/onboarding/done") {
+      router.replace("/overview");
+    }
+  }, [loading, profile, pathname, router]);
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col">
@@ -58,8 +67,10 @@ function stepKeyFromPathname(pathname: string) {
 
 export default function OnboardingWizardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <OnboardingProvider>
-      <WizardFrame>{children}</WizardFrame>
-    </OnboardingProvider>
+    <SessionProvider>
+      <OnboardingProvider>
+        <WizardFrame>{children}</WizardFrame>
+      </OnboardingProvider>
+    </SessionProvider>
   );
 }
