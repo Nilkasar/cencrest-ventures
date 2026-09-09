@@ -11,7 +11,9 @@
     "lint": "eslint src --ext .ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed:plans": "tsx src/scripts/seed-plans.ts"
+    "seed:plans": "tsx src/scripts/seed-plans.ts",
+    "seed:dev": "tsx src/scripts/seed-dev.ts",
+    "smoke:crm": "tsx scripts/crm-smoke.ts"
   },
   "dependencies": {
     "@bebest/ai-provider": "workspace:*",

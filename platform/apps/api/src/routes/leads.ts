@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { db, withOrgContext, type PrismaTransactionClient } from '@bebest/database';
+import { withOrgContext, type PrismaTransactionClient } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
 import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireCrmAccess } from '../middleware/crm-access.js';
@@ -8,6 +8,7 @@ import { requirePermission } from '../middleware/rbac.js';
 import { auditLog } from '../middleware/audit-log.js';
 import { getInternalOrgId } from '../lib/internal-org.js';
 import { isSafePublicHttpUrl } from '../lib/ssrf-guard.js';
+import { loadUserRefs, userRef, type UserRef } from '../lib/crm-users.js';
 import type { AppEnv } from '../types/context.js';
 
 const leads = new Hono<AppEnv>();
@@ -71,7 +72,8 @@ leads.post(
       }),
     );
 
-    return c.json(serializeLead(created), 201);
+    const refs = await loadUserRefs([created.assigned_to]);
+    return c.json(serializeLead(created, refs), 201);
   },
 );
 
@@ -83,6 +85,12 @@ leads.get('/', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'), 
       status: z.enum(LEAD_STATUSES).optional(),
       source: z.enum(LEAD_SOURCES).optional(),
       assignedTo: z.string().uuid().optional(),
+      // Free-text search over the three fields the leads table actually
+      // shows. Without this the client had to fetch a whole page and filter
+      // it in the browser, which silently searched only the rows it
+      // happened to have — a search that misses matches is worse than no
+      // search at all.
+      q: z.string().trim().min(1).max(200).optional(),
       page: z.coerce.number().int().min(1).default(1),
       limit: z.coerce.number().int().min(1).max(100).default(20),
     })
@@ -92,27 +100,61 @@ leads.get('/', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'), 
     return c.json({ error: 'Validation failed', issues: query.error.issues }, 422);
   }
 
-  const { status, source, assignedTo, page, limit } = query.data;
+  const { status, source, assignedTo, q, page, limit } = query.data;
   const where = {
     deleted_at: null,
     ...(status ? { status } : {}),
     ...(source ? { source } : {}),
     ...(assignedTo ? { assigned_to: assignedTo } : {}),
+    ...(q
+      ? {
+          OR: [
+            { name: { contains: q, mode: 'insensitive' as const } },
+            { company: { contains: q, mode: 'insensitive' as const } },
+            { email: { contains: q, mode: 'insensitive' as const } },
+          ],
+        }
+      : {}),
   };
 
-  const [items, total] = await withOrgContext(internalOrgId, (tx) =>
-    Promise.all([
-      tx.leads.findMany({
-        where,
-        orderBy: { created_at: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      tx.leads.count({ where }),
-    ]),
-  );
+  // The status breakdown is computed here, in the same transaction, rather
+  // than left to the client. The leads screen shows "total / needs a
+  // response / converted" above the table; counting the rows of the current
+  // page produced numbers that were only ever right when every lead fitted
+  // on one page. Deliberately ignores the `status` filter (but honours
+  // search and the other filters) so the header describes the whole
+  // filtered set, not the slice currently selected.
+  const countsWhere = { ...where, status: undefined };
 
-  return c.json({ data: items.map(serializeLead), page, limit, total });
+  const [items, total, byStatus] = await withOrgContext(internalOrgId, async (tx) => [
+    await tx.leads.findMany({
+      where,
+      orderBy: { created_at: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    await tx.leads.count({ where }),
+    await tx.leads.groupBy({ by: ['status'], where: countsWhere, _count: { _all: true } }),
+  ] as const);
+
+  const statusCounts = Object.fromEntries(
+    LEAD_STATUSES.map((value) => [
+      value,
+      byStatus.find((row) => row.status === value)?._count._all ?? 0,
+    ]),
+  ) as Record<(typeof LEAD_STATUSES)[number], number>;
+
+  // One extra query resolves every assignee on the page (see
+  // lib/crm-users.ts) — the alternative was two extra HTTP requests from
+  // the client before it could render a single row.
+  const refs = await loadUserRefs(items.map((item) => item.assigned_to));
+  return c.json({
+    data: items.map((item) => serializeLead(item, refs)),
+    page,
+    limit,
+    total,
+    statusCounts,
+  });
 });
 
 // ── Get one ──────────────────────────────────────────────────────────────
@@ -125,7 +167,8 @@ leads.get('/:id', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'
   );
   if (!lead) return c.json({ error: 'Lead not found' }, 404);
 
-  return c.json(serializeLead(lead));
+  const refs = await loadUserRefs([lead.assigned_to]);
+  return c.json(serializeLead(lead, refs));
 });
 
 // ── Update ───────────────────────────────────────────────────────────────
@@ -162,14 +205,19 @@ leads.patch(
     const user = c.get('user');
     const id = c.req.param('id');
 
-    const existing = await withOrgContext(internalOrgId, (tx) =>
-      tx.leads.findFirst({ where: { id, deleted_at: null } }),
-    );
-    if (!existing) return c.json({ error: 'Lead not found' }, 404);
-
     const { assignedTo, ...rest } = parsed.data;
-    const updated = await withOrgContext(internalOrgId, (tx) =>
-      tx.leads.update({
+
+    // Read and write in ONE transaction. Two `withOrgContext` calls meant
+    // two BEGIN/COMMIT round trips for a single logical update, and left a
+    // window where the row could be soft-deleted in between.
+    const updated = await withOrgContext(internalOrgId, async (tx) => {
+      const existing = await tx.leads.findFirst({
+        where: { id, deleted_at: null },
+        select: { id: true },
+      });
+      if (!existing) return null;
+
+      return tx.leads.update({
         where: { id },
         data: {
           ...rest,
@@ -177,10 +225,12 @@ leads.patch(
           updated_by: user.id,
           updated_at: new Date(),
         },
-      }),
-    );
+      });
+    });
 
-    return c.json(serializeLead(updated));
+    if (!updated) return c.json({ error: 'Lead not found' }, 404);
+    const refs = await loadUserRefs([updated.assigned_to]);
+    return c.json(serializeLead(updated, refs));
   },
 );
 
@@ -212,25 +262,26 @@ leads.post(
     const user = c.get('user');
     const id = c.req.param('id');
 
-    const lead = await withOrgContext(internalOrgId, (tx) =>
-      tx.leads.findFirst({ where: { id, deleted_at: null } }),
-    );
-    if (!lead) return c.json({ error: 'Lead not found' }, 404);
-    if (lead.converted_organization_id) {
-      return c.json({ error: 'Lead has already been converted' }, 409);
-    }
-
-    if (parsed.data.organizationId) {
-      const target = await db.organizations.findUnique({
-        where: { id: parsed.data.organizationId },
-      });
-      if (!target || target.deleted_at) {
-        return c.json({ error: 'organizationId does not refer to an existing organization' }, 404);
-      }
-    }
-
     const now = new Date();
+
+    // The whole conversion — the eligibility checks included — runs in ONE
+    // transaction. It used to be a read transaction, then an optional
+    // stand-alone org lookup, then a second write transaction: three
+    // separate database trips, and a race where the same lead could be
+    // converted twice concurrently because the `converted_organization_id`
+    // check had already committed and released before the write began.
     const result = await withOrgContext(internalOrgId, async (tx) => {
+      const lead = await tx.leads.findFirst({ where: { id, deleted_at: null } });
+      if (!lead) return { error: 'not_found' } as const;
+      if (lead.converted_organization_id) return { error: 'already_converted' } as const;
+
+      if (parsed.data.organizationId) {
+        const target = await tx.organizations.findUnique({
+          where: { id: parsed.data.organizationId },
+        });
+        if (!target || target.deleted_at) return { error: 'unknown_organization' } as const;
+      }
+
       // `organizations` has no RLS (queried before any tenant context
       // exists — see @bebest/database rls.sql), so creating/reading it
       // inside this internal-org-scoped transaction is safe and keeps the
@@ -245,7 +296,7 @@ leads.post(
             },
           });
 
-      await tx.leads.update({
+      const updatedLead = await tx.leads.update({
         where: { id: lead.id },
         data: {
           converted_organization_id: organization.id,
@@ -269,14 +320,28 @@ leads.post(
         data: { account_organization_id: organization.id },
       });
 
-      return organization;
+      return { organization, lead: updatedLead } as const;
     });
 
+    if ('error' in result) {
+      if (result.error === 'not_found') return c.json({ error: 'Lead not found' }, 404);
+      if (result.error === 'already_converted') {
+        return c.json({ error: 'Lead has already been converted' }, 409);
+      }
+      return c.json({ error: 'organizationId does not refer to an existing organization' }, 404);
+    }
+
     return c.json({
-      leadId: lead.id,
-      organizationId: result.id,
-      organizationName: result.name,
+      leadId: result.lead.id,
+      organizationId: result.organization.id,
+      organizationName: result.organization.name,
+      organizationSlug: result.organization.slug,
       convertedAt: now,
+      // The converted lead, in full. Returning it here is what lets the
+      // client skip a follow-up `GET /leads/:id` purely to see the status
+      // flip to "converted" — one fewer round trip on a flow the UI runs
+      // interactively while the user waits.
+      lead: serializeLead(result.lead, await loadUserRefs([result.lead.assigned_to])),
     });
   },
 );
@@ -314,7 +379,7 @@ function serializeLead(lead: {
   converted_at: Date | null;
   created_at: Date;
   updated_at: Date;
-}) {
+}, refs: Map<string, UserRef>) {
   return {
     id: lead.id,
     email: lead.email,
@@ -328,6 +393,10 @@ function serializeLead(lead: {
     status: lead.status,
     score: lead.score,
     assignedTo: lead.assigned_to,
+    // Resolved server-side so the client never has to look a staff member
+    // up separately. `assignedTo` (the raw id) stays for callers that only
+    // need the id.
+    assignedToUser: userRef(lead.assigned_to, refs),
     snapshotId: lead.snapshot_id,
     convertedOrganizationId: lead.converted_organization_id,
     convertedAt: lead.converted_at,

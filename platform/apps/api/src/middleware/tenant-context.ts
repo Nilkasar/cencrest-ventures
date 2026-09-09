@@ -35,12 +35,22 @@ async function resolveOrgContext(
   userId: string,
   organizationId: string,
 ): Promise<OrgContext | null> {
-  const org = await db.organizations.findUnique({ where: { id: organizationId } });
+  // Issued together rather than one-after-the-other: the org read
+  // (`organizations` has no RLS) and the membership read (which does, so it
+  // needs its own `app.current_user` transaction) are independent, and this
+  // pair sits on the hot path of every authenticated request. Serially
+  // they cost the org round trip PLUS the whole membership transaction;
+  // overlapped, the org read hides inside it. The membership result is
+  // discarded below if the org turns out to be missing or deleted, so the
+  // authorization outcome is identical either way.
+  const [org, membership] = await Promise.all([
+    db.organizations.findUnique({ where: { id: organizationId } }),
+    withUserContext(userId, (tx) =>
+      tx.memberships.findFirst({ where: { organization_id: organizationId, user_id: userId } }),
+    ),
+  ]);
   if (!org || org.deleted_at) return null;
 
-  const membership = await withUserContext(userId, (tx) =>
-    tx.memberships.findFirst({ where: { organization_id: organizationId, user_id: userId } }),
-  );
   if (membership) {
     return {
       organizationId: org.id,

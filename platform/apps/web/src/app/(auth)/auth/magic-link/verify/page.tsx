@@ -16,12 +16,50 @@ import Link from "next/link";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@bebest/ui";
 import { apiClient, ApiError } from "@/lib/api-client";
-import { setSession } from "@/lib/auth-state";
+import { setOrgScopedAccessToken, setSession } from "@/lib/auth-state";
 
 interface VerifyResponse {
   accessToken: string;
   refreshToken: string;
   user: { id: string; email: string; name: string };
+}
+
+interface MeResponse {
+  organizations: { id: string; name: string; slug: string; role: string }[];
+}
+
+interface SelectOrgResponse {
+  accessToken: string;
+  organization: { id: string; name: string; slug: string; role: string };
+}
+
+/**
+ * A freshly verified access token carries NO org claim (`auth.ts` mints it
+ * with `org: null` and expects the client to choose one). Nothing did — so
+ * every screen behind an org-scoped route answered 409 "No organization
+ * selected" immediately after a successful login. This selects one before
+ * handing the user to the app, and persists the choice so a later token
+ * refresh can re-attach it.
+ *
+ * Picking the first membership is the same interim single-org assumption
+ * the Settings > Team panel already documents: correct for a user in one
+ * organization, and the org switcher is how a multi-org user changes it.
+ * Never fatal — a user with no organizations still reaches the app, where
+ * onboarding can create one.
+ */
+async function selectInitialOrg(): Promise<void> {
+  try {
+    const me = await apiClient.get<MeResponse>("/auth/me");
+    const first = me.organizations[0];
+    if (!first) return;
+
+    const selection = await apiClient.post<SelectOrgResponse>("/auth/select-org", {
+      slug: first.slug,
+    });
+    setOrgScopedAccessToken(selection.accessToken, selection.organization.slug);
+  } catch {
+    // Leave the session as-is; the user is signed in either way.
+  }
 }
 
 type Status = { kind: "verifying" } | { kind: "success" } | { kind: "error"; message: string };
@@ -63,8 +101,9 @@ function VerifyContent() {
 
     apiClient
       .post<VerifyResponse>("/auth/magic-link/verify", { token })
-      .then((data) => {
+      .then(async (data) => {
         setSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
+        await selectInitialOrg();
         setStatus({ kind: "success" });
         router.replace("/overview");
       })

@@ -7,7 +7,7 @@ export interface AuditEventInput {
   actorRole?: string | null;
   action: string;
   entityType: string;
-  entityId: string;
+  entityId: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
   result: 'success' | 'failure';

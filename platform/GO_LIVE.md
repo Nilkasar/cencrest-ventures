@@ -10,20 +10,33 @@ Nothing here is a code change. Everything below is configuration, infrastructure
 
 ### 1.1 Provision Postgres and apply the schema
 
-1. Stand up a real Postgres 16 instance and set `DATABASE_URL`.
-2. Apply the Prisma-tracked schema:
+1. Stand up a real Postgres 16 instance and set `DATABASE_URL` (export it, or put it in `packages/database/.env`).
+2. Apply everything — tables, constraints, indexes and RLS policies — in one command:
    ```
-   pnpm --filter @bebest/database exec prisma migrate deploy
+   pnpm --filter @bebest/database run db:apply
    ```
-3. **Separately**, apply every migration folder's raw SQL by hand — Prisma never runs these files (they're RLS/CHECK-constraint/index definitions, not Prisma migrations):
-   ```
-   for d in packages/database/prisma/migrations/*/; do
-     for f in "$d"*.sql; do
-       [ -f "$f" ] && psql "$DATABASE_URL" -f "$f"
-     done
-   done
-   ```
-   19 migration folders exist (`0000_init` through `0018_reporting_notifications`), each holding some subset of `checks.sql` / `rls.sql` / `indexes.sql`. All 19 need this, not just the first couple `apps/api/README.md`'s own example happens to show.
+   Add `--dry-run` first to see exactly what it will run.
+
+> **Correction (2026-09-09).** This section previously said to run
+> `prisma migrate deploy` and then apply each folder's SQL with `psql`.
+> That does not work: the folders under `prisma/migrations/` contain
+> hand-written `checks.sql` / `indexes.sql` / `rls.sql` / `ddl.sql` and no
+> `migration.sql`, which is the only file Prisma's migrate command looks
+> at — so `prisma migrate deploy` creates **nothing at all**, no tables and
+> no policies. `packages/database/scripts/apply-sql.mjs` (the `db:apply`
+> script) is what actually builds the schema: it renders the DDL from
+> `schema.prisma` offline, applies it, then applies all 20 folders' SQL in
+> order (`ddl` → `checks` → `indexes` → `rls` within each). It records what
+> it applied in a `_bebest_applied_sql` ledger, so it is safe to re-run and
+> a later migration folder applies on its own. It also needs no `psql`
+> binary on the machine.
+>
+> For a database that was built before that ledger existed, run
+> `pnpm --filter @bebest/database run db:apply -- --baseline` once to record
+> the current files as applied without re-running them.
+>
+> This was verified end to end on 2026-09-09: all 20 folders applied
+> cleanly to a fresh Postgres, 128 tables, zero failures.
 
 ### 1.2 Create the two required Postgres roles
 
@@ -42,11 +55,22 @@ Idempotent (upserts by slug), safe to re-run.
 
 ### 1.4 Bootstrap the CRM internal org
 
-`CRM_INTERNAL_ORG_ID` (env var, §2) must point at a real, already-created `organizations` row. Nothing creates this automatically. One-time manual step:
-1. Create an org the normal way: `POST /api/orgs` (as any authenticated user — this becomes BeBest's own internal ops workspace, not a customer org).
-2. Put that org's real id into `CRM_INTERNAL_ORG_ID`.
+`CRM_INTERNAL_ORG_ID` (env var, §2) must point at a real, already-created `organizations` row. Nothing creates this automatically.
 
-Without this, every CRM route (`/api/leads`, `/api/deals`, `/api/activities`, `/api/accounts`) fails outright.
+```
+pnpm --filter @bebest/api run seed:dev
+```
+
+creates the internal ops org plus its staff memberships and prints the
+`CRM_INTERNAL_ORG_ID=` line to copy into the environment. It is idempotent.
+Add `-- --samples` in a development environment to also seed example
+leads/deals/accounts so the screens have something to render; leave it off
+anywhere real.
+
+(The manual route still works: `POST /api/orgs` as any authenticated user,
+then copy that org's id.)
+
+Without this, every CRM route (`/api/leads`, `/api/deals`, `/api/activities`, `/api/accounts`, `/api/crm/users`) fails outright.
 
 ### 1.5 Run the integration test suite against this real database (recommended, not optional)
 
@@ -131,7 +155,7 @@ Real, honestly-documented, not oversights — worth setting expectations before 
 **Not visible to users, but real:**
 - No single real "current session" hook exists yet — 15 files across the app independently read `currentUser`/`currentOrganization` from `data/fixtures.ts` rather than a shared session source. Works correctly for a single-org user today; a genuinely multi-org user could see the wrong org's identity in some corner of the UI. See §4.
 - No CSRF tokens (mitigated today by bearer-token-only, no-cookie auth — only matters if cookie-based sessions are ever added later).
-- `POST /auth/refresh` doesn't re-attach the previously-selected org; a client must call `/select-org` again after a token refresh.
+- ~~`POST /auth/refresh` doesn't re-attach the previously-selected org~~ — **fixed 2026-09-09.** `/auth/refresh` now accepts an optional `orgSlug` and re-derives access from `memberships` (then agency links) before putting the org on the new token, and the web client sends the org it last acted as. It is a request, not a grant: a slug the caller cannot reach yields an org-less token, same as before. The magic-link verify page now also selects an org after login — previously nothing did, so every org-scoped route answered 409 straight after a successful sign-in.
 - CRM's SSRF guard validates URLs at write time only — inert today since nothing fetches a stored CRM URL yet, but any future feature that does must add its own fetch-time guard.
 - No OpenAPI/generated API docs — routes are documented in prose (`apps/api/README.md`) only.
 
@@ -140,11 +164,11 @@ Real, honestly-documented, not oversights — worth setting expectations before 
 ## 7. Final pre-launch checklist
 
 - [ ] Postgres provisioned, `DATABASE_URL` set
-- [ ] `prisma migrate deploy` run
-- [ ] All 19 migration folders' `checks.sql`/`rls.sql`/`indexes.sql` applied via `psql`
+- [ ] `pnpm --filter @bebest/database run db:apply` run (schema + all 20 folders' constraints, indexes and RLS — see §1.1; `prisma migrate deploy` does **not** do this)
 - [ ] `bebest_app` / `bebest_admin` Postgres roles created correctly (no `BYPASSRLS`, no ownership on `bebest_app`)
 - [ ] `pnpm --filter @bebest/api run seed:plans` run
-- [ ] Internal CRM org bootstrapped, `CRM_INTERNAL_ORG_ID` set
+- [ ] Internal CRM org bootstrapped (`pnpm --filter @bebest/api run seed:dev`), `CRM_INTERNAL_ORG_ID` set
+- [ ] `pnpm --filter @bebest/api run smoke:crm` passes against the deployed API
 - [ ] 79 tenant-isolation integration tests run against the real database and passing
 - [ ] `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` generated and set (real keys, not the dev pair)
 - [ ] `APP_URL` set to the real production domain

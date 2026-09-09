@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { db, withOrgContext, type Prisma } from '@bebest/database';
+import { withOrgContext, type Prisma } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
 import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireCrmAccess } from '../middleware/crm-access.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { getInternalOrgId } from '../lib/internal-org.js';
+import { loadUserRefs, userRef, type UserRef } from '../lib/crm-users.js';
 import type { AppEnv } from '../types/context.js';
 
 const activities = new Hono<AppEnv>();
@@ -43,16 +44,19 @@ activities.post(
     const user = c.get('user');
     const internalOrgId = getInternalOrgId();
 
-    if (parsed.data.accountOrganizationId) {
-      const org = await db.organizations.findUnique({
-        where: { id: parsed.data.accountOrganizationId },
-      });
-      if (!org || org.deleted_at) {
-        return c.json({ error: 'accountOrganizationId does not refer to an existing organization' }, 404);
-      }
-    }
-
+    // The org existence check runs inside the same transaction as the
+    // lead/deal checks and the insert, instead of as a separate query
+    // before it — one database trip rather than two, and the parent rows
+    // can no longer disappear between being validated and being referenced.
+    // (`organizations` has no RLS, so reading it inside an org-scoped
+    // transaction is the same read it was outside one.)
     const created = await withOrgContext(internalOrgId, async (tx) => {
+      if (parsed.data.accountOrganizationId) {
+        const org = await tx.organizations.findUnique({
+          where: { id: parsed.data.accountOrganizationId },
+        });
+        if (!org || org.deleted_at) return 'unknown_organization' as const;
+      }
       if (parsed.data.leadId) {
         const lead = await tx.leads.findFirst({
           where: { id: parsed.data.leadId, deleted_at: null },
@@ -81,8 +85,14 @@ activities.post(
       });
     });
 
+    if (created === 'unknown_organization') {
+      return c.json(
+        { error: 'accountOrganizationId does not refer to an existing organization' },
+        404,
+      );
+    }
     if (!created) return c.json({ error: 'leadId or dealId does not refer to an existing record' }, 404);
-    return c.json(serializeActivity(created), 201);
+    return c.json(serializeActivity(created, await loadUserRefs([created.actor_id])), 201);
   },
 );
 
@@ -129,7 +139,9 @@ activities.get('/', requireAuth, authenticatedRateLimit, requireCrmAccess('viewe
     ]),
   );
 
-  return c.json({ data: items.map(serializeActivity), page, limit, total });
+  // Actors resolved in one query — see lib/crm-users.ts.
+  const refs = await loadUserRefs(items.map((item) => item.actor_id));
+  return c.json({ data: items.map((item) => serializeActivity(item, refs)), page, limit, total });
 });
 
 function serializeActivity(activity: {
@@ -143,7 +155,7 @@ function serializeActivity(activity: {
   metadata: unknown;
   actor_id: string | null;
   created_at: Date;
-}) {
+}, refs: Map<string, UserRef>) {
   return {
     id: activity.id,
     leadId: activity.lead_id,
@@ -154,6 +166,8 @@ function serializeActivity(activity: {
     body: activity.body,
     metadata: activity.metadata,
     actorId: activity.actor_id,
+    // Resolved server-side; `actorId` stays for id-only callers.
+    actor: userRef(activity.actor_id, refs),
     createdAt: activity.created_at,
   };
 }

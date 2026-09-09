@@ -36,6 +36,7 @@
  */
 
 import { PrismaClient, type Prisma } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 
 // ---------------------------------------------------------------------------
 // Base client (singleton, hot-reload safe in dev)
@@ -44,10 +45,61 @@ import { PrismaClient, type Prisma } from '@prisma/client';
 type GlobalWithPrisma = typeof globalThis & { __bebestPrisma?: PrismaClient };
 const globalForPrisma = globalThis as GlobalWithPrisma;
 
+/**
+ * Connection transport.
+ *
+ * Default is the `@prisma/adapter-pg` driver adapter (node-postgres) rather
+ * than Prisma's bundled Rust query engine connector. Two concrete reasons,
+ * both of which matter for this deployment:
+ *
+ *   1. Correctness on networks without a working IPv6 route. The Rust
+ *      connector resolves the host and does not fall back from a AAAA
+ *      record to an A record, so such a machine cannot reach a managed
+ *      Postgres behind a dual-stack DNS name (Neon, Supabase, RDS) at all
+ *      — it fails with a bare `P1001: Can't reach database server`.
+ *      node-postgres uses Node's Happy Eyeballs (`autoSelectFamily`) and
+ *      connects over IPv4 in that situation.
+ *   2. Pool control. The pool below is sized and timed explicitly, which
+ *      the engine connector only exposes through `?connection_limit=` URL
+ *      parameters, and it keeps connections warm so a request isn't paying
+ *      a fresh TLS handshake to a remote (often cross-region) Postgres.
+ *
+ * Set `PRISMA_DRIVER=engine` to fall back to the bundled engine connector.
+ */
 function createClient(): PrismaClient {
-  return new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+  const log: Prisma.LogLevel[] =
+    process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'];
+
+  if (process.env.PRISMA_DRIVER === 'engine') {
+    return new PrismaClient({ log });
+  }
+
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    // No URL to hand the driver adapter. Fall back to the engine connector,
+    // which raises Prisma's own "DATABASE_URL is not set" at first query —
+    // same failure and same message as before this adapter existed, rather
+    // than a new import-time throw that would break every consumer that
+    // only ever mocks the client (unit tests, codegen, lint).
+    return new PrismaClient({ log });
+  }
+
+  const adapter = new PrismaPg({
+    connectionString,
+    max: Number(process.env.DATABASE_POOL_MAX ?? 10),
+    // Long enough that a normally-used API keeps its connections warm.
+    // Establishing a new one to a managed, cross-region Postgres measured
+    // at ~2s here (TCP + TLS + SASL), so an idle timeout shorter than the
+    // gaps between requests makes users pay that repeatedly for nothing.
+    idleTimeoutMillis: Number(process.env.DATABASE_POOL_IDLE_MS ?? 60_000),
+    connectionTimeoutMillis: Number(process.env.DATABASE_CONNECT_TIMEOUT_MS ?? 10_000),
+    // Stops an idle socket from being silently dropped by a NAT/firewall
+    // and only being discovered on the next query.
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
   });
+
+  return new PrismaClient({ adapter, log });
 }
 
 /**

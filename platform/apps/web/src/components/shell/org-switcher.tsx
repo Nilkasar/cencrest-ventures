@@ -67,7 +67,7 @@ export function OrgSwitcher() {
     setSwitchingId(link.id);
     try {
       const selection = await switchToOrg(link.clientOrgSlug);
-      setOrgScopedAccessToken(selection.accessToken);
+      setOrgScopedAccessToken(selection.accessToken, link.clientOrgSlug);
       setSelectedId(link.clientOrgId);
       setSelectedName(selection.organization.name);
       toast({ title: `Now acting as ${selection.organization.name}`, variant: "success" });

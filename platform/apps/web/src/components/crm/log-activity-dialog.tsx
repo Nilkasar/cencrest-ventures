@@ -22,7 +22,6 @@ import {
   useToast,
 } from "@bebest/ui";
 import { logActivity } from "@/data/crm/client";
-import { currentUser } from "@/data/fixtures";
 import type { ActivityType } from "@/data/crm/types";
 
 const TYPE_LABEL: Record<Extract<ActivityType, "note" | "email" | "call">, string> = {
@@ -75,7 +74,6 @@ export function LogActivityDialog({
         type,
         subject: subject.trim(),
         body: body.trim(),
-        actor: { id: currentUser.id, name: currentUser.name },
       });
       toast({ title: "Activity logged", variant: "success" });
       setOpen(false);

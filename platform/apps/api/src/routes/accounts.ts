@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireCrmAccess } from '../middleware/crm-access.js';
 import { getInternalOrgId } from '../lib/internal-org.js';
+import { loadUserRefs, userRef } from '../lib/crm-users.js';
 import type { AppEnv } from '../types/context.js';
 
 const accounts = new Hono<AppEnv>();
@@ -25,6 +26,11 @@ accounts.get('/', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'
   const internalOrgId = getInternalOrgId();
   const query = z
     .object({
+      // Searches the converting lead's name/company/email. An account's
+      // display name comes from `organizations.name`, which for a converted
+      // lead is that lead's company — so this is the same text the list
+      // shows, matched server-side rather than over one fetched page.
+      q: z.string().trim().min(1).max(200).optional(),
       page: z.coerce.number().int().min(1).default(1),
       limit: z.coerce.number().int().min(1).max(100).default(20),
     })
@@ -33,9 +39,21 @@ accounts.get('/', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'
   if (!query.success) {
     return c.json({ error: 'Validation failed', issues: query.error.issues }, 422);
   }
-  const { page, limit } = query.data;
+  const { q, page, limit } = query.data;
 
-  const where = { converted_organization_id: { not: null }, deleted_at: null } as const;
+  const where = {
+    converted_organization_id: { not: null },
+    deleted_at: null,
+    ...(q
+      ? {
+          OR: [
+            { company: { contains: q, mode: 'insensitive' as const } },
+            { name: { contains: q, mode: 'insensitive' as const } },
+            { email: { contains: q, mode: 'insensitive' as const } },
+          ],
+        }
+      : {}),
+  };
   const [convertedLeads, total] = await withOrgContext(internalOrgId, (tx) =>
     Promise.all([
       tx.leads.findMany({
@@ -67,6 +85,12 @@ accounts.get('/', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'
       slug: org?.slug ?? null,
       leadId: lead.id,
       convertedAt: lead.converted_at,
+      // The converting lead's own name/company/email travel with the row.
+      // They are already in hand here; without them the client had to fetch
+      // the entire leads list a second time just to label these accounts.
+      leadName: lead.name,
+      leadEmail: lead.email,
+      leadCompany: lead.company,
     };
   });
 
@@ -78,22 +102,21 @@ accounts.get('/:orgId', requireAuth, authenticatedRateLimit, requireCrmAccess('v
   const internalOrgId = getInternalOrgId();
   const orgId = c.req.param('orgId');
 
-  const org = await db.organizations.findUnique({ where: { id: orgId } });
-  if (!org || org.deleted_at) return c.json({ error: 'Organization not found' }, 404);
+  // The `organizations` read (no RLS) is issued alongside the whole
+  // tenant-scoped half rather than before it, and the lead / deals /
+  // activities reads share ONE transaction instead of two. This detail
+  // view used to cost an org query, a full BEGIN/COMMIT for the lead, and
+  // a second full BEGIN/COMMIT for its children — three database trips for
+  // one screen.
+  const [org, scoped] = await Promise.all([
+    db.organizations.findUnique({ where: { id: orgId } }),
+    withOrgContext(internalOrgId, async (tx) => {
+      const lead = await tx.leads.findFirst({
+        where: { converted_organization_id: orgId, deleted_at: null },
+      });
+      if (!lead) return null;
 
-  const lead = await withOrgContext(internalOrgId, (tx) =>
-    tx.leads.findFirst({ where: { converted_organization_id: orgId, deleted_at: null } }),
-  );
-  if (!lead) {
-    return c.json(
-      { error: 'This organization is not a CRM account (no lead has converted into it)' },
-      404,
-    );
-  }
-
-  const [dealRows, activityRows] = await withOrgContext(internalOrgId, (tx) =>
-    Promise.all([
-      tx.deals.findMany({
+      const dealRows = await tx.deals.findMany({
         where: {
           deleted_at: null,
           OR: [{ account_organization_id: orgId }, { lead_id: lead.id }],
@@ -105,14 +128,34 @@ accounts.get('/:orgId', requireAuth, authenticatedRateLimit, requireCrmAccess('v
         // deals could return an unbounded response. Same cap as
         // `activities` for consistency on this one detail view.
         take: 50,
-      }),
-      tx.activities.findMany({
+      });
+      const activityRows = await tx.activities.findMany({
         where: { OR: [{ account_organization_id: orgId }, { lead_id: lead.id }] },
         orderBy: { created_at: 'desc' },
         take: 50,
-      }),
-    ]),
-  );
+      });
+
+      return { lead, dealRows, activityRows };
+    }),
+  ]);
+
+  if (!org || org.deleted_at) return c.json({ error: 'Organization not found' }, 404);
+  if (!scoped) {
+    return c.json(
+      { error: 'This organization is not a CRM account (no lead has converted into it)' },
+      404,
+    );
+  }
+  const { lead, dealRows, activityRows } = scoped;
+
+  // Every person named on this screen — the lead's assignee, each deal's
+  // owner, each activity's actor — resolved in a single query. See
+  // lib/crm-users.ts for why this moved off the client.
+  const refs = await loadUserRefs([
+    lead.assigned_to,
+    ...dealRows.map((d) => d.owner_id),
+    ...activityRows.map((a) => a.actor_id),
+  ]);
 
   return c.json({
     organization: { id: org.id, name: org.name, slug: org.slug, createdAt: org.created_at },
@@ -123,6 +166,7 @@ accounts.get('/:orgId', requireAuth, authenticatedRateLimit, requireCrmAccess('v
       company: lead.company,
       source: lead.source,
       convertedAt: lead.converted_at,
+      assignedToUser: userRef(lead.assigned_to, refs),
     },
     deals: dealRows.map((d) => ({
       id: d.id,
@@ -131,6 +175,7 @@ accounts.get('/:orgId', requireAuth, authenticatedRateLimit, requireCrmAccess('v
       currency: d.currency,
       stage: d.stage,
       ownerId: d.owner_id,
+      owner: userRef(d.owner_id, refs),
       expectedCloseDate: d.expected_close_date,
     })),
     activities: activityRows.map((a) => ({
@@ -139,6 +184,7 @@ accounts.get('/:orgId', requireAuth, authenticatedRateLimit, requireCrmAccess('v
       subject: a.subject,
       body: a.body,
       actorId: a.actor_id,
+      actor: userRef(a.actor_id, refs),
       createdAt: a.created_at,
     })),
   });

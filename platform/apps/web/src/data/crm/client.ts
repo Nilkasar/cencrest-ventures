@@ -13,9 +13,8 @@ import type {
 } from "./types";
 
 /**
- * The CRM's data-access seam. Every screen calls through here, never a
- * fixture layer — wired against `platform/apps/api`'s real, tested Epic 1
- * routes:
+ * The CRM's data-access seam. Every screen calls through here, wired
+ * against `platform/apps/api`'s real Epic 1 routes:
  *
  *   GET/POST   /api/leads[/:id]              -> fetchLeads/fetchLead/createLead
  *   PATCH      /api/leads/:id                -> updateLeadStatus
@@ -23,22 +22,33 @@ import type {
  *   GET/POST   /api/deals[/:id]              -> fetchDeals/fetchDeal/createDeal
  *   POST       /api/deals/:id/stage          -> updateDealStage
  *   GET        /api/accounts[/:orgId]        -> fetchAccounts/fetchAccount
- *   GET/POST   /api/activities               -> fetchActivitiesForLead/logActivity
+ *   GET/POST   /api/activities               -> fetchActivitiesForX, logActivity
+ *   GET        /api/crm/users                -> fetchCrmUsers
  *
- * One correction versus this file's old header comment (written before the
- * backend existed): the routes are NOT namespaced under `/crm` — they're
- * mounted flat at `/api/leads`, `/api/deals`, `/api/activities`,
- * `/api/accounts` (see `apps/api/src/app.ts`). Paths below match that.
+ * The routes are NOT namespaced under `/crm` (except the staff roster) —
+ * they're mounted flat at `/api/leads`, `/api/deals`, `/api/activities`,
+ * `/api/accounts` (see `apps/api/src/app.ts`).
+ *
+ * Three things this file deliberately no longer does, because the API now
+ * answers them directly:
+ *
+ *   1. Resolve staff names. Every list/detail response carries the
+ *      resolved person (`assignedToUser`, `owner`, `actor`), so a screen
+ *      no longer waits on `GET /orgs` → `GET /orgs/:slug/members` before it
+ *      can render a row. That was two extra serialized requests per screen.
+ *   2. Filter or search in the browser. `q`, `leadId` and
+ *      `accountOrganizationId` are real query parameters now, so a search
+ *      matches every row in the database rather than only the first page
+ *      that happened to be fetched.
+ *   3. Re-read a lead and its new account after converting it. `POST
+ *      /leads/:id/convert` returns both.
  *
  * CRM is an internal BeBest ops tool, not scoped to a customer org
  * (`apps/api/src/middleware/crm-access.ts`) — every route below requires
  * the caller's *currently selected* org (the access token's org claim) to
  * be BeBest's own internal operations org, set once via `CRM_INTERNAL_ORG_ID`.
  * `crmRequest` below translates the specific 403/409/500 that produces into
- * a message `ErrorPanel` can show as-is; see this file's `docs/epics/
- * 01-crm-frontend-rewire.md` write-up for the full reasoning, including why
- * the org switcher's "act as a client org" flow (Epic 18) and the CRM are
- * mutually exclusive in this v1.
+ * a message `ErrorPanel` can show as-is.
  */
 
 // ---------------------------------------------------------------------------
@@ -87,61 +97,69 @@ async function crmRequest<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
-// Staff refs (assignee/owner/actor display)
-//
-// The real API has no dedicated "CRM users" endpoint — staff are simply
-// members of the internal ops org, so this resolves names the same way a
-// person would: list orgs the caller belongs to (`GET /orgs`), then that
-// org's members (`GET /orgs/:slug/members`). CRM access requires the
-// caller's org to be the internal ops org already (see module doc comment
-// above), so in practice the first membership that answers is it; cached
-// for the tab's lifetime since staff rosters change rarely mid-session.
+// Shared shapes
 
-interface OrgSummary {
+/** How the API returns a person on any CRM row. */
+interface RawUserRef {
   id: string;
   name: string;
-  slug: string;
-  role: string;
+  email: string;
 }
 
-interface OrgMember {
-  userId: string;
+function toUserRef(raw: RawUserRef | null | undefined): CrmUserRef | null {
+  return raw ? { id: raw.id, name: raw.name } : null;
+}
+
+interface Paginated<T> {
+  data: T[];
+  page: number;
+  limit: number;
+  total: number;
+}
+
+/** A page of results plus the counters a `<Pagination>` control needs. */
+export interface Page<T> {
+  items: T[];
+  page: number;
+  limit: number;
+  total: number;
+}
+
+export const DEFAULT_PAGE_SIZE = 25;
+
+function pageParams(params: URLSearchParams, page: number, limit: number): URLSearchParams {
+  params.set("page", String(page));
+  params.set("limit", String(limit));
+  return params;
+}
+
+// ---------------------------------------------------------------------------
+// Staff roster (assignee/owner pickers)
+//
+// One request to a route that knows which org is the internal ops org,
+// instead of the client discovering it by trying each org it belongs to.
+// Cached for the tab's lifetime — staff rosters change rarely mid-session.
+
+interface RawCrmUser {
+  id: string;
+  name: string;
   email: string;
-  name: string | null;
   role: string;
-  joinedAt: string;
 }
 
 let crmUsersCache: CrmUserRef[] | null = null;
 let crmUsersInFlight: Promise<CrmUserRef[]> | null = null;
 
-async function loadCrmUsers(): Promise<CrmUserRef[]> {
-  let orgs: OrgSummary[];
-  try {
-    orgs = await apiClient.get<OrgSummary[]>("/orgs");
-  } catch {
-    return [];
-  }
-  for (const org of orgs) {
-    try {
-      const members = await apiClient.get<OrgMember[]>(`/orgs/${org.slug}/members`);
-      return members.map((m) => ({ id: m.userId, name: m.name?.trim() || m.email }));
-    } catch {
-      // Not the internal ops org (403) or some other transient read error —
-      // try the next org this caller belongs to.
-      continue;
-    }
-  }
-  return [];
-}
-
-/** BeBest staff, for assignee/owner pickers and name display. Never throws —
- *  a resolution failure degrades to unresolved ids (see `userRefOrFallback`)
- *  rather than blocking the lead/deal/activity list it's used to decorate. */
+/** BeBest staff, for assignee/owner pickers. Never throws — a failure here
+ *  degrades to an empty picker rather than taking down the screen that
+ *  merely wanted to offer one. */
 export async function fetchCrmUsers(): Promise<CrmUserRef[]> {
   if (crmUsersCache) return crmUsersCache;
   if (!crmUsersInFlight) {
-    crmUsersInFlight = loadCrmUsers()
+    crmUsersInFlight = apiClient
+      .get<{ data: RawCrmUser[] }>("/crm/users")
+      .then(({ data }) => data.map((user) => ({ id: user.id, name: user.name })))
+      .catch(() => [])
       .then((users) => {
         crmUsersCache = users;
         return users;
@@ -151,14 +169,6 @@ export async function fetchCrmUsers(): Promise<CrmUserRef[]> {
       });
   }
   return crmUsersInFlight;
-}
-
-function userRefOrFallback(id: string, usersById: Map<string, CrmUserRef>): CrmUserRef {
-  return usersById.get(id) ?? { id, name: "Unknown teammate" };
-}
-
-async function usersById(): Promise<Map<string, CrmUserRef>> {
-  return new Map((await fetchCrmUsers()).map((u) => [u.id, u]));
 }
 
 // ---------------------------------------------------------------------------
@@ -173,21 +183,6 @@ function normalizeUrl(value: string): string | undefined {
   // every caller of `createLead` do it.
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
-
-interface Paginated<T> {
-  data: T[];
-  page: number;
-  limit: number;
-  total: number;
-}
-
-// The real list routes cap `limit` at 100 (`.max(100)`) and have no
-// "give me everything" mode. These screens' existing signatures return a
-// plain array (no pagination UI built yet), so every list fetch below asks
-// for the max page size — an org with more than 100 leads/deals in one
-// filtered view won't show the rest. Documented as a known gap in
-// `docs/epics/01-crm-frontend-rewire.md`, not silently swallowed.
-const MAX_PAGE_SIZE = "100";
 
 // ---------------------------------------------------------------------------
 // Leads
@@ -205,6 +200,7 @@ interface RawLead {
   status: LeadStatus;
   score: number | null;
   assignedTo: string | null;
+  assignedToUser: RawUserRef | null;
   snapshotId: string | null;
   convertedOrganizationId: string | null;
   convertedAt: string | null;
@@ -212,7 +208,7 @@ interface RawLead {
   updatedAt: string;
 }
 
-function mapLead(raw: RawLead, users: Map<string, CrmUserRef>): Lead {
+function mapLead(raw: RawLead): Lead {
   return {
     id: raw.id,
     email: raw.email,
@@ -225,7 +221,7 @@ function mapLead(raw: RawLead, users: Map<string, CrmUserRef>): Lead {
     sourceUrl: raw.sourceUrl,
     status: raw.status,
     score: raw.score,
-    assignedTo: raw.assignedTo ? userRefOrFallback(raw.assignedTo, users) : null,
+    assignedTo: toUserRef(raw.assignedToUser),
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
     convertedAt: raw.convertedAt,
@@ -239,44 +235,44 @@ export interface LeadFilters {
   source?: LeadSource | "all";
   assignedTo?: string | "all";
   q?: string;
+  page?: number;
+  limit?: number;
 }
 
-export async function fetchLeads(filters: LeadFilters = {}): Promise<Lead[]> {
+/** Counts across the whole filtered set, not just the current page — the
+ *  API computes them alongside the page (see `routes/leads.ts`). */
+export type LeadStatusCounts = Record<LeadStatus, number>;
+
+export interface LeadPage extends Page<Lead> {
+  statusCounts: LeadStatusCounts;
+}
+
+export async function fetchLeads(filters: LeadFilters = {}): Promise<LeadPage> {
   return crmRequest(async () => {
-    const params = new URLSearchParams({ limit: MAX_PAGE_SIZE });
+    const params = new URLSearchParams();
     if (filters.status && filters.status !== "all") params.set("status", filters.status);
     if (filters.source && filters.source !== "all") params.set("source", filters.source);
     if (filters.assignedTo && filters.assignedTo !== "all") params.set("assignedTo", filters.assignedTo);
+    if (filters.q?.trim()) params.set("q", filters.q.trim());
+    pageParams(params, filters.page ?? 1, filters.limit ?? DEFAULT_PAGE_SIZE);
 
-    const [{ data }, users] = await Promise.all([
-      apiClient.get<Paginated<RawLead>>(`/leads?${params}`),
-      usersById(),
-    ]);
-
-    let results = data.map((raw) => mapLead(raw, users));
-
-    // No free-text search on the real `GET /leads` — filtered client-side
-    // over the fetched page, same as the search-adjacent limitation above.
-    if (filters.q?.trim()) {
-      const q = filters.q.trim().toLowerCase();
-      results = results.filter(
-        (lead) =>
-          lead.name.toLowerCase().includes(q) ||
-          (lead.company ?? "").toLowerCase().includes(q) ||
-          lead.email.toLowerCase().includes(q),
-      );
-    }
-
-    results.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    return results;
+    const response = await apiClient.get<Paginated<RawLead> & { statusCounts: LeadStatusCounts }>(
+      `/leads?${params}`,
+    );
+    return {
+      items: response.data.map(mapLead),
+      page: response.page,
+      limit: response.limit,
+      total: response.total,
+      statusCounts: response.statusCounts,
+    };
   });
 }
 
 export async function fetchLead(id: string): Promise<Lead | null> {
   return crmRequest(async () => {
     try {
-      const [raw, users] = await Promise.all([apiClient.get<RawLead>(`/leads/${id}`), usersById()]);
-      return mapLead(raw, users);
+      return mapLead(await apiClient.get<RawLead>(`/leads/${id}`));
     } catch (err) {
       if (isNotFound(err)) return null;
       throw err;
@@ -294,9 +290,9 @@ export interface NewLeadInput {
 }
 
 export async function createLead(input: NewLeadInput): Promise<Lead> {
-  return crmRequest(async () => {
-    const [raw, users] = await Promise.all([
-      apiClient.post<RawLead>("/leads", {
+  return crmRequest(async () =>
+    mapLead(
+      await apiClient.post<RawLead>("/leads", {
         email: input.email,
         name: input.name,
         company: input.company.trim() || undefined,
@@ -304,32 +300,25 @@ export async function createLead(input: NewLeadInput): Promise<Lead> {
         notes: input.notes.trim() || undefined,
         source: input.source,
       }),
-      usersById(),
-    ]);
-    return mapLead(raw, users);
-  });
+    ),
+  );
 }
 
 export async function updateLeadStatus(id: string, status: LeadStatus): Promise<Lead> {
-  return crmRequest(async () => {
-    const [raw, users] = await Promise.all([
-      apiClient.patch<RawLead>(`/leads/${id}`, { status }),
-      usersById(),
-    ]);
-    return mapLead(raw, users);
-  });
+  return crmRequest(async () => mapLead(await apiClient.patch<RawLead>(`/leads/${id}`, { status })));
 }
 
 interface ConvertLeadResponse {
   leadId: string;
   organizationId: string;
   organizationName: string;
+  organizationSlug: string;
   convertedAt: string;
+  lead: RawLead;
 }
 
 export async function convertLead(id: string): Promise<{ lead: Lead; account: Account }> {
   return crmRequest(async () => {
-    const users = await usersById();
     const before = await apiClient.get<RawLead>(`/leads/${id}`);
     const organizationName = before.company?.trim() || before.name;
 
@@ -337,14 +326,23 @@ export async function convertLead(id: string): Promise<{ lead: Lead; account: Ac
       organizationName,
     });
 
-    const [afterRaw, account] = await Promise.all([
-      apiClient.get<RawLead>(`/leads/${id}`),
-      fetchAccount(converted.organizationId),
-    ]);
-    if (!account) {
-      throw new ApiError("The account was created but couldn't be reloaded. Refresh to see it.", 500);
-    }
-    return { lead: mapLead(afterRaw, users), account };
+    // Everything the caller needs is in the conversion response: the
+    // updated lead, and the organization it became. Re-reading either one
+    // would only add a round trip to a flow the user is waiting on.
+    const lead = mapLead(converted.lead);
+    return {
+      lead,
+      account: {
+        id: converted.organizationId,
+        name: converted.organizationName,
+        slug: converted.organizationSlug,
+        plan: null,
+        domain: null,
+        contacts: leadContact({ id: lead.id, name: lead.name, email: lead.email }),
+        convertedFromLeadId: lead.id,
+        createdAt: converted.convertedAt,
+      },
+    };
   });
 }
 
@@ -362,12 +360,15 @@ interface RawDeal {
   probability: number | null;
   expectedCloseDate: string | null;
   ownerId: string;
+  owner: RawUserRef | null;
+  lead: { id: string; name: string; company: string | null } | null;
+  account: { id: string; name: string; slug: string } | null;
   lostReason: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-function mapDeal(raw: RawDeal, users: Map<string, CrmUserRef>): Deal {
+function mapDeal(raw: RawDeal): Deal {
   return {
     id: raw.id,
     organizationId: raw.accountOrganizationId,
@@ -383,7 +384,14 @@ function mapDeal(raw: RawDeal, users: Map<string, CrmUserRef>): Deal {
     // touching every one of those display sites.
     probability: raw.probability ?? 0,
     expectedCloseDate: raw.expectedCloseDate,
-    owner: userRefOrFallback(raw.ownerId, users),
+    owner: toUserRef(raw.owner) ?? { id: raw.ownerId, name: "Unknown teammate" },
+    // Resolved by the API in the same query as the deal itself — the board
+    // no longer fetches every lead and every account to label a card.
+    linkedTo: raw.account
+      ? { kind: "account", id: raw.account.id, name: raw.account.name }
+      : raw.lead
+        ? { kind: "lead", id: raw.lead.id, name: raw.lead.company ?? raw.lead.name }
+        : null,
     lostReason: raw.lostReason,
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
@@ -394,38 +402,37 @@ export interface DealFilters {
   stage?: DealStage | "all";
   ownerId?: string | "all";
   q?: string;
+  page?: number;
+  limit?: number;
 }
 
-async function listDeals(params: URLSearchParams, users: Map<string, CrmUserRef>): Promise<Deal[]> {
-  const { data } = await apiClient.get<Paginated<RawDeal>>(`/deals?${params}`);
-  return data.map((raw) => mapDeal(raw, users));
-}
+/** The deals board renders every stage at once, so it asks for the API's
+ *  maximum page. `total` still comes back, so the board can say so honestly
+ *  when there are more deals than one page holds. */
+export const DEALS_BOARD_PAGE_SIZE = 100;
 
-export async function fetchDeals(filters: DealFilters = {}): Promise<Deal[]> {
+export async function fetchDeals(filters: DealFilters = {}): Promise<Page<Deal>> {
   return crmRequest(async () => {
-    const params = new URLSearchParams({ limit: MAX_PAGE_SIZE });
+    const params = new URLSearchParams();
     if (filters.stage && filters.stage !== "all") params.set("stage", filters.stage);
     if (filters.ownerId && filters.ownerId !== "all") params.set("ownerId", filters.ownerId);
+    if (filters.q?.trim()) params.set("q", filters.q.trim());
+    pageParams(params, filters.page ?? 1, filters.limit ?? DEALS_BOARD_PAGE_SIZE);
 
-    const users = await usersById();
-    let results = await listDeals(params, users);
-
-    // No free-text search on the real `GET /deals` either.
-    if (filters.q?.trim()) {
-      const q = filters.q.trim().toLowerCase();
-      results = results.filter((deal) => deal.title.toLowerCase().includes(q));
-    }
-
-    results.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    return results;
+    const response = await apiClient.get<Paginated<RawDeal>>(`/deals?${params}`);
+    return {
+      items: response.data.map(mapDeal),
+      page: response.page,
+      limit: response.limit,
+      total: response.total,
+    };
   });
 }
 
 export async function fetchDeal(id: string): Promise<Deal | null> {
   return crmRequest(async () => {
     try {
-      const [raw, users] = await Promise.all([apiClient.get<RawDeal>(`/deals/${id}`), usersById()]);
-      return mapDeal(raw, users);
+      return mapDeal(await apiClient.get<RawDeal>(`/deals/${id}`));
     } catch (err) {
       if (isNotFound(err)) return null;
       throw err;
@@ -433,29 +440,20 @@ export async function fetchDeal(id: string): Promise<Deal | null> {
   });
 }
 
-// `GET /deals` has no `leadId`/`accountOrganizationId` filter — these two
-// fetch the (max-100) list and filter client-side, same page-size caveat as
-// `fetchDeals` above.
+async function listDealsBy(params: URLSearchParams): Promise<Deal[]> {
+  pageParams(params, 1, DEALS_BOARD_PAGE_SIZE);
+  const { data } = await apiClient.get<Paginated<RawDeal>>(`/deals?${params}`);
+  return data.map(mapDeal).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
 export async function fetchDealsForLead(leadId: string): Promise<Deal[]> {
-  return crmRequest(async () => {
-    const users = await usersById();
-    const results = (await listDeals(new URLSearchParams({ limit: MAX_PAGE_SIZE }), users)).filter(
-      (deal) => deal.leadId === leadId,
-    );
-    results.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    return results;
-  });
+  return crmRequest(() => listDealsBy(new URLSearchParams({ leadId })));
 }
 
 export async function fetchDealsForAccount(accountId: string): Promise<Deal[]> {
-  return crmRequest(async () => {
-    const users = await usersById();
-    const results = (await listDeals(new URLSearchParams({ limit: MAX_PAGE_SIZE }), users)).filter(
-      (deal) => deal.organizationId === accountId,
-    );
-    results.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    return results;
-  });
+  return crmRequest(() =>
+    listDealsBy(new URLSearchParams({ accountOrganizationId: accountId })),
+  );
 }
 
 export interface NewDealInput {
@@ -470,9 +468,9 @@ export interface NewDealInput {
 }
 
 export async function createDeal(input: NewDealInput): Promise<Deal> {
-  return crmRequest(async () => {
-    const [raw, users] = await Promise.all([
-      apiClient.post<RawDeal>("/deals", {
+  return crmRequest(async () =>
+    mapDeal(
+      await apiClient.post<RawDeal>("/deals", {
         title: input.title,
         valueCents: input.valueCents,
         currency: "USD",
@@ -483,10 +481,8 @@ export async function createDeal(input: NewDealInput): Promise<Deal> {
         leadId: input.leadId ?? undefined,
         accountOrganizationId: input.organizationId ?? undefined,
       }),
-      usersById(),
-    ]);
-    return mapDeal(raw, users);
-  });
+    ),
+  );
 }
 
 /** Stage transitions are always audit-logged server-side
@@ -495,13 +491,9 @@ export async function createDeal(input: NewDealInput): Promise<Deal> {
  *  privileged") — this is the only path that can change `stage`; the plain
  *  `PATCH /deals/:id` rejects a `stage` field outright. */
 export async function updateDealStage(id: string, stage: DealStage, lostReason?: string): Promise<Deal> {
-  return crmRequest(async () => {
-    const [raw, users] = await Promise.all([
-      apiClient.post<RawDeal>(`/deals/${id}/stage`, { stage, lostReason }),
-      usersById(),
-    ]);
-    return mapDeal(raw, users);
-  });
+  return crmRequest(async () =>
+    mapDeal(await apiClient.post<RawDeal>(`/deals/${id}/stage`, { stage, lostReason })),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -510,8 +502,7 @@ export async function updateDealStage(id: string, stage: DealStage, lostReason?:
 // "Accounts" isn't a table on the real backend — `GET /accounts[/:orgId]`
 // assembles a read view over `organizations` + the `leads` row that
 // converted into it (`apps/api/src/routes/accounts.ts`'s own doc comment).
-// Two fields on `Account` can't be reconciled against that real shape (see
-// `docs/epics/01-crm-frontend-rewire.md` for the full writeup):
+// Two fields on `Account` can't be reconciled against that real shape:
 //   - `plan`: no route lets internal CRM staff read another org's plan by
 //     id — always `null` here, never a guess.
 //   - `contacts`: the real schema has `crm_contacts`/`crm_notes` tables but
@@ -526,11 +517,21 @@ interface RawAccountListItem {
   slug: string | null;
   leadId: string;
   convertedAt: string | null;
+  leadName: string;
+  leadEmail: string;
+  leadCompany: string | null;
 }
 
 interface RawAccountDetail {
   organization: { id: string; name: string; slug: string; createdAt: string };
-  lead: { id: string; email: string; name: string; company: string | null; source: string; convertedAt: string | null };
+  lead: {
+    id: string;
+    email: string;
+    name: string;
+    company: string | null;
+    source: string;
+    convertedAt: string | null;
+  };
   deals: unknown[];
   activities: unknown[];
 }
@@ -540,32 +541,33 @@ function leadContact(lead: { id: string; name: string; email: string } | null | 
   return [{ id: `contact_${lead.id}`, name: lead.name, email: lead.email, role: null, phone: null, primary: true }];
 }
 
-export async function fetchAccounts(): Promise<Account[]> {
+export interface AccountFilters {
+  q?: string;
+  page?: number;
+  limit?: number;
+}
+
+export async function fetchAccounts(filters: AccountFilters = {}): Promise<Page<Account>> {
   return crmRequest(async () => {
-    const [{ data }, { data: leadsData }] = await Promise.all([
-      apiClient.get<Paginated<RawAccountListItem>>(`/accounts?limit=${MAX_PAGE_SIZE}`),
-      apiClient.get<Paginated<RawLead>>(`/leads?limit=${MAX_PAGE_SIZE}`),
-    ]);
-    const leadById = new Map(leadsData.map((l) => [l.id, l]));
+    const params = new URLSearchParams();
+    if (filters.q?.trim()) params.set("q", filters.q.trim());
+    pageParams(params, filters.page ?? 1, filters.limit ?? DEFAULT_PAGE_SIZE);
+    const response = await apiClient.get<Paginated<RawAccountListItem>>(`/accounts?${params}`);
 
-    const results: Account[] = data
+    const items: Account[] = response.data
       .filter((item): item is RawAccountListItem & { organizationId: string } => item.organizationId !== null)
-      .map((item) => {
-        const lead = leadById.get(item.leadId);
-        return {
-          id: item.organizationId,
-          name: item.name ?? lead?.company ?? lead?.name ?? "Untitled account",
-          slug: item.slug ?? "",
-          plan: null,
-          domain: null,
-          contacts: leadContact(lead ? { id: lead.id, name: lead.name, email: lead.email } : null),
-          convertedFromLeadId: item.leadId,
-          createdAt: item.convertedAt ?? new Date(0).toISOString(),
-        };
-      });
+      .map((item) => ({
+        id: item.organizationId,
+        name: item.name ?? item.leadCompany ?? item.leadName,
+        slug: item.slug ?? "",
+        plan: null,
+        domain: null,
+        contacts: leadContact({ id: item.leadId, name: item.leadName, email: item.leadEmail }),
+        convertedFromLeadId: item.leadId,
+        createdAt: item.convertedAt ?? new Date(0).toISOString(),
+      }));
 
-    results.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    return results;
+    return { items, page: response.page, limit: response.limit, total: response.total };
   });
 }
 
@@ -607,30 +609,30 @@ interface RawActivity {
   body: string | null;
   metadata: unknown;
   actorId: string | null;
+  actor: RawUserRef | null;
   createdAt: string;
 }
 
-function mapActivity(raw: RawActivity, users: Map<string, CrmUserRef>): Activity {
+function mapActivity(raw: RawActivity): Activity {
   return {
     id: raw.id,
     type: raw.type,
     subject: raw.subject ?? "",
     body: raw.body,
     metadata: (raw.metadata as Record<string, unknown> | null) ?? undefined,
-    actor: raw.actorId ? userRefOrFallback(raw.actorId, users) : null,
+    actor: toUserRef(raw.actor),
     createdAt: raw.createdAt,
     leadId: raw.leadId,
     organizationId: raw.accountOrganizationId,
   };
 }
 
+const ACTIVITY_PAGE_SIZE = 100;
+
 async function listActivities(query: Record<string, string>): Promise<Activity[]> {
-  const params = new URLSearchParams({ ...query, limit: MAX_PAGE_SIZE });
-  const [{ data }, users] = await Promise.all([
-    apiClient.get<Paginated<RawActivity>>(`/activities?${params}`),
-    usersById(),
-  ]);
-  return data.map((raw) => mapActivity(raw, users)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const params = pageParams(new URLSearchParams(query), 1, ACTIVITY_PAGE_SIZE);
+  const { data } = await apiClient.get<Paginated<RawActivity>>(`/activities?${params}`);
+  return data.map(mapActivity).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export async function fetchActivitiesForLead(leadId: string): Promise<Activity[]> {
@@ -652,20 +654,12 @@ export interface LogActivityInput {
   type: ActivityType;
   subject: string;
   body: string;
-  /** Unused by the real API — `POST /activities` derives the actor from the
-   *  caller's auth token server-side (`c.get('user')`), never from the
-   *  request body. Kept in this interface only so `log-activity-dialog.tsx`
-   *  (which still sources it from the app-wide, still-fixture-backed
-   *  `currentUser` — see `data/fixtures.ts`, outside this epic's scope)
-   *  doesn't need to change; the returned `Activity.actor` is resolved from
-   *  the real `actorId` the server recorded, not from this value. */
-  actor: CrmUserRef;
 }
 
 export async function logActivity(input: LogActivityInput): Promise<Activity> {
-  return crmRequest(async () => {
-    const [raw, users] = await Promise.all([
-      apiClient.post<RawActivity>("/activities", {
+  return crmRequest(async () =>
+    mapActivity(
+      await apiClient.post<RawActivity>("/activities", {
         type: input.type,
         subject: input.subject.trim() || undefined,
         body: input.body.trim() || undefined,
@@ -673,8 +667,6 @@ export async function logActivity(input: LogActivityInput): Promise<Activity> {
         dealId: input.dealId ?? undefined,
         accountOrganizationId: input.organizationId ?? undefined,
       }),
-      usersById(),
-    ]);
-    return mapActivity(raw, users);
-  });
+    ),
+  );
 }

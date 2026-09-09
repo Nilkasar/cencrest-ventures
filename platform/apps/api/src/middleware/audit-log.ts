@@ -1,14 +1,48 @@
 import type { MiddlewareHandler } from 'hono';
 import { writeAuditEvent } from '../lib/audit.js';
+import { clientIp } from '../lib/client-ip.js';
 import type { AppEnv } from '../types/context.js';
 
 export interface AuditLogOptions {
   action: string;
   entityType: string;
   /** How to pull the affected entity's id off the request/response.
-   * Defaults to the route's `:id` param if present, else 'unknown'. */
-  getEntityId?: (c: Parameters<MiddlewareHandler<AppEnv>>[0]) => string;
+   * Defaults to the route's `:id` param, then the acting user's id for
+   * user-entity events (login/logout, where the user IS the entity), and
+   * finally `null` when there genuinely is no entity — see
+   * `resolveEntityId` below. */
+  getEntityId?: (c: Parameters<MiddlewareHandler<AppEnv>>[0]) => string | null | undefined;
   actorType?: 'user' | 'system' | 'agent';
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * `audit_events.entity_id` is a UUID column. This used to fall back to the
+ * literal string `'unknown'`, which Postgres rejects outright (`22P02
+ * invalid input syntax for type uuid`) — and because `writeAuditEvent`
+ * deliberately swallows its own failures so an audit write can never break
+ * the action it records, the result was silent: every audited action on a
+ * route with no `:id` param (login, logout, billing webhooks, and the
+ * keyword/query routes whose param is named something else) completed
+ * normally while writing NO audit row at all. For a system whose
+ * SECURITY.md requires an audit trail for privileged actions, a trail with
+ * invisible holes in it is worse than a loud failure.
+ *
+ * So: resolve a real id where one exists, fall back to the acting user for
+ * events whose entity IS the user, and otherwise write NULL — which the
+ * column now permits. Anything that isn't a UUID is dropped rather than
+ * handed to the database.
+ */
+function resolveEntityId(
+  c: Parameters<MiddlewareHandler<AppEnv>>[0],
+  opts: AuditLogOptions,
+  userId: string | null,
+): string | null {
+  const candidate = opts.getEntityId?.(c) ?? c.req.param('id') ?? null;
+  if (candidate && UUID_RE.test(candidate)) return candidate;
+  if (opts.entityType === 'user' && userId) return userId;
+  return null;
 }
 
 /**
@@ -32,7 +66,7 @@ export function auditLog(opts: AuditLogOptions): MiddlewareHandler<AppEnv> {
 
     const user = safeGet(c, 'user');
     const org = safeGet(c, 'org');
-    const entityId = opts.getEntityId?.(c) ?? c.req.param('id') ?? 'unknown';
+    const entityId = resolveEntityId(c, opts, user?.id ?? null);
     const success = c.res.status < 400;
 
     await writeAuditEvent({
@@ -43,7 +77,10 @@ export function auditLog(opts: AuditLogOptions): MiddlewareHandler<AppEnv> {
       action: opts.action,
       entityType: opts.entityType,
       entityId,
-      ipAddress: c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip') ?? null,
+      // `ip_address` is an INET column: the raw header can be a
+      // comma-separated proxy chain, which Postgres rejects. See
+      // lib/client-ip.ts.
+      ipAddress: clientIp(c),
       userAgent: c.req.header('user-agent') ?? null,
       result: success ? 'success' : 'failure',
       details: { path: c.req.path, method: c.req.method, status: c.res.status },
@@ -69,7 +106,7 @@ function safeGet<K extends 'user' | 'org'>(
 export interface ManualAuditEventOptions {
   action: string;
   entityType: string;
-  entityId: string;
+  entityId: string | null;
   result?: 'success' | 'failure';
   actorType?: 'user' | 'system' | 'agent';
 }
@@ -100,7 +137,7 @@ export async function writeManualAuditEvent(
     action: opts.action,
     entityType: opts.entityType,
     entityId: opts.entityId,
-    ipAddress: c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip') ?? null,
+    ipAddress: clientIp(c),
     userAgent: c.req.header('user-agent') ?? null,
     result: opts.result ?? 'success',
     details: { path: c.req.path, method: c.req.method },

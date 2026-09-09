@@ -11,6 +11,7 @@ import leads from './routes/leads.js';
 import deals from './routes/deals.js';
 import activities from './routes/activities.js';
 import accounts from './routes/accounts.js';
+import crmUsers from './routes/crm-users.js';
 import brands from './routes/brands.js';
 import competitors from './routes/competitors.js';
 import brandEntities from './routes/brand-entities.js';
@@ -123,6 +124,7 @@ app.route('/api/leads', leads);
 app.route('/api/deals', deals);
 app.route('/api/activities', activities);
 app.route('/api/accounts', accounts);
+app.route('/api/crm/users', crmUsers);
 
 // Epic 2 — Brand Intelligence. Single brand per org (MULTI-BRAND: see
 // Epic 18); every child resource hangs off "the" org's brand, resolved via

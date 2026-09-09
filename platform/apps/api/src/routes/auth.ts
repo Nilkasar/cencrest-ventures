@@ -13,12 +13,40 @@ import { requireAuth } from '../middleware/auth.js';
 import { authRateLimit, authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { auditLog } from '../middleware/audit-log.js';
 import { resolveAgencyAccess } from '../lib/agency-access.js';
+import { clientIp } from '../lib/client-ip.js';
 import type { AppEnv } from '../types/context.js';
 
 const MAGIC_LINK_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
-function clientIp(c: Context<AppEnv>): string {
-  return c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip') ?? 'unknown';
+/**
+ * Resolves an org the given user may act as — direct membership first, then
+ * an active agency link — or `null`. Shared by `/select-org` and `/refresh`
+ * so the two can never drift on what "may act as" means.
+ */
+async function resolveSelectableOrg(
+  userId: string,
+  slug: string,
+): Promise<{ id: string; name: string; slug: string; role: string; viaAgencyOrgId?: string } | null> {
+  const org = await db.organizations.findUnique({ where: { slug } });
+  if (!org || org.deleted_at) return null;
+
+  const membership = await withUserContext(userId, (tx) =>
+    tx.memberships.findFirst({ where: { organization_id: org.id, user_id: userId } }),
+  );
+  if (membership) {
+    return { id: org.id, name: org.name, slug: org.slug, role: membership.role };
+  }
+
+  const agencyAccess = await resolveAgencyAccess(userId, org.id);
+  if (!agencyAccess) return null;
+
+  return {
+    id: org.id,
+    name: org.name,
+    slug: org.slug,
+    role: agencyAccess.role,
+    viaAgencyOrgId: agencyAccess.agencyOrgId,
+  };
 }
 
 /**
@@ -104,7 +132,16 @@ export function createAuthRoutes(emailSender: EmailSender) {
   // ── Refresh (rotating) ───────────────────────────────────────────────────
   auth.post('/refresh', async (c) => {
     const body = await c.req.json().catch(() => null);
-    const parsed = z.object({ refreshToken: z.string().min(1) }).safeParse(body);
+    const parsed = z
+      .object({
+        refreshToken: z.string().min(1),
+        // Which org the caller was acting as. Optional, and a request —
+        // not a grant: access is re-verified below exactly the way
+        // `/select-org` verifies it, so passing a slug you have no access
+        // to simply yields an org-less token, never an elevated one.
+        orgSlug: z.string().min(1).max(255).optional(),
+      })
+      .safeParse(body);
     if (!parsed.success) return c.json({ error: 'Refresh token required' }, 400);
 
     const tokenHash = hashToken(parsed.data.refreshToken);
@@ -143,15 +180,32 @@ export function createAuthRoutes(emailSender: EmailSender) {
       });
     }
 
-    // Preserve whatever org was active on the token being refreshed by
-    // re-deriving it the same way `/select-org` does — but we don't have
-    // the old access token here (only the refresh token), so the new
-    // access token is issued WITHOUT an org claim. Clients should call
-    // `/select-org` again after a refresh if they need continued org
-    // context; this is a known rough edge, documented in README.md.
-    const accessToken = await signAccessToken({ sub: user.id, email: user.email, org: null });
+    // Re-attach the org the caller was acting as, if they told us which one
+    // and still have access to it. A refresh token carries no org claim of
+    // its own, so without this the new access token came back org-less and
+    // EVERY org-scoped route 409'd until the client thought to call
+    // `/select-org` again — which meant a page reload silently logged the
+    // user out of their own organization. Access is re-derived here from
+    // `memberships` (then agency links), never trusted from the request.
+    const organization = parsed.data.orgSlug
+      ? await resolveSelectableOrg(user.id, parsed.data.orgSlug)
+      : null;
 
-    return c.json({ accessToken, refreshToken: newRefreshToken });
+    const accessToken = await signAccessToken({
+      sub: user.id,
+      email: user.email,
+      org: organization?.id ?? null,
+    });
+
+    return c.json({
+      accessToken,
+      refreshToken: newRefreshToken,
+      // Echoed so a client can tell "my org came back" from "it didn't"
+      // without decoding the token.
+      organization: organization
+        ? { id: organization.id, name: organization.name, slug: organization.slug }
+        : null,
+    });
   });
 
   // ── Logout ────────────────────────────────────────────────────────────────
@@ -197,34 +251,18 @@ export function createAuthRoutes(emailSender: EmailSender) {
     if (!parsed.success) return c.json({ error: 'Organization slug required' }, 400);
 
     const user = c.get('user');
-    const org = await db.organizations.findUnique({ where: { slug: parsed.data.slug } });
-    if (!org || org.deleted_at) return c.json({ error: 'Organization not found' }, 404);
+    const exists = await db.organizations.findUnique({ where: { slug: parsed.data.slug } });
+    if (!exists || exists.deleted_at) return c.json({ error: 'Organization not found' }, 404);
 
-    const membership = await withUserContext(user.id, (tx) =>
-      tx.memberships.findFirst({ where: { organization_id: org.id, user_id: user.id } }),
-    );
-    if (membership) {
-      const accessToken = await signAccessToken({ sub: user.id, email: user.email, org: org.id });
-      return c.json({
-        accessToken,
-        organization: { id: org.id, name: org.name, slug: org.slug, role: membership.role },
-      });
-    }
+    const organization = await resolveSelectableOrg(user.id, parsed.data.slug);
+    if (!organization) return c.json({ error: 'Forbidden' }, 403);
 
-    const agencyAccess = await resolveAgencyAccess(user.id, org.id);
-    if (!agencyAccess) return c.json({ error: 'Forbidden' }, 403);
-
-    const accessToken = await signAccessToken({ sub: user.id, email: user.email, org: org.id });
-    return c.json({
-      accessToken,
-      organization: {
-        id: org.id,
-        name: org.name,
-        slug: org.slug,
-        role: agencyAccess.role,
-        viaAgencyOrgId: agencyAccess.agencyOrgId,
-      },
+    const accessToken = await signAccessToken({
+      sub: user.id,
+      email: user.email,
+      org: organization.id,
     });
+    return c.json({ accessToken, organization });
   });
 
   // ── /me ───────────────────────────────────────────────────────────────────

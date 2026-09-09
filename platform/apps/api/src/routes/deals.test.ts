@@ -9,7 +9,7 @@ const db = {
   organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
   organizations: { findUnique: vi.fn() },
   memberships: { findFirst: vi.fn() },
-  users: { findUnique: vi.fn() },
+  users: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
   leads: { findFirst: vi.fn() },
   deals: {
     create: vi.fn(),
@@ -179,6 +179,93 @@ describe('PATCH /deals/:id', () => {
       body: JSON.stringify({ title: 'Renamed' }),
     });
     expect(res.status).toBe(404);
+  });
+
+  // Regression: every camelCase field in the request schema has a
+  // snake_case column behind it, and this handler used to spread the parsed
+  // body straight into Prisma's `data`. Against a real database that threw
+  // PrismaClientValidationError ("Unknown argument `valueCents`") — a 500 on
+  // any edit that touched value, probability, close date or lost reason.
+  // The mocked client accepts any shape, so the assertion has to be on the
+  // arguments, not on the response alone.
+  it('writes snake_case columns for every camelCase field it accepts', async () => {
+    db.deals.findFirst.mockResolvedValue({ id: 'deal-1' });
+    db.deals.update.mockResolvedValue({
+      id: 'deal-1',
+      lead_id: null,
+      account_organization_id: null,
+      title: 'Renamed',
+      value_cents: 2_000_000,
+      currency: 'EUR',
+      stage: 'proposal',
+      probability: 45,
+      expected_close_date: new Date('2026-12-01T00:00:00.000Z'),
+      owner_id: OWNER_USER_ID,
+      lost_reason: 'undercut',
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    const app = await buildApp();
+    const res = await app.request('/deals/deal-1', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', ...(await authHeader('user-1', INTERNAL_ORG_ID)) },
+      body: JSON.stringify({
+        title: 'Renamed',
+        valueCents: 2_000_000,
+        currency: 'EUR',
+        probability: 45,
+        expectedCloseDate: '2026-12-01T00:00:00.000Z',
+        lostReason: 'undercut',
+        ownerId: OWNER_USER_ID,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = db.deals.update.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    expect(data).toMatchObject({
+      title: 'Renamed',
+      value_cents: 2_000_000,
+      currency: 'EUR',
+      probability: 45,
+      lost_reason: 'undercut',
+      owner_id: OWNER_USER_ID,
+    });
+    expect(data.expected_close_date).toBeInstanceOf(Date);
+    // No camelCase key may survive into the Prisma payload.
+    for (const key of ['valueCents', 'expectedCloseDate', 'lostReason', 'ownerId']) {
+      expect(data).not.toHaveProperty(key);
+    }
+  });
+
+  it('reads and writes inside a single tenant-scoped transaction', async () => {
+    const { withOrgContext } = await import('@bebest/database');
+    db.deals.findFirst.mockResolvedValue({ id: 'deal-1' });
+    db.deals.update.mockResolvedValue({
+      id: 'deal-1',
+      lead_id: null,
+      account_organization_id: null,
+      title: 'Renamed',
+      value_cents: 0,
+      currency: 'USD',
+      stage: 'new',
+      probability: null,
+      expected_close_date: null,
+      owner_id: OWNER_USER_ID,
+      lost_reason: null,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    const app = await buildApp();
+    await app.request('/deals/deal-1', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', ...(await authHeader('user-1', INTERNAL_ORG_ID)) },
+      body: JSON.stringify({ title: 'Renamed' }),
+    });
+
+    // One BEGIN/COMMIT for the whole read-then-write, not two.
+    expect(vi.mocked(withOrgContext)).toHaveBeenCalledTimes(1);
   });
 });
 

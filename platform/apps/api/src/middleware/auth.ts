@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from 'hono';
-import { withUserContext } from '@bebest/database';
+import { db } from '@bebest/database';
 import { verifyAccessToken, InvalidAccessTokenError } from '../lib/jwt.js';
 import type { AppEnv } from '../types/context.js';
 
@@ -18,12 +18,24 @@ import type { AppEnv } from '../types/context.js';
  * (environment + explicit flag) specifically so it can never be
  * accidentally left on in a deployed environment by just forgetting to set
  * `NODE_ENV=production`.
+ *
+ * Both user lookups below read `users` through the un-scoped `db` client
+ * rather than `withUserContext`. `users` is one of the tables deliberately
+ * NOT under RLS (@bebest/database `0000_init/rls.sql`: "user-scoped, not
+ * tenant-scoped. Protected by user_id ownership checks at the application
+ * layer") — and here the user id being looked up comes from a
+ * signature-verified token, not from client input. Wrapping it in
+ * `withUserContext` bought no isolation the policy set doesn't already
+ * define, but did cost a full interactive transaction — BEGIN, set_config,
+ * SELECT, COMMIT — on every authenticated request. Against a managed
+ * Postgres that is four network round trips instead of one, which measured
+ * as ~0.75s of pure overhead per request on a ~250ms link.
  */
 export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEV_AUTH_BYPASS === 'true') {
     const devUserId = c.req.header('x-user-id');
     if (devUserId) {
-      const user = await withUserContext(devUserId, (tx) => tx.users.findUnique({ where: { id: devUserId } }));
+      const user = await db.users.findUnique({ where: { id: devUserId } });
       if (user && !user.deleted_at) {
         c.set('user', { id: user.id, email: user.email, name: user.name, tokenOrgId: null });
         return next();
@@ -46,7 +58,7 @@ export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
     throw err;
   }
 
-  const user = await withUserContext(payload.sub, (tx) => tx.users.findUnique({ where: { id: payload.sub } }));
+  const user = await db.users.findUnique({ where: { id: payload.sub } });
   if (!user || user.deleted_at) {
     return c.json({ error: 'Authentication required' }, 401);
   }

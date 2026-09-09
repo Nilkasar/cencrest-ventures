@@ -17,6 +17,7 @@
 import {
   getAccessToken,
   getRefreshToken,
+  getSelectedOrgSlug,
   handleSessionExpired,
   setSession,
 } from "./auth-state";
@@ -58,7 +59,14 @@ async function refreshAccessToken(): Promise<boolean> {
     const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
+      // `orgSlug` asks the server to re-attach the org this browser was
+      // acting as. Without it the refreshed access token carries no org
+      // claim, and every org-scoped route answers 409 — so a silent token
+      // refresh (or any page reload) used to drop the user out of their own
+      // organization mid-session. The server re-verifies access before
+      // honouring it; sending a slug you don't have access to just yields
+      // an org-less token, exactly as before.
+      body: JSON.stringify({ refreshToken, orgSlug: getSelectedOrgSlug() ?? undefined }),
     });
     if (!response.ok) return false;
 

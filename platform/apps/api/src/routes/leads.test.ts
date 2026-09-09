@@ -8,8 +8,8 @@ const db = {
   organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
   organizations: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), create: vi.fn() },
   memberships: { findFirst: vi.fn() },
-  users: { findUnique: vi.fn() },
-  leads: { create: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn(), update: vi.fn() },
+  users: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
+  leads: { create: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn(), update: vi.fn(), groupBy: vi.fn().mockResolvedValue([]) },
   deals: { updateMany: vi.fn() },
   activities: { updateMany: vi.fn() },
   audit_events: { create: vi.fn().mockResolvedValue({}) },
@@ -68,6 +68,97 @@ beforeEach(async () => {
 afterEach(() => {
   if (ORIGINAL_INTERNAL_ORG_ID === undefined) delete process.env.CRM_INTERNAL_ORG_ID;
   else process.env.CRM_INTERNAL_ORG_ID = ORIGINAL_INTERNAL_ORG_ID;
+});
+
+const LEAD_ROW = {
+  id: 'lead-1',
+  organization_id: INTERNAL_ORG_ID,
+  email: 'priya@northwind.com',
+  name: 'Priya Raman',
+  company: 'Northwind Logistics',
+  website: null,
+  category: null,
+  notes: null,
+  source: 'free_snapshot',
+  source_url: null,
+  status: 'new',
+  score: 82,
+  assigned_to: 'staff-1',
+  snapshot_id: null,
+  converted_organization_id: null,
+  converted_at: null,
+  created_at: new Date(),
+  updated_at: new Date(),
+};
+
+describe('GET /leads', () => {
+  beforeEach(() => {
+    db.leads.findMany.mockResolvedValue([LEAD_ROW]);
+    db.leads.count.mockResolvedValue(1);
+    db.leads.groupBy.mockResolvedValue([
+      { status: 'new', _count: { _all: 3 } },
+      { status: 'converted', _count: { _all: 2 } },
+    ]);
+  });
+
+  it('resolves the assignee server-side instead of leaving the client an id', async () => {
+    db.users.findMany.mockResolvedValue([
+      { id: 'staff-1', name: 'Ava Chen', email: 'ava@bebestwithai.com' },
+    ]);
+
+    const app = await buildApp();
+    const res = await app.request('/leads', { headers: await authHeader('user-1', INTERNAL_ORG_ID) });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { assignedTo: string; assignedToUser: { name: string } }[] };
+    expect(body.data[0]?.assignedTo).toBe('staff-1');
+    expect(body.data[0]?.assignedToUser).toMatchObject({ id: 'staff-1', name: 'Ava Chen' });
+  });
+
+  it('turns ?q= into a database filter across name, company and email', async () => {
+    const app = await buildApp();
+    await app.request('/leads?q=north', { headers: await authHeader('user-1', INTERNAL_ORG_ID) });
+
+    const where = db.leads.findMany.mock.calls[0]?.[0]?.where as { OR?: unknown[] };
+    expect(where.OR).toEqual([
+      { name: { contains: 'north', mode: 'insensitive' } },
+      { company: { contains: 'north', mode: 'insensitive' } },
+      { email: { contains: 'north', mode: 'insensitive' } },
+    ]);
+  });
+
+  it('reports status counts across the whole filtered set, not just the page', async () => {
+    const app = await buildApp();
+    const res = await app.request('/leads?limit=1', {
+      headers: await authHeader('user-1', INTERNAL_ORG_ID),
+    });
+
+    const body = (await res.json()) as {
+      data: unknown[];
+      total: number;
+      statusCounts: Record<string, number>;
+    };
+    // One row on the page, but the counts describe every matching lead.
+    expect(body.data).toHaveLength(1);
+    expect(body.statusCounts).toEqual({
+      new: 3,
+      contacted: 0,
+      qualified: 0,
+      converted: 2,
+      lost: 0,
+    });
+  });
+
+  it('excludes the status filter from the counts so the header stays stable', async () => {
+    const app = await buildApp();
+    await app.request('/leads?status=new&source=referral', {
+      headers: await authHeader('user-1', INTERNAL_ORG_ID),
+    });
+
+    const countsWhere = db.leads.groupBy.mock.calls[0]?.[0]?.where as Record<string, unknown>;
+    expect(countsWhere.status).toBeUndefined();
+    expect(countsWhere.source).toBe('referral');
+  });
 });
 
 describe('POST /leads', () => {

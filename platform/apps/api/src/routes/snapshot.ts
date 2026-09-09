@@ -1,4 +1,4 @@
-import { Hono, type Context } from 'hono';
+import { Hono } from 'hono';
 import { z } from 'zod';
 import { db, withOrgContext } from '@bebest/database';
 import { generateOpaqueToken, hashToken } from '../lib/tokens.js';
@@ -6,6 +6,7 @@ import { isSafePublicHttpUrl } from '../lib/ssrf-guard.js';
 import { getInternalOrgId } from '../lib/internal-org.js';
 import { freeSnapshotRateLimit } from '../middleware/rate-limit.js';
 import { writeManualAuditEvent } from '../middleware/audit-log.js';
+import { clientIp } from '../lib/client-ip.js';
 import { runFreeSnapshotPipeline, type FreeSnapshotInput } from '../lib/free-snapshot/orchestrator.js';
 import { getDefaultJobQueue } from '../lib/queue/default-job-queue.js';
 import type { EmailSender } from '../lib/email.js';
@@ -18,11 +19,6 @@ interface FreeSnapshotJobPayload {
 }
 
 const FREE_SNAPSHOT_JOB_TYPE = 'free_snapshot_pipeline';
-
-function clientIp(c: Context<AppEnv>): string | null {
-  const ip = c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip');
-  return ip ?? null;
-}
 
 function domainOf(url: string): string {
   try {
