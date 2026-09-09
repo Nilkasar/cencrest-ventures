@@ -54,6 +54,7 @@ import whiteLabel from './routes/white-label.js';
 import integrations from './routes/integrations.js';
 import { ConsoleEmailSender } from './lib/email.js';
 import { getDefaultErrorTracker } from './lib/observability/default-error-tracker.js';
+import { clientFaultResponse } from './lib/db-errors.js';
 import type { AppEnv } from './types/context.js';
 
 const app = new Hono<AppEnv>();
@@ -335,6 +336,16 @@ app.notFound((c) => c.json({ error: 'Not found' }, 404));
 // headers, cookies, or the request/response bodies (see
 // `error-tracker.ts`'s `ErrorContext` doc comment for why).
 app.onError((err, c) => {
+  // Some database errors are the database restating, late, that the REQUEST
+  // was malformed — a non-UUID path parameter, a value longer than its
+  // column, an amount beyond an integer. Those are 404/422s, not 500s, and
+  // reporting them as server faults buries a real signal under noise. See
+  // lib/db-errors.ts; anything unrecognised falls through untouched.
+  const clientFault = clientFaultResponse(err);
+  if (clientFault) {
+    return c.json({ error: clientFault.error }, clientFault.status);
+  }
+
   const requestIdValue = (() => {
     try {
       return c.get('requestId');

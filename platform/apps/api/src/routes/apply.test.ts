@@ -6,7 +6,10 @@ const db = {
   audit_events: { create: vi.fn().mockResolvedValue({}) },
   organization_rate_limits: { upsert: vi.fn() },
 };
-const tx = { leads: db.leads };
+const tx = {
+  // writeAuditEvent runs org-attributed writes inside withOrgContext now
+  // (see lib/audit.ts), so the transaction client exposes audit_events.
+  audit_events: db.audit_events, leads: db.leads };
 
 vi.mock('@bebest/database', () => ({
   db,

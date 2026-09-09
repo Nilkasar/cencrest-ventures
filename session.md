@@ -675,3 +675,63 @@ Prisma's interactive-transaction defaults (`maxWait: 2000ms`, `timeout: 5000ms`)
 ### Still open (unchanged, and out of scope by request)
 
 External integrations (Resend, Stripe, Sentry, pg-boss, a real SEO provider) and the deployment target. Nothing in this pass touched Vercel or any hosting configuration.
+
+---
+
+## Session: 2026-09-09/10 — the same treatment beyond the CRM: platform-wide 500s, and Epic 18's client half was dead
+
+User: "now do the same for the rest of the epics." The CRM pass was per-route hand-probing; that does not scale to 70 route files, and it turned out not to be necessary — most of what the CRM pass found was systemic, so this pass inventoried the bug *classes* across every route and fixed them where they live.
+
+### Inventory first
+
+- **60 sites** across 26 route files passed a raw path parameter straight into a Prisma `where` (`id` ×47, `queryId` ×4, `keywordId` ×4, `competitorId` ×3, `userId` ×2). Same 500-on-malformed-id bug as the CRM, everywhere.
+- **0 unescaped `contains:` filters** outside the CRM — the LIKE bug really was CRM-only.
+- **4 emails** without a length bound; **3 unscoped writes** to RLS-protected tables (down from an initial naive count of 33 once `tx.` uses were excluded).
+
+### One central fix for a whole class
+
+Rather than editing 60 call sites, `lib/db-errors.ts` maps the SQLSTATEs that mean "the request was malformed" onto the answer the caller deserves, in `app.onError`:
+
+| SQLSTATE | Meaning | Was | Now |
+|---|---|---|---|
+| 22P02 | invalid text for uuid | 500 | 404 |
+| 22001 | value too long for column | 500 | 422 |
+| 22003 | numeric out of range | 500 | 422 |
+| 23505 | unique violation | 500 | 409 |
+| 23503 | foreign key violation | 500 | 422 |
+| 23514 | CHECK violation | 500 | 422 |
+
+Deliberately narrow — an RLS refusal (42501), a connection failure or an ordinary bug still reaches the 500 handler untouched, and there is a test asserting exactly that. Verified across **28 non-CRM `:id` routes**: every one now answers 404 for `not-a-uuid`; before, none of those files validated the id at all, so all 28 were 500s. This also covers routes nobody has written yet.
+
+### Epic 18: the client half could never run
+
+The bigger find. `agency_clients` has RLS keyed on `agency_org_id` only. Every client-side path — see incoming invitations, accept one, revoke an agency's access — was written against the un-scoped `db` client with an explicit `client_org_id = ...` WHERE, documented as deliberate and citing `routes/orgs.ts`'s invitation-accept flow as precedent.
+
+**The precedent does not transfer.** `invitations` has no RLS at all, which is why it works there. `agency_clients` does, and the un-scoped client is not exempt from a policy — it is a session with no `app.current_org` set, which under that policy matches nothing. So under any correct role:
+
+- `GET /agency/clients/incoming` → always empty
+- `POST /agency/clients/:id/accept` → always 404
+- `POST /agency/clients/:id/revoke` (client side) → always 404
+
+The client could never accept an agency invitation, and could never revoke an agency's access to its own data — the case Epic 18's own DoD calls its critical path. It worked only while the role carried BYPASSRLS.
+
+Fixed by migration `0022`: the policy now names **both parties** to the link. That is not relaxing RLS (the epic brief forbids that) but completing it — the previous arrangement left the client side to an application-level WHERE with no database backing whatsoever. The client-side handlers now go through `withOrgContext` like everything else, and the explicit `client_org_id === caller's org` checks remain as defense in depth. The file's header comment, which documented the false premise, was rewritten.
+
+Verified end to end with a user belonging to the agency org *only* (a user in both orgs resolves via direct membership and never exercises the agency path — the first version of this probe made exactly that mistake and produced a false "revocation doesn't bite" finding): invite → client sees it → accepts → agency can act as the client → client revokes → **the very next request is 403** → an unrelated org sees nothing and cannot accept. 0 findings.
+
+### The audit trail had stopped completely
+
+`audit_events` has RLS, and `writeAuditEvent` wrote through the un-scoped client — refused with `42501 new row violates row-level security policy`. Because that function deliberately swallows its own failures so an audit write can never break the action it records, the result was silence: **zero audit rows written from the moment the API switched off the BYPASSRLS role**, while logins, conversions and deal stage changes carried on succeeding.
+
+`lib/audit.ts`'s own header had predicted this and deferred it "until integration tests exist against a real Postgres instance". They exist now, and the deferral was not harmless.
+
+Fixed in two halves: migration `0021` splits the policy — reads stay tenant-scoped, appends accept a row that either names no organization or names the caller's; and `writeAuditEvent` runs org-attributed writes inside `withOrgContext`. No UPDATE or DELETE policy exists, so with RLS on, an audit row cannot be altered or removed at all — which is what a tamper-evident log wants. Confirmed live: rows flowing again, including the correct `failure` row for the losing side of a concurrent conversion.
+
+### Verification
+
+- **1068 tests pass** (up from 1056), typecheck and lint clean. 25 test files needed their mocked transaction client to expose `audit_events` — a real consequence of the fix, not a workaround.
+- `smoke:crm` **59/59**; the malformed-id sweep **28/28**; the Epic 18 lifecycle **0 findings**.
+
+### Still open
+
+Per-epic *business-logic* review beyond these classes — the equivalent of the CRM's double-conversion race and stale-lost-reason contradiction — has been done for Epic 18 only. Epics 2–17 have had their systemic 500 classes fixed and their RLS corrected, but not yet a line-by-line semantic read. External integrations and deployment remain untouched by request.

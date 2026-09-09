@@ -27,6 +27,9 @@ const db = {
 };
 
 const tx = {
+  // writeAuditEvent runs org-attributed writes inside withOrgContext now
+  // (see lib/audit.ts), so the transaction client exposes audit_events.
+  audit_events: db.audit_events,
   organizations: db.organizations,
   memberships: db.memberships,
   users: db.users,

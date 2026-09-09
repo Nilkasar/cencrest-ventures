@@ -6,24 +6,28 @@
  * (agency side, with a real per-client summary reusing Epic 4/7/9's own
  * tables, never a duplicate rollup table).
  *
- * Two distinct read/write paths on the SAME table, by design (see
- * `@bebest/database` DECISIONS.md's Epic 18 section and rls.sql's "Special
- * case — agency_clients"):
- *   - AGENCY side (`agency_org_id = the caller's org`): RLS-backed, via
- *     `withOrgContext(agencyOrgId, ...)`, exactly like every other tenant
- *     table in this codebase.
- *   - CLIENT side (`client_org_id = the caller's org`): RLS on this table
- *     scopes visibility to the agency side ONLY (a client org cannot see
- *     "who manages us" through the standard policy) — same reasoning as
- *     `invitations` (see DECISIONS.md §7b): the row's own `id`, handed back
- *     out-of-band (email/UI notification — a real notification delivery is
- *     out of this build's scope, same "console.log stand-in" precedent
- *     `routes/orgs.ts`'s invitation email already establishes), IS the
- *     access control for this path, backed by an explicit
- *     `client_org_id === caller's org` check in application code rather
- *     than a second, blanket RLS grant. Plain `db`, not `withOrgContext`,
- *     for exactly these client-side reads/writes — mirrors
- *     `routes/orgs.ts`'s invitation accept flow precisely.
+ * BOTH sides of a link go through `withOrgContext`, because both are named
+ * on the row's RLS policy (migration 0022).
+ *
+ * This file previously ran every client-side read and write through the
+ * un-scoped `db` client with an explicit `client_org_id = ...` WHERE, on
+ * the stated reasoning that the policy only authorized the agency side and
+ * that `routes/orgs.ts`'s invitation-accept flow was the precedent for
+ * doing it that way.
+ *
+ * That reasoning had a hole. `invitations` has no RLS at all — which is why
+ * the precedent works there — whereas `agency_clients` does, and the
+ * un-scoped client is not exempt from a policy, it is merely a session with
+ * no `app.current_org` set. Under any role that cannot bypass RLS, the
+ * policy therefore matched nothing and the client half of this epic could
+ * not run at all: incoming invitations listed empty, accept 404'd, and a
+ * client could not revoke an agency's access to its own data — the case the
+ * epic's DoD calls its critical path.
+ *
+ * The policy now names the client org as well as the agency org, which is
+ * not a relaxation but a completion: the database enforces what the code
+ * always intended, and the explicit `client_org_id === caller's org` checks
+ * below remain as defense in depth rather than as the only check.
  */
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -253,11 +257,13 @@ agency.get('/clients/incoming', requireAuth, authenticatedRateLimit, requireOrgF
   // explicit WHERE, exactly like `routes/orgs.ts`'s invitation accept flow.
   // Epic 19 (Production Hardening), item 6 — capped server-side (this call
   // had no cap at all before this epic).
-  const links = await db.agency_clients.findMany({
-    where: { client_org_id: org.organizationId, deleted_at: null },
-    orderBy: { created_at: 'desc' },
-    take: 100,
-  });
+  const links = await withOrgContext(org.organizationId, (tx) =>
+    tx.agency_clients.findMany({
+      where: { client_org_id: org.organizationId, deleted_at: null },
+      orderBy: { created_at: 'desc' },
+      take: 100,
+    }),
+  );
 
   const results = await Promise.all(
     links.map(async (link) => {
@@ -294,7 +300,9 @@ agency.post(
     const user = c.get('user');
     const id = c.req.param('id');
 
-    const link = await db.agency_clients.findUnique({ where: { id } });
+    const link = await withOrgContext(org.organizationId, (tx) =>
+      tx.agency_clients.findUnique({ where: { id } }),
+    );
     if (!link || link.deleted_at || link.client_org_id !== org.organizationId) {
       // 404, never 403 — do not confirm to a non-target org that a link
       // with this id exists at all (same "don't leak enumerable ids"
@@ -305,10 +313,12 @@ agency.post(
       return c.json({ error: 'not_pending', message: `This invitation is ${link.status}, not pending.` }, 409);
     }
 
-    const updated = await db.agency_clients.update({
-      where: { id: link.id },
-      data: { status: 'active', consented_by: user.id, consented_at: new Date(), updated_at: new Date() },
-    });
+    const updated = await withOrgContext(org.organizationId, (tx) =>
+      tx.agency_clients.update({
+        where: { id: link.id },
+        data: { status: 'active', consented_by: user.id, consented_at: new Date(), updated_at: new Date() },
+      }),
+    );
 
     return c.json({ id: updated.id, status: updated.status, consentedAt: updated.consented_at });
   },
@@ -330,11 +340,12 @@ agency.post(
     const user = c.get('user');
     const id = c.req.param('id');
 
-    // Same client-side narrow path as /accept for a client-initiated
-    // revoke; the agency-initiated case additionally tries the RLS-backed
-    // `withOrgContext` read further below.
-    const link =
-      (await db.agency_clients.findUnique({ where: { id } })) ?? null;
+    // One scoped read serves both sides: the policy now names the agency
+    // AND the client org (migration 0022), so whichever party is calling
+    // sees the link and nobody else does.
+    const link = await withOrgContext(org.organizationId, (tx) =>
+      tx.agency_clients.findUnique({ where: { id } }),
+    );
 
     if (!link || link.deleted_at) return c.json({ error: 'Link not found' }, 404);
 
@@ -347,17 +358,14 @@ agency.post(
       return c.json({ id: link.id, status: link.status }); // already inert — idempotent
     }
 
-    const updated = isAgencySide
-      ? await withOrgContext(org.organizationId, (tx) =>
-          tx.agency_clients.update({
-            where: { id: link.id },
-            data: { status: 'revoked', revoked_by: user.id, revoked_at: new Date(), updated_at: new Date() },
-          }),
-        )
-      : await db.agency_clients.update({
-          where: { id: link.id },
-          data: { status: 'revoked', revoked_by: user.id, revoked_at: new Date(), updated_at: new Date() },
-        });
+    // Identical for both sides now — the branch existed only because the
+    // client side could not go through RLS.
+    const updated = await withOrgContext(org.organizationId, (tx) =>
+      tx.agency_clients.update({
+        where: { id: link.id },
+        data: { status: 'revoked', revoked_by: user.id, revoked_at: new Date(), updated_at: new Date() },
+      }),
+    );
 
     return c.json({ id: updated.id, status: updated.status, revokedAt: updated.revoked_at });
   },

@@ -1,4 +1,4 @@
-import { db, type Prisma } from '@bebest/database';
+import { db, withOrgContext, type Prisma } from '@bebest/database';
 
 export interface AuditEventInput {
   userId: string | null;
@@ -17,19 +17,20 @@ export interface AuditEventInput {
 }
 
 /**
- * Writes one row to `audit_events`. This is a plain insert against the
- * base `db` client, not `withOrgContext` — `audit_events.organization_id`
- * is nullable (system-level events) and the write itself must succeed
- * regardless of tenant context, so RLS's `WITH CHECK` on this table would
- * otherwise reject inserts made outside an org-context transaction. In a
- * real deployment this insert runs under the `bebest_app` role, which
- * means it IS still subject to `audit_events`'s RLS policy — so any
- * caller that wants to attribute a write to a specific org must go through
- * `withOrgContext` itself if strict enforcement is desired. For Epic 0
- * this function performs the write directly and is marked NEEDS LIVE DB in
- * its test file for that reason; wiring it through `withOrgContext` when
- * `organizationId` is present is a one-line follow-up once integration
- * tests exist against a real Postgres instance.
+ * Writes one row to `audit_events`.
+ *
+ * An org-attributed event is written inside that org's context; a
+ * platform-level one (no organization — login, logout, webhook receipt)
+ * goes through the un-scoped client. `audit_events`'s append policy accepts
+ * exactly those two shapes (migration 0021).
+ *
+ * This used to be a single un-scoped insert, with a note deferring the
+ * scoped version until "integration tests exist against a real Postgres
+ * instance". Those exist now, and they showed the deferral was not
+ * harmless: under a role that cannot bypass RLS, every org-scoped audit
+ * write was refused with `42501` and — because this function swallows its
+ * own failures — the trail simply stopped, silently, while the actions it
+ * was meant to record carried on succeeding.
  *
  * Never throws: a failure to write an audit log must not take down the
  * privileged action it was trying to record. Logs to stderr instead so the
@@ -37,23 +38,40 @@ export interface AuditEventInput {
  */
 export async function writeAuditEvent(input: AuditEventInput): Promise<void> {
   try {
-    await db.audit_events.create({
-      data: {
-        user_id: input.userId,
-        organization_id: input.organizationId,
-        actor_type: input.actorType,
-        actor_role: input.actorRole ?? null,
-        action: input.action,
-        entity_type: input.entityType,
-        entity_id: input.entityId,
-        ip_address: input.ipAddress ?? null,
-        user_agent: input.userAgent ?? null,
-        result: input.result,
-        old_value: input.oldValue as Prisma.InputJsonValue | undefined,
-        new_value: input.newValue as Prisma.InputJsonValue | undefined,
-        details: (input.details ?? {}) as Prisma.InputJsonValue,
-      },
-    });
+    // An org-attributed row is written INSIDE that org's context.
+    //
+    // `audit_events` has RLS, and its append policy only accepts a row whose
+    // `organization_id` is null or matches `app.current_org`. Writing
+    // through the un-scoped client therefore failed with `42501 new row
+    // violates row-level security policy` for every org-scoped event — and
+    // because this function deliberately swallows its own failures, the
+    // audit trail silently stopped recording under a correctly-privileged
+    // role. See migration 0021 for the policy half of this fix.
+    //
+    // Platform-level events (no organization: login, logout, webhook
+    // receipt) keep using the un-scoped client — they have no context to
+    // set, and the policy explicitly allows a null organization.
+    const data = {
+      user_id: input.userId,
+      organization_id: input.organizationId,
+      actor_type: input.actorType,
+      actor_role: input.actorRole ?? null,
+      action: input.action,
+      entity_type: input.entityType,
+      entity_id: input.entityId,
+      ip_address: input.ipAddress ?? null,
+      user_agent: input.userAgent ?? null,
+      result: input.result,
+      old_value: input.oldValue as Prisma.InputJsonValue | undefined,
+      new_value: input.newValue as Prisma.InputJsonValue | undefined,
+      details: (input.details ?? {}) as Prisma.InputJsonValue,
+    };
+
+    if (input.organizationId) {
+      await withOrgContext(input.organizationId, (tx) => tx.audit_events.create({ data }));
+    } else {
+      await db.audit_events.create({ data });
+    }
   } catch (err) {
     console.error(
       JSON.stringify({
