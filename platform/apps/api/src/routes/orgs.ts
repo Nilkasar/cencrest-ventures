@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { db, withUserContext, withOrgContext } from '@bebest/database';
-import { toSlug } from '../lib/slug.js';
+import { isSluggable, toSlug } from '../lib/slug.js';
 import { generateOpaqueToken } from '../lib/tokens.js';
 import { hashToken } from '../lib/jwt.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -47,7 +47,20 @@ export function createOrgsRoutes(emailSender: EmailSender) {
   });
 
   // ── Create org (the creator becomes owner) ──────────────────────────────────
-  const createOrgSchema = z.object({ name: z.string().min(2).max(100) });
+  // The name must yield a usable slug: one made only of punctuation
+  // slugified to the empty string and created an organization that no
+  // `:slug` route could address — and that collided with the next such name
+  // on the unique index. See lib/slug.ts.
+  const createOrgSchema = z.object({
+    name: z
+      .string()
+      .trim()
+      .min(2)
+      .max(100)
+      .refine(isSluggable, {
+        message: 'Organization name must contain at least one letter or number',
+      }),
+  });
 
   orgs.post('/', requireAuth, authenticatedRateLimit, async (c) => {
     const body = await c.req.json().catch(() => null);

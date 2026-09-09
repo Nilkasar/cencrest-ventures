@@ -6,6 +6,8 @@ import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireCrmAccess } from '../middleware/crm-access.js';
 import { getInternalOrgId } from '../lib/internal-org.js';
 import { loadUserRefs, userRef } from '../lib/crm-users.js';
+import { uuidParam } from '../lib/http-params.js';
+import { containsInsensitive } from '../lib/crm-validation.js';
 import type { AppEnv } from '../types/context.js';
 
 const accounts = new Hono<AppEnv>();
@@ -47,9 +49,9 @@ accounts.get('/', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'
     ...(q
       ? {
           OR: [
-            { company: { contains: q, mode: 'insensitive' as const } },
-            { name: { contains: q, mode: 'insensitive' as const } },
-            { email: { contains: q, mode: 'insensitive' as const } },
+            { company: containsInsensitive(q) },
+            { name: containsInsensitive(q) },
+            { email: containsInsensitive(q) },
           ],
         }
       : {}),
@@ -100,7 +102,10 @@ accounts.get('/', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'
 // ── Get one account (org + its converted lead + deals + activity timeline) ──
 accounts.get('/:orgId', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'), async (c) => {
   const internalOrgId = getInternalOrgId();
-  const orgId = c.req.param('orgId');
+  // A non-UUID can never name an organization; handing one to Postgres
+  // returned a 500 instead of a 404 (see lib/http-params.ts).
+  const orgId = uuidParam(c, 'orgId');
+  if (!orgId) return c.json({ error: 'Organization not found' }, 404);
 
   // The `organizations` read (no RLS) is issued alongside the whole
   // tenant-scoped half rather than before it, and the lead / deals /

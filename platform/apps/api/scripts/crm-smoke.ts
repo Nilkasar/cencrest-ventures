@@ -263,6 +263,136 @@ await call('403 when acting as a non-internal org', 'GET', '/leads', {
   expect: 403,
 });
 
+// ── Input the database would have rejected ───────────────────────────────
+// Every case here returned a 500 before the field bounds were made to match
+// the columns behind them (lib/crm-validation.ts).
+const GHOST = '00000000-0000-4000-8000-000000000000';
+
+await call('refuse an email longer than its column', 'POST', '/leads', {
+  body: { email: `${'a'.repeat(250)}@example.com`, name: 'Long', source: 'direct' },
+  expect: 422,
+});
+await call('refuse a website longer than its column', 'POST', '/leads', {
+  body: {
+    email: `long-${stamp}@example.com`,
+    name: 'Long URL',
+    website: `https://example.com/${'a'.repeat(600)}`,
+    source: 'direct',
+  },
+  expect: 422,
+});
+await call('refuse a deal value beyond a 32-bit integer', 'POST', '/deals', {
+  body: { title: 'Overflow', valueCents: 3_000_000_000, ownerId: owner.id },
+  expect: 422,
+});
+await call('refuse an unsupported currency', 'POST', '/deals', {
+  body: { title: 'Bad currency', valueCents: 1000, currency: 'ZZZ', ownerId: owner.id },
+  expect: 422,
+});
+await call('refuse an owner who is not CRM staff', 'POST', '/deals', {
+  body: { title: 'Bad owner', valueCents: 1000, ownerId: GHOST },
+  expect: 422,
+});
+await call('refuse an account organization that does not exist', 'POST', '/deals', {
+  body: { title: 'Bad account', valueCents: 1000, ownerId: owner.id, accountOrganizationId: GHOST },
+  expect: 422,
+});
+await call('404 a malformed lead id rather than 500', 'GET', '/leads/not-a-uuid', { expect: 404 });
+await call('404 a malformed deal id rather than 500', 'GET', '/deals/not-a-uuid', { expect: 404 });
+await call('404 a malformed account id rather than 500', 'GET', '/accounts/not-a-uuid', { expect: 404 });
+await call('refuse an organization name that slugifies to nothing', 'POST', `/leads/${lead.id}/convert`, {
+  body: { organizationName: '!!!' },
+  expect: 422,
+});
+
+// ── Behaviour that only concurrency reveals ──────────────────────────────
+{
+  const racer = await call('lead for the conversion race', 'POST', '/leads', {
+    body: {
+      email: `race-${stamp}@example.com`,
+      name: 'Race Probe',
+      company: `Race Co ${stamp}`,
+      source: 'direct',
+    },
+    expect: 201,
+  });
+
+  // Under READ COMMITTED both requests once read `converted_organization_id`
+  // as null and both created an organization — two accounts for one lead.
+  // The handler now takes a FOR UPDATE row lock.
+  const [first, second] = await Promise.all([
+    fetch(`${API}/leads/${racer.id}/convert`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${OWNER_TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ organizationName: `Race A ${stamp}` }),
+    }),
+    fetch(`${API}/leads/${racer.id}/convert`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${OWNER_TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ organizationName: `Race B ${stamp}` }),
+    }),
+  ]);
+  const statuses = [first.status, second.status].sort();
+  const raceOk = statuses[0] === 200 && statuses[1] === 409;
+  results.push({
+    label: 'exactly one of two simultaneous conversions wins',
+    method: 'POST',
+    path: '/leads/:id/convert',
+    status: Number(statuses[1]),
+    ms: 0,
+    ok: raceOk,
+  });
+  console.log(
+    `${raceOk ? 'PASS' : 'FAIL'}  ${statuses.join('/')}          POST /leads/:id/convert ×2  — exactly one wins`,
+  );
+}
+
+// ── Data that should not contradict itself ───────────────────────────────
+{
+  const d = await call('deal for the lost-reason check', 'POST', '/deals', {
+    body: { title: `Reason ${stamp}`, valueCents: 1000, ownerId: owner.id },
+    expect: 201,
+  });
+  await call('move it to lost with a reason', 'POST', `/deals/${d.id}/stage`, {
+    body: { stage: 'lost', lostReason: 'budget' },
+    expect: 200,
+  });
+  const won = await call('move it back to won', 'POST', `/deals/${d.id}/stage`, {
+    body: { stage: 'won' },
+    expect: 200,
+  });
+  const cleared = won?.lostReason === null;
+  results.push({
+    label: 'a won deal carries no lost reason',
+    method: 'POST',
+    path: '/deals/:id/stage',
+    status: 200,
+    ms: 0,
+    ok: cleared,
+  });
+  console.log(`${cleared ? 'PASS' : 'FAIL'}  lostReason cleared on leaving the lost stage`);
+}
+
+// ── Search is searched, not interpreted ──────────────────────────────────
+{
+  const all = await call('total leads', 'GET', '/leads?limit=1', { expect: 200 });
+  const wildcard = await call('a bare % is not a wildcard', 'GET', `/leads?q=${encodeURIComponent('%')}`, {
+    expect: 200,
+  });
+  const escaped = wildcard.total < all.total;
+  results.push({
+    label: 'LIKE metacharacters are escaped',
+    method: 'GET',
+    path: '/leads?q=%',
+    status: 200,
+    ms: 0,
+    ok: escaped,
+  });
+  console.log(
+    `${escaped ? 'PASS' : 'FAIL'}  "%" matched ${wildcard.total} of ${all.total} — not the whole table`,
+  );
+}
+
 // ── Summary ──────────────────────────────────────────────────────────────
 const failed = results.filter((r) => !r.ok);
 const times = results.map((r) => r.ms).filter(Boolean).sort((a, b) => a - b);

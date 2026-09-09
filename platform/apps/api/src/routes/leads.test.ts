@@ -3,6 +3,10 @@ import { Hono } from 'hono';
 import { generateKeyPair } from 'jose';
 
 const INTERNAL_ORG_ID = '11111111-1111-1111-1111-111111111111';
+// Real UUIDs: a non-UUID path param is now answered 404 before any query
+// runs (lib/http-params.ts).
+const LEAD_ID = '88888888-8888-4888-8888-888888888888';
+const UNKNOWN_LEAD_ID = '99999999-9999-4999-8999-999999999999';
 
 const db = {
   organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
@@ -15,6 +19,8 @@ const db = {
   audit_events: { create: vi.fn().mockResolvedValue({}) },
 };
 
+const queryRawMock = vi.fn();
+
 const tx = {
   organizations: db.organizations,
   memberships: db.memberships,
@@ -22,6 +28,9 @@ const tx = {
   leads: db.leads,
   deals: db.deals,
   activities: db.activities,
+  // The convert handler locks the lead row with a raw FOR UPDATE select
+  // before reading it — see routes/leads.ts.
+  $queryRaw: queryRawMock,
 };
 
 vi.mock('@bebest/database', () => ({
@@ -242,7 +251,7 @@ describe('POST /leads', () => {
 describe('PATCH /leads/:id', () => {
   it('rejects setting status to converted directly', async () => {
     const app = await buildApp();
-    const res = await app.request('/leads/lead-1', {
+    const res = await app.request(`/leads/${LEAD_ID}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json', ...(await authHeader('user-1', INTERNAL_ORG_ID)) },
       body: JSON.stringify({ status: 'converted' }),
@@ -253,7 +262,7 @@ describe('PATCH /leads/:id', () => {
   it('404s for an unknown lead', async () => {
     db.leads.findFirst.mockResolvedValue(null);
     const app = await buildApp();
-    const res = await app.request('/leads/nope', {
+    const res = await app.request(`/leads/${UNKNOWN_LEAD_ID}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json', ...(await authHeader('user-1', INTERNAL_ORG_ID)) },
       body: JSON.stringify({ status: 'contacted' }),
@@ -263,13 +272,23 @@ describe('PATCH /leads/:id', () => {
 });
 
 describe('POST /leads/:id/convert', () => {
+  // The handler takes a FOR UPDATE row lock before reading the lead, so two
+  // simultaneous conversions cannot both see it as unconverted. The mocked
+  // transaction has to answer that raw query.
+  function lockReturns(convertedOrganizationId: string | null) {
+    queryRawMock.mockResolvedValue([
+      { id: LEAD_ID, converted_organization_id: convertedOrganizationId },
+    ]);
+  }
+
   it('409s if the lead has already converted', async () => {
+    lockReturns('org-existing');
     db.leads.findFirst.mockResolvedValue({
       id: 'lead-1',
       converted_organization_id: 'org-existing',
     });
     const app = await buildApp();
-    const res = await app.request('/leads/lead-1/convert', {
+    const res = await app.request(`/leads/${LEAD_ID}/convert`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(await authHeader('user-1', INTERNAL_ORG_ID)) },
       body: JSON.stringify({ organizationName: 'Acme Corp' }),
@@ -277,9 +296,51 @@ describe('POST /leads/:id/convert', () => {
     expect(res.status).toBe(409);
   });
 
+  it('takes a row lock before deciding whether the lead is already converted', async () => {
+    // Under READ COMMITTED two simultaneous conversions both read
+    // `converted_organization_id` as null and both created an organization
+    // — two orgs for one lead. The FOR UPDATE select serialises them.
+    lockReturns(null);
+    db.leads.findFirst.mockResolvedValue({ id: LEAD_ID, converted_organization_id: null });
+    db.organizations.create.mockResolvedValue({ id: 'org-new', name: 'Acme Corp', slug: 'acme-corp' });
+    // The internal org must still resolve for requireCrmAccess; only the
+    // slug-uniqueness lookup should come back empty.
+    db.organizations.findUnique.mockImplementation(async ({ where }: { where: { id?: string; slug?: string } }) =>
+      where.id === INTERNAL_ORG_ID
+        ? { id: INTERNAL_ORG_ID, slug: 'bebest-internal', name: 'BeBest Internal', deleted_at: null }
+        : null,
+    );
+    db.leads.update.mockResolvedValue({});
+    db.deals.updateMany.mockResolvedValue({ count: 0 });
+    db.activities.updateMany.mockResolvedValue({ count: 0 });
+
+    const app = await buildApp();
+    await app.request(`/leads/${LEAD_ID}/convert`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(await authHeader('user-1', INTERNAL_ORG_ID)) },
+      body: JSON.stringify({ organizationName: 'Acme Corp' }),
+    });
+
+    expect(queryRawMock).toHaveBeenCalled();
+    const sql = String(queryRawMock.mock.calls[0]?.[0] ?? '');
+    expect(sql).toMatch(/FOR UPDATE/);
+  });
+
+  it('422s an organization name that slugifies to nothing', async () => {
+    // '!!!' produced an organization with slug '' — unreachable by every
+    // `:slug` route, and colliding with the next such name.
+    const app = await buildApp();
+    const res = await app.request(`/leads/${LEAD_ID}/convert`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(await authHeader('user-1', INTERNAL_ORG_ID)) },
+      body: JSON.stringify({ organizationName: '!!!' }),
+    });
+    expect(res.status).toBe(422);
+  });
+
   it('422s when neither organizationId nor organizationName is given', async () => {
     const app = await buildApp();
-    const res = await app.request('/leads/lead-1/convert', {
+    const res = await app.request(`/leads/${LEAD_ID}/convert`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(await authHeader('user-1', INTERNAL_ORG_ID)) },
       body: JSON.stringify({}),
@@ -288,7 +349,8 @@ describe('POST /leads/:id/convert', () => {
   });
 
   it('creates a new organization, converts the lead, and audits it', async () => {
-    db.leads.findFirst.mockResolvedValue({ id: 'lead-1', converted_organization_id: null });
+    lockReturns(null);
+    db.leads.findFirst.mockResolvedValue({ id: LEAD_ID, converted_organization_id: null });
     db.organizations.create.mockResolvedValue({ id: 'org-new', name: 'Acme Corp', slug: 'acme-corp' });
     db.organizations.findUnique.mockImplementation(async ({ where }: { where: { id?: string; slug?: string } }) => {
       if (where.id === INTERNAL_ORG_ID) {
@@ -301,7 +363,7 @@ describe('POST /leads/:id/convert', () => {
     db.activities.updateMany.mockResolvedValue({ count: 0 });
 
     const app = await buildApp();
-    const res = await app.request('/leads/lead-1/convert', {
+    const res = await app.request(`/leads/${LEAD_ID}/convert`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(await authHeader('user-1', INTERNAL_ORG_ID)) },
       body: JSON.stringify({ organizationName: 'Acme Corp' }),
@@ -310,7 +372,7 @@ describe('POST /leads/:id/convert', () => {
     expect(res.status).toBe(200);
     expect(db.leads.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'lead-1' },
+        where: { id: LEAD_ID },
         data: expect.objectContaining({ converted_organization_id: 'org-new', status: 'converted' }),
       }),
     );

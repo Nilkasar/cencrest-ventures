@@ -135,6 +135,28 @@ export class InvalidOrganizationIdError extends Error {
 }
 
 /**
+ * Interactive-transaction limits for every scoped helper below.
+ *
+ * Prisma's defaults are `maxWait: 2000ms` (how long a caller may wait for a
+ * free pooled connection) and `timeout: 5000ms` (how long the transaction
+ * itself may run). Both are tuned for a database on the same network. Here
+ * a single scoped operation is four sequential round trips — BEGIN,
+ * set_config, the query, COMMIT — so at a measured 254ms RTT one
+ * transaction costs ~1s before it does anything interesting, and opening a
+ * fresh connection costs ~2s more. Under a cold pool or any contention the
+ * defaults expire mid-transaction and Prisma raises P2028, which surfaces
+ * as a 500 on a request that was doing nothing wrong.
+ *
+ * These are raised to something proportionate and made tunable, so a
+ * deployment closer to its database can lower them rather than inherit
+ * numbers chosen for a slow link.
+ */
+const TRANSACTION_OPTIONS = {
+  maxWait: Number(process.env.DATABASE_TX_MAX_WAIT_MS ?? 10_000),
+  timeout: Number(process.env.DATABASE_TX_TIMEOUT_MS ?? 20_000),
+} as const;
+
+/**
  * Runs `fn` with `app.current_org` set to `organizationId` for the duration
  * of a single database transaction, so every tenant-table RLS policy scopes
  * to this org. This is the ONLY sanctioned way to run a query against a
@@ -168,7 +190,7 @@ export async function withOrgContext<T>(
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.current_org', ${organizationId}, true)`;
     return fn(tx);
-  });
+  }, TRANSACTION_OPTIONS);
 }
 
 export class InvalidUserIdError extends Error {
@@ -199,7 +221,7 @@ export async function withUserContext<T>(
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.current_user', ${userId}, true)`;
     return fn(tx);
-  });
+  }, TRANSACTION_OPTIONS);
 }
 
 /**
@@ -221,7 +243,7 @@ export async function withUserAndOrgContext<T>(
     await tx.$executeRaw`SELECT set_config('app.current_user', ${userId}, true)`;
     await tx.$executeRaw`SELECT set_config('app.current_org', ${organizationId}, true)`;
     return fn(tx);
-  });
+  }, TRANSACTION_OPTIONS);
 }
 
 /** Convenience alias for readability at call sites: `forOrg(orgId).brands.findMany()`-style

@@ -7,6 +7,7 @@ import { requireCrmAccess } from '../middleware/crm-access.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { getInternalOrgId } from '../lib/internal-org.js';
 import { loadUserRefs, userRef, type UserRef } from '../lib/crm-users.js';
+import { LIMITS } from '../lib/crm-validation.js';
 import type { AppEnv } from '../types/context.js';
 
 const activities = new Hono<AppEnv>();
@@ -17,13 +18,16 @@ const ACTIVITY_TYPES = ['note', 'email', 'call', 'snapshot_requested', 'signup']
 const createActivitySchema = z
   .object({
     type: z.enum(ACTIVITY_TYPES),
-    subject: z.string().max(500).optional(),
-    body: z.string().optional(),
+    subject: z.string().trim().max(LIMITS.activitySubject).optional(),
+    // TEXT columns, but bounded so one request cannot store an unbounded
+    // blob — see lib/crm-validation.ts.
+    body: z.string().max(LIMITS.activityBody).optional(),
     metadata: z.record(z.string(), z.unknown()).default({}),
     leadId: z.string().uuid().optional(),
     dealId: z.string().uuid().optional(),
     accountOrganizationId: z.string().uuid().optional(),
   })
+  .strict()
   .refine((d) => Boolean(d.leadId) || Boolean(d.dealId) || Boolean(d.accountOrganizationId), {
     message: 'At least one of leadId, dealId, or accountOrganizationId is required',
   });

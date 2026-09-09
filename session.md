@@ -10,7 +10,11 @@
 
 **Two corrections to earlier docs**: `prisma migrate deploy` creates nothing in this repo — use `pnpm --filter @bebest/database run db:apply`. And `@prisma/adapter-pg` must match `@prisma/client`'s major or its errors become unreadable.
 
-**Still open**: the UI has never been opened in a browser (Chrome extension declined — worth an eyeball); the 79 tenant-isolation integration tests are still skipped but a real database now exists to run them against; `data/fixtures.ts` still supplies `currentUser`/`currentOrganization` in 15 files.
+**A second pass then took the CRM to a 10/10 code bar** (see the 2026-09-09 continuation entry): 21 more bugs found by adversarial probing against the live database — 16 of them 500s on ordinary input (validation that disagreed with its own column widths, unvalidated foreign keys, malformed ids), plus a double-conversion race, a search that treated `%` as a wildcard over the whole table, and data that could contradict itself.
+
+**Two findings there matter beyond the CRM.** First: **tenant isolation was silently off** for this project's entire history — the policies were correct but the connection role carried `BYPASSRLS`. Second, and worse: every RLS policy cast `current_setting(...)::uuid` without `NULLIF`, and because `set_config(..., true)` reverts to the *empty string* at COMMIT, the policy would have **raised an error rather than filtered** on any pooled connection — meaning the API would have returned 500 for everything the moment anyone deployed with a correct role. Both fixed (migration `0020`, plus a boot-time `assertRlsEnforced` that refuses to start in production if isolation isn't real).
+
+**Still open**: the UI has never been opened in a browser (Chrome extension declined — worth an eyeball); the 79 tenant-isolation integration tests are still skipped but a real database and a correct role now exist to run them against; `data/fixtures.ts` still supplies `currentUser`/`currentOrganization` in 15 files; external integrations and the deployment target are deliberately untouched.
 
 ---
 
@@ -601,3 +605,73 @@ The design system was already strong (real token layers, dark/light with a toggl
 - The UI was never opened in a browser this session — the Chrome extension was declined, so every frontend claim above rests on typecheck, lint, a successful production build, and the API contracts the smoke test verifies. Worth a human eyeball at `http://localhost:3000/crm/leads`.
 - `data/fixtures.ts` still backs `currentUser`/`currentOrganization` in 15 files (GO_LIVE §4) — untouched, still a real pre-launch decision to make.
 - The 79 tenant-isolation integration tests are still skipped. They now *could* run — there is a real database — and remain the single largest unproven claim in the build.
+
+---
+
+## Session: 2026-09-09 (cont.) — CRM hardened to a 10/10 code bar: 21 more bugs, one of them silently disabling tenant isolation
+
+User asked for the CRM to be right at the code level — "find code bugs, resolve them; external integrations and deployment stay pending" — so this pass was adversarial edge-case hunting against the live database, not feature work.
+
+### How the bugs were found
+
+Two throwaway probe scripts, each asserting what a correct API *should* answer and printing BUG when it didn't. Round one covered column widths, numeric range, foreign keys, identifiers, dates and payloads. Round two covered what a single sequential request can never reveal: concurrency, ordering stability, tenant isolation, and search semantics. Round one found 16, round two found 5 more. Everything worth keeping is now folded into `pnpm --filter @bebest/api run smoke:crm` (59 checks, up from 40).
+
+### Class 1 — validation that disagreed with its own columns (7 x 500)
+
+Every one of these was a plain 500 on ordinary input, because Zod accepted a value Postgres then refused:
+
+- `leads.email` is VARCHAR(255); the schema checked format but not length.
+- `leads.website` is VARCHAR(500) while the field allowed 2048.
+- `deals.value_cents` is a 32-bit INTEGER — an unbounded `.min(0)` let a mistyped amount overflow (`22003`). One extra zero on a $2M deal did it.
+- `notes` / `lost_reason` / activity `body` are TEXT with no bound at all, so a single request could store an unbounded blob.
+
+Fixed centrally in `lib/crm-validation.ts`, where each limit is named beside the column it mirrors. `.strict()` added to every CRM schema so an unknown field is rejected rather than silently dropped.
+
+### Class 2 — unvalidated foreign keys (6 x 500)
+
+A UUID that parses is not a UUID that exists. `assignedTo`, `ownerId`, `accountOrganizationId` and `leadId` all reached Postgres unchecked and came back as foreign-key violations — a 500 for what is really "that teammate/record isn't there". Now checked inside the same transaction, answering 422. `assertInternalStaff` is deliberately stricter than "this user row exists": a CRM assignee or deal owner must be a member of the internal ops workspace, so a lead cannot be assigned to an arbitrary customer's user account.
+
+### Class 3 — malformed identifiers (3 x 500)
+
+`GET /leads/not-a-uuid` reached `findFirst({ where: { id } })` and Postgres answered `22P02`. Every `:id` route in the CRM did this. `lib/http-params.ts`'s `uuidParam` now answers 404 — indistinguishable from "no such row", which is also the honest answer.
+
+### Class 4 — data that contradicted itself
+
+- `currency` accepted any three characters: `ZZZ` was stored, and `usd` and `USD` coexisted as two spellings of one currency — enough to make any sum across deals wrong. Now normalised and checked against the currencies this product actually transacts in.
+- A deal moved out of `lost` kept its `lost_reason`, so a **won** deal read "lost because: budget" on the detail screen, permanently — nothing else ever writes that column.
+- An organization name of pure punctuation slugified to `''`, creating an org no `:slug` route could address and which collided with the next such name on the unique index. Rejected at validation now, for `POST /orgs` as well as lead conversion.
+
+### Class 5 — the double-conversion race
+
+Two simultaneous conversions of one lead BOTH saw `converted_organization_id` as null under READ COMMITTED, and both created an organization: two accounts for one lead, the lead pointing at whichever committed last, the other orphaned. Reproduced reliably. The handler now takes a `FOR UPDATE` row lock before deciding, so the second request waits, re-reads, and correctly answers 409. Verified: `200/409`, exactly one organization.
+
+### Class 6 — search that was interpreted rather than searched
+
+Prisma renders `contains` as SQL `LIKE` and does not escape LIKE's own metacharacters. A search for `%` matched **every row in the table**; "50% discount" silently matched things it shouldn't. `escapeLike` fixes it — `%` now matches only rows containing a literal `%` (3 of 47, not 47 of 47).
+
+### The serious one — tenant isolation was off, and nothing could tell
+
+A query deliberately scoped to the WRONG organization returned every row. RLS was enabled and FORCEd on all 107 tenant tables and the policies were correct — but the connection role (`neondb_owner`, a managed provider's default) carries `BYPASSRLS`, which trumps everything. Every request in this project's history had been running with tenant isolation silently disabled.
+
+Two fixes, because it needs both:
+
+1. **`packages/database/src/rls-check.ts`** — the API asks Postgres at boot whether isolation is real: is the role superuser/BYPASSRLS, does it own tenant tables, and empirically, does a query scoped to an organization that owns nothing still return rows. In production that is fatal; elsewhere a loud warning. `packages/database/scripts/create-app-role.sql` creates the role that passes it.
+2. **Migration `0020_rls_null_safe_settings`** — and this is the one that would have bitten hardest. Every policy read `current_setting('app.current_org', TRUE)::uuid`. The `TRUE` was meant to yield NULL when unset, failing closed. But `set_config(..., true)` is transaction-local: at COMMIT the value reverts to the **empty string**, not to undefined. From then on, on that pooled connection, the policy evaluated `''::uuid` — which is not NULL and not false, it is an **error**. Any read of `memberships` inside `withUserContext` therefore threw `22P02` as soon as that connection had previously served an org-scoped request. `tenant-context.ts` does exactly that on every authenticated request, so the API returned 500 for everything.
+
+   This was invisible while BYPASSRLS was on, because policies that are never evaluated cannot throw. It would have appeared the moment someone deployed *correctly*. Fixed generically across all 107 policies with `NULLIF(current_setting(...), '')::uuid`, restoring the fail-closed behaviour the original comment describes.
+
+The dev database now runs the API as `bebest_app` (no BYPASSRLS): a foreign org context sees 0 leads, the correct one sees all of them, and boot logs `rls_enforced`.
+
+### Also fixed
+
+Prisma's interactive-transaction defaults (`maxWait: 2000ms`, `timeout: 5000ms`) are sized for a database on the same network. Here one scoped operation is four round trips (~1s) and a cold connection ~2s, so the defaults expired mid-transaction and raised P2028 — a 500 on a request doing nothing wrong. Hit while writing the probe itself. Now proportionate and env-tunable.
+
+### Verification
+
+- **1056 unit tests pass** (up from 1021 — 35 new, covering every class above); typecheck and lint clean across all four packages; `@bebest/web` builds.
+- **Both probes: 0 findings.** Two round-two assertions turned out to be wrong rather than the product — the `%` search legitimately matches rows containing a literal `%`, and the probe's own connection is deliberately the admin role — corrected in the probe rather than "fixed" in the product.
+- **`smoke:crm`: 59/59** against the live database, now including the race, the lost-reason contradiction, the escaped search, and every 500-class rejection.
+
+### Still open (unchanged, and out of scope by request)
+
+External integrations (Resend, Stripe, Sentry, pg-boss, a real SEO provider) and the deployment target. Nothing in this pass touched Vercel or any hosting configuration.
