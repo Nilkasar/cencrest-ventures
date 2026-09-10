@@ -10,40 +10,26 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Skeleton,
   useToast,
   cn,
 } from "@bebest/ui";
-import { currentOrganization } from "@/data/fixtures";
 import { listAgencyClients, switchToOrg } from "@/data/agency/client";
 import type { AgencyClientLink } from "@/data/agency/types";
 import { setOrgScopedAccessToken } from "@/lib/auth-state";
+import { useSession } from "@/lib/session-context";
 
-/**
- * Epic 18: the client switcher, built by extending this component in place
- * (not a parallel switcher) — per the epic's explicit instruction. The home
- * organization stays fixture-backed (`currentOrganization`; there's still
- * no wired "which orgs am I a direct member of" session in this app — see
- * `lib/api-client.ts`'s doc comment, same gap every other epic's real-API
- * wiring already carries). What's real now: the "Client organizations"
- * section below it is fetched live from `GET /api/agency/clients` (this
- * org's `active` agency_clients links) instead of the old two-entry
- * fixture list, and selecting one calls the real `POST /auth/select-org`
- * "acting as" flow (`data/agency/client.ts`'s `switchToOrg`). The Epic 0
- * session-wiring fix closed the gap this component used to flag in its own
- * doc comment: the org-scoped access token `switchToOrg` returns is now
- * stored via `setOrgScopedAccessToken` before this function returns, so
- * every subsequent `apiClient` call is already scoped to the client org by
- * the time the toast fires.
- */
 export function OrgSwitcher() {
-  const [selectedId, setSelectedId] = useState<string>(currentOrganization.id);
-  const [selectedName, setSelectedName] = useState<string>(currentOrganization.name);
+  const { org, loading } = useSession();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedName, setSelectedName] = useState<string | null>(null);
   const [clients, setClients] = useState<AgencyClientLink[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
+    if (!org) return;
     let cancelled = false;
     listAgencyClients()
       .then((links) => {
@@ -55,11 +41,12 @@ export function OrgSwitcher() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [org]);
 
   function handleSelectHome() {
-    setSelectedId(currentOrganization.id);
-    setSelectedName(currentOrganization.name);
+    if (!org) return;
+    setSelectedId(org.id);
+    setSelectedName(org.name);
   }
 
   async function handleSelectClient(link: AgencyClientLink) {
@@ -82,6 +69,13 @@ export function OrgSwitcher() {
     }
   }
 
+  if (loading) {
+    return <Skeleton className="h-8 w-36 rounded-md" />;
+  }
+
+  const displayName = selectedName ?? org?.name ?? "Organization";
+  const displayId = selectedId ?? org?.id ?? "";
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -92,16 +86,16 @@ export function OrgSwitcher() {
         )}
       >
         <span className="flex size-5 items-center justify-center rounded-[5px] bg-accent-muted text-accent text-[10px] font-semibold shrink-0">
-          {selectedName.slice(0, 1)}
+          {displayName.slice(0, 1)}
         </span>
-        <span className="truncate max-w-[140px]">{selectedName}</span>
+        <span className="truncate max-w-[140px]">{displayName}</span>
         <ChevronsUpDown size={13} className="text-subtle-foreground shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
         <DropdownMenuLabel>Your organization</DropdownMenuLabel>
         <DropdownMenuItem onSelect={handleSelectHome} className="justify-between">
-          <span className="truncate">{currentOrganization.name}</span>
-          {selectedId === currentOrganization.id && <Check size={14} className="text-accent shrink-0" />}
+          <span className="truncate">{org?.name ?? displayName}</span>
+          {displayId === (org?.id ?? "") && <Check size={14} className="text-accent shrink-0" />}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel>Client organizations</DropdownMenuLabel>
@@ -126,7 +120,7 @@ export function OrgSwitcher() {
             {switchingId === link.id ? (
               <Loader2 size={13} className="animate-spin text-subtle-foreground shrink-0" />
             ) : (
-              selectedId === link.clientOrgId && <Check size={14} className="text-accent shrink-0" />
+              displayId === link.clientOrgId && <Check size={14} className="text-accent shrink-0" />
             )}
           </DropdownMenuItem>
         ))}

@@ -122,7 +122,7 @@ export function hasStoredSession(): boolean {
   return getRefreshToken() !== null;
 }
 
-/** Clears both tokens. Safe to call even if nothing was ever set. */
+/** Clears both tokens and current org slug. Safe to call even if nothing was ever set. */
 export function clearSession(): void {
   setAccessToken(null);
   setRefreshToken(null);

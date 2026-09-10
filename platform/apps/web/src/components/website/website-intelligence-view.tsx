@@ -14,7 +14,7 @@ import { useCrawlJob } from "@/hooks/use-crawl-job";
 import { useAsyncData } from "@/lib/use-async-data";
 import { listCrawlJobs } from "@/data/website/client";
 import { useBrandProfile } from "@/hooks/use-brand-profile";
-import { currentOrganization } from "@/data/fixtures";
+import { useCurrentOrg } from "@/lib/session-context";
 import { formatDateTime } from "@/lib/format";
 
 const HISTORY_PAGE_SIZE = 10;
@@ -51,7 +51,8 @@ function OverviewSkeleton() {
  * fixture that would show the wrong domain for every real organization.
  */
 export function WebsiteIntelligenceView() {
-  const organizationId = currentOrganization.id;
+  const org = useCurrentOrg();
+  const organizationId = org?.id ?? "";
   const { profile, loading: profileLoading } = useBrandProfile(organizationId);
   const { state, starting, start, reload } = useCrawlJob(organizationId);
   const [viewingJobId, setViewingJobId] = useState<string | null>(null);

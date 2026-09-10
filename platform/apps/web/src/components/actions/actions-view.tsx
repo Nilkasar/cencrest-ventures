@@ -7,7 +7,7 @@ import { Button, Card, CardContent, EmptyState, Skeleton, Tabs, TabsContent, Tab
 import { PageHeader } from "@/components/patterns/page-header";
 import { ErrorPanel } from "@/components/patterns/error-panel";
 import { useAsyncData } from "@/lib/use-async-data";
-import { currentUser } from "@/data/fixtures";
+import { useSession } from "@/lib/session-context";
 import { agentRunIdsByPendingActionId, approveAction, executeAction, getActionsOverview, rollbackAction } from "@/data/actions/client";
 import type { ActionsOverview, ActionWithContext, PublishedContent } from "@/data/actions/types";
 import type { AgentPendingAction } from "@/data/agents/types";
@@ -56,6 +56,7 @@ async function loadActionsData(): Promise<ActionsData> {
  * source of truth.
  */
 export function ActionsView() {
+  const { org } = useSession();
   const { reload, ...state } = useAsyncData(loadActionsData, []);
   const { toast } = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -67,7 +68,8 @@ export function ActionsView() {
   // `billing-panel.tsx`/`integrations-panel.tsx` already establish for
   // their own owner/admin-only actions. The server's own 403 remains the
   // real enforcement if this hint is ever bypassed or stale.
-  const canPublish = currentUser.role === "owner" || currentUser.role === "admin";
+  const myRole = org?.role ?? "member";
+  const canPublish = myRole === "owner" || myRole === "admin";
 
   function rememberPublishedContent(actionId: string, publishedContent: PublishedContent | null) {
     if (!publishedContent) return;
@@ -140,7 +142,7 @@ export function ActionsView() {
 
       {state.status === "success" && !canPublish && (
         <p className="text-[12.5px] text-muted-foreground -mt-3 mb-5">
-          You&apos;re viewing Actions as {currentUser.role}. Only an organization owner or admin can approve, execute, or roll back — everyone else can still see what happened.
+          You&apos;re viewing Actions as {myRole}. Only an organization owner or admin can approve, execute, or roll back — everyone else can still see what happened.
         </p>
       )}
 

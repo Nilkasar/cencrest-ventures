@@ -21,7 +21,7 @@ import {
 import { ErrorPanel } from "@/components/patterns/error-panel";
 import { useAsyncData } from "@/lib/use-async-data";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { currentUser } from "@/data/fixtures";
+import { useSession } from "@/lib/session-context";
 import {
   BillingForbiddenError,
   InvalidPlanTransitionError,
@@ -95,11 +95,12 @@ async function loadBillingData() {
 }
 
 export function BillingPanel() {
+  const { org } = useSession();
   const { reload, ...state } = useAsyncData(loadBillingData, []);
   const [busy, setBusy] = useState<PlanTier | "cancel" | null>(null);
   const [actionError, setActionError] = useState<string | undefined>(undefined);
 
-  const isOwner = currentUser.role === "owner";
+  const isOwner = (org?.role ?? "member") === "owner";
 
   async function handleChangePlan(currentSlug: PlanTier, targetSlug: PlanTier) {
     if (!isOwner || targetSlug === currentSlug) return;
@@ -158,7 +159,7 @@ export function BillingPanel() {
     <div className="flex flex-col gap-6">
       {!isOwner && (
         <p className="text-[12.5px] text-subtle-foreground">
-          You&apos;re viewing billing as {currentUser.role}. Only the organization owner can change plans or cancel.
+          You&apos;re viewing billing as {org?.role ?? "member"}. Only the organization owner can change plans or cancel.
         </p>
       )}
 

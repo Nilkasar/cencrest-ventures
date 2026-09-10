@@ -72,6 +72,7 @@ async function refreshAccessToken(): Promise<boolean> {
 
     const data = (await response.json()) as RefreshResponse;
     setSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
+
     return true;
   } catch {
     return false;

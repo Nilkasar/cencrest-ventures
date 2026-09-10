@@ -2,6 +2,18 @@
 
 > **2026-09-04:** Project Identity, Tech Stack, Design System, Sections and Engagement Pricing rewritten to match the live site on disk. The site was rebranded from "Cencrest" (single-page, $24k/$65k/$12k-mo pricing) to **BeBest** on 2026-08-11 — a full multi-page site — but CLAUDE.md was never updated and the rebrand was never logged in session.md. This entry closes that gap. The repo/Vercel project name and folder are still `cencrest-ventures` — only the marketing brand shown on the site changed.
 
+## Feature Test Tracker Rule
+
+**Every new feature or sub-feature built — on the marketing site or in the platform — must be logged in `/Users/nilesh/Documents/GitHub/Cencrest-ventures/feature-test-tracker.xlsx` before the task is considered done.** Add a row with: Phase, Feature, Sub-Feature, Status (PASS/FAIL/PARTIAL), HTTP code, notes, and whether a fix is required. Run an actual test (browser automation or curl) — do not mark PASS without testing. If a feature is broken, mark FAIL, fix it, then update the row to PASS with "Fixed?" = ✅.
+
+The tracker covers the full customer journey in 6 phases:
+1. Marketing site (bebestwithai.com) — pages, CTAs, forms
+2. Snapshot flow (/snapshot form → API → report page)
+3. Auth (magic link request → verify → session)
+4. Onboarding (/onboarding/*)
+5. Dashboard pages (/overview, /ai-visibility, /competitors, etc.)
+6. API routes (spot-checks of key endpoints)
+
 ## Commit, Push & Deploy Rule
 
 **After every task that modifies files:** commit all changes with a descriptive message, push to the remote, then run `vercel --prod` to deploy. Do this automatically — do not wait to be asked. If git is not initialized or there is no remote, initialize and set one up before proceeding.

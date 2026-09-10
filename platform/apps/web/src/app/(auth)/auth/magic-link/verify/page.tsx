@@ -46,19 +46,25 @@ interface SelectOrgResponse {
  * organization, and the org switcher is how a multi-org user changes it.
  * Never fatal — a user with no organizations still reaches the app, where
  * onboarding can create one.
+ *
+ * Returns true when an org was selected, which is also the signal for where
+ * to send the user next: a member already has a workspace and belongs in
+ * the app, only a user with none needs onboarding.
  */
-async function selectInitialOrg(): Promise<void> {
+async function selectInitialOrg(): Promise<boolean> {
   try {
     const me = await apiClient.get<MeResponse>("/auth/me");
     const first = me.organizations[0];
-    if (!first) return;
+    if (!first) return false;
 
     const selection = await apiClient.post<SelectOrgResponse>("/auth/select-org", {
       slug: first.slug,
     });
     setOrgScopedAccessToken(selection.accessToken, selection.organization.slug);
+    return true;
   } catch {
     // Leave the session as-is; the user is signed in either way.
+    return false;
   }
 }
 
@@ -103,9 +109,9 @@ function VerifyContent() {
       .post<VerifyResponse>("/auth/magic-link/verify", { token })
       .then(async (data) => {
         setSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
-        await selectInitialOrg();
+        const hasOrg = await selectInitialOrg();
         setStatus({ kind: "success" });
-        router.replace("/overview");
+        router.replace(hasOrg ? "/overview" : "/onboarding");
       })
       .catch((err: unknown) => {
         setStatus({ kind: "error", message: messageFor(err) });
