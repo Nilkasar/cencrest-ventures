@@ -16,12 +16,56 @@ import Link from "next/link";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@bebest/ui";
 import { apiClient, ApiError } from "@/lib/api-client";
-import { setCurrentOrgSlug, setOrgScopedAccessToken, setSession } from "@/lib/auth-state";
+import { setOrgScopedAccessToken, setSession } from "@/lib/auth-state";
 
 interface VerifyResponse {
   accessToken: string;
   refreshToken: string;
   user: { id: string; email: string; name: string };
+}
+
+interface MeResponse {
+  organizations: { id: string; name: string; slug: string; role: string }[];
+}
+
+interface SelectOrgResponse {
+  accessToken: string;
+  organization: { id: string; name: string; slug: string; role: string };
+}
+
+/**
+ * A freshly verified access token carries NO org claim (`auth.ts` mints it
+ * with `org: null` and expects the client to choose one). Nothing did — so
+ * every screen behind an org-scoped route answered 409 "No organization
+ * selected" immediately after a successful login. This selects one before
+ * handing the user to the app, and persists the choice so a later token
+ * refresh can re-attach it.
+ *
+ * Picking the first membership is the same interim single-org assumption
+ * the Settings > Team panel already documents: correct for a user in one
+ * organization, and the org switcher is how a multi-org user changes it.
+ * Never fatal — a user with no organizations still reaches the app, where
+ * onboarding can create one.
+ *
+ * Returns true when an org was selected, which is also the signal for where
+ * to send the user next: a member already has a workspace and belongs in
+ * the app, only a user with none needs onboarding.
+ */
+async function selectInitialOrg(): Promise<boolean> {
+  try {
+    const me = await apiClient.get<MeResponse>("/auth/me");
+    const first = me.organizations[0];
+    if (!first) return false;
+
+    const selection = await apiClient.post<SelectOrgResponse>("/auth/select-org", {
+      slug: first.slug,
+    });
+    setOrgScopedAccessToken(selection.accessToken, selection.organization.slug);
+    return true;
+  } catch {
+    // Leave the session as-is; the user is signed in either way.
+    return false;
+  }
 }
 
 type Status = { kind: "verifying" } | { kind: "success" } | { kind: "error"; message: string };
@@ -65,27 +109,11 @@ function VerifyContent() {
       .post<VerifyResponse>("/auth/magic-link/verify", { token })
       .then(async (data) => {
         setSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
-        try {
-          const orgs = await apiClient.get<Array<{ id: string; slug: string; name: string }>>("/orgs");
-          if (orgs.length > 0) {
-            const first = orgs[0]!;
-            const orgData = await apiClient.post<{ accessToken: string }>("/auth/select-org", { slug: first.slug });
-            setCurrentOrgSlug(first.slug);
-            setOrgScopedAccessToken(orgData.accessToken);
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setStatus({ kind: "success" });
-            router.replace("/overview");
-            return;
-          }
-        } catch {
-          // New user with no org yet → fall through to onboarding
-        }
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+        const hasOrg = await selectInitialOrg();
         setStatus({ kind: "success" });
-        router.replace("/onboarding");
+        router.replace(hasOrg ? "/overview" : "/onboarding");
       })
       .catch((err: unknown) => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setStatus({ kind: "error", message: messageFor(err) });
       });
   }, [token, router]);

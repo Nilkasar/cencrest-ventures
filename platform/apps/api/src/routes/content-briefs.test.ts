@@ -151,6 +151,9 @@ const db = {
   audit_events: { create: vi.fn().mockResolvedValue({}) },
 };
 
+// Spreading `db` already exposes `audit_events`, which writeAuditEvent now
+// needs on the transaction client (org-attributed writes run inside
+// withOrgContext — see lib/audit.ts).
 const tx = { ...db };
 
 vi.mock('@bebest/database', () => ({

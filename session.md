@@ -1,6 +1,24 @@
 # Session Log — Cencrest Ventures
 
-## ▶ RESUME HERE (last updated 2026-09-04 — merged to `main`)
+## ▶ RESUME HERE (last updated 2026-09-09)
+
+**The platform now runs against a real Postgres.** A dev Neon database is wired up (`packages/database/.env`, `apps/api/.env` — both gitignored), the whole schema is applied (128 tables, all RLS/CHECK/index SQL, zero failures), and the API + web app boot and talk to it. See the 2026-09-08/09 session entry at the bottom of this file for the full account.
+
+**Four blockers that unit tests structurally could not catch were found and fixed** the first time real HTTP hit a real database: `PATCH /deals/:id` 500'd on most edits (camelCase spread into Prisma), every login 500'd (`'unknown'` written to an `INET` column), the audit trail silently dropped login/logout/webhook rows (`'unknown'` into a `UUID NOT NULL`), and the app answered 409 on every org-scoped route right after a successful sign-in (nothing ever called `/select-org`, and `/auth/refresh` lost the org too).
+
+**Run the smoke test before believing anything about the CRM**: `pnpm --filter @bebest/api run smoke:crm` (40 real HTTP checks; needs the API running and the dev seed applied). It is what found all four.
+
+**Two corrections to earlier docs**: `prisma migrate deploy` creates nothing in this repo — use `pnpm --filter @bebest/database run db:apply`. And `@prisma/adapter-pg` must match `@prisma/client`'s major or its errors become unreadable.
+
+**A second pass then took the CRM to a 10/10 code bar** (see the 2026-09-09 continuation entry): 21 more bugs found by adversarial probing against the live database — 16 of them 500s on ordinary input (validation that disagreed with its own column widths, unvalidated foreign keys, malformed ids), plus a double-conversion race, a search that treated `%` as a wildcard over the whole table, and data that could contradict itself.
+
+**Two findings there matter beyond the CRM.** First: **tenant isolation was silently off** for this project's entire history — the policies were correct but the connection role carried `BYPASSRLS`. Second, and worse: every RLS policy cast `current_setting(...)::uuid` without `NULLIF`, and because `set_config(..., true)` reverts to the *empty string* at COMMIT, the policy would have **raised an error rather than filtered** on any pooled connection — meaning the API would have returned 500 for everything the moment anyone deployed with a correct role. Both fixed (migration `0020`, plus a boot-time `assertRlsEnforced` that refuses to start in production if isolation isn't real).
+
+**Still open**: the UI has never been opened in a browser (Chrome extension declined — worth an eyeball); the 79 tenant-isolation integration tests are still skipped but a real database and a correct role now exist to run them against; `data/fixtures.ts` still supplies `currentUser`/`currentOrganization` in 15 files; external integrations and the deployment target are deliberately untouched.
+
+---
+
+## Previous resume point (2026-09-04 — merged to `main`)
 
 **The platform rebuild is complete AND merged to `main`.** `rebuild/platform` was fast-forward merged into `main` (clean — `main` had not diverged since the branch point, zero conflicts) and both are pushed to `origin`. `platform/` (the pnpm+Turborepo monorepo, 21/21 epics VERIFIED) is now part of `main`'s own history, alongside the rewritten root marketing site (Epic 20) and root `CLAUDE.md`. The old `api/`/`web-app/` implementation is still present in the tree as untouched reference material — nothing has deleted it.
 
@@ -519,3 +537,201 @@ Flagged both real gaps to the user rather than deciding unilaterally; user appro
 - **Overview dashboard**: real dashboard replacing the stub, reusing — not reinventing — the real data-layer functions from `ai-visibility`, `opportunities`, `actions`, `recommendations`. Handles a genuine brand-new-org empty state (no brand profile yet) using the same `useBrandProfile` gate `seo-intelligence-view.tsx` already established. One honest, verified-not-fabricated gap: the SEO Health tile isn't wired to a fetch because no `GET` route for persisted `seo_analyses` results exists at all — only a mutating `POST /analyze` — confirmed directly in `seo.ts` before accepting the claim; auto-triggering that POST on every dashboard load was correctly rejected as an unacceptable side effect.
 
 Spot-checked both directly before trusting: confirmed `team/client.ts`'s real `apiClient` calls, confirmed the `currentOrganization.id`/fixtures pattern in the new `overview-view.tsx` is identical to the already-VERIFIED `seo-intelligence-view.tsx`'s own established convention (not a new bug), confirmed the SEO Health gap is real by reading `seo.ts` myself. Ran the combined `typecheck`/`lint`/`build` myself after both landed — all three clean, `/overview` and `/settings` both build.
+
+---
+
+## Session: 2026-09-08/09 — CRM audit against a REAL database (first ever), four production blockers fixed, backend + frontend rebuilt
+
+### Context
+
+User asked how good the CRM platform actually is — "audit each thing, backend and frontend, I want each functionality to be precisely working end to end, with backend APIs refined to load faster and the frontend top tier" — and supplied a Neon Postgres for dev use (the second of the two connection strings in that message — the first was explicitly withdrawn and was never touched; neither string is recorded here, they live only in the gitignored `.env` files). That ends the "no database has ever been connected" era of this build.
+
+### The database is real now
+
+`packages/database/.env` and `apps/api/.env` (both gitignored) hold the dev `DATABASE_URL`, a generated RS256 keypair, and `CRM_INTERNAL_ORG_ID`. The full schema plus every migration folder's SQL was applied: **128 tables, 39 SQL files, zero failures on the first run.**
+
+Two things blocked getting there, both fixed properly rather than worked around:
+
+1. **Prisma's engine cannot reach the database on this network.** It resolves the host, picks the AAAA record and does not fall back to IPv4; this machine has no working IPv6 route (`Test-NetConnection` confirms: all three IPv6 addresses fail, IPv4 succeeds). Every `prisma` command and every Prisma Client query returned a bare `P1001`. Fixed by making `@prisma/adapter-pg` (node-postgres, which does Happy Eyeballs) the default transport in `packages/database/src/client.ts`, with `PRISMA_DRIVER=engine` to opt out. The pool is now sized and kept warm explicitly (`keepAlive`, 60s idle) — a fresh connection to this Postgres measured **2.1s**, so a short idle timeout made users pay that repeatedly.
+   - Note for future sessions: `@prisma/adapter-pg` must match `@prisma/client`'s major. `^7.10.0` installed against client 6.19.3 produced a nonsense `unknown variant InvalidInputValue` error that **masked the real Postgres error underneath** for half an hour. Pinned to `^6.19.3`.
+2. **`prisma migrate deploy` builds nothing.** The migration folders contain hand-written `checks.sql`/`indexes.sql`/`rls.sql` and no `migration.sql` — the only file Prisma's migrate command reads. GO_LIVE.md §1.1's instructions would have created zero tables in production. Replaced with a real, committed runner: `packages/database/scripts/apply-sql.mjs` (`pnpm --filter @bebest/database run db:apply`) — renders DDL from `schema.prisma` offline, applies it, then every folder in order (ddl → checks → indexes → rls), recording each file with a checksum in a `_bebest_applied_sql` ledger so it is re-runnable and a new migration folder applies on its own. `--dry-run` and `--baseline` included. GO_LIVE.md corrected.
+
+### Four production blockers, all invisible to 1,000 unit tests
+
+The unit suite mocks Prisma, so nothing the database itself rejects can ever surface there. A real end-to-end smoke run found these within minutes:
+
+1. **`PATCH /deals/:id` returned 500 on almost any edit.** The handler spread the parsed camelCase body straight into Prisma's `data`, so `valueCents`, `probability`, `expectedCloseDate` and `lostReason` hit columns that don't exist ("Unknown argument valueCents"). Only `title`/`currency` happened to work. Every field is now mapped explicitly, with a regression test asserting the snake_case payload and that no camelCase key survives.
+2. **Every login returned 500.** `clientIp()` fell back to the literal string `'unknown'`, written into `sessions.ip_address` — an `INET` column. Postgres: `22P02 invalid input syntax for type inet: "unknown"`. Any caller not behind a proxy that sets `X-Forwarded-For` (i.e. every local and direct connection) could not sign in at all. Also latent: `X-Forwarded-For` is a *list*, so even a present header breaks `inet` past one hop. New `lib/client-ip.ts` returns `null` when unknown, takes the first hop, and validates the shape; 8 tests. `snapshot.ts`'s near-duplicate helper now shares it.
+3. **The audit trail had silent holes.** `audit_events.entity_id` was `UUID NOT NULL` and the middleware filled the gap with `'unknown'` for routes with no `:id`. Because `writeAuditEvent` deliberately swallows failures (an audit write must never break the action it records), login, logout and billing-webhook events wrote **no row at all** while the request succeeded normally. The column is now nullable (migration `0019_audit_entity_id_nullable`), and `resolveEntityId` returns a real id, else the acting user for user-entity events, else `null` — never a placeholder. Verified: `auth.login` now appears in `audit_events`.
+4. **The app was unusable immediately after login.** A freshly verified access token carries `org: null` by design (the client is meant to call `/select-org`) — **and nothing ever did**. Every org-scoped route, all of CRM and every other epic's, answered `409 No organization selected` right after a successful sign-in. `/auth/refresh` had the same hole, so a page reload dropped the user out of their own organization mid-session. Fixed at both ends: `/auth/refresh` accepts an optional `orgSlug` and re-derives access from `memberships` (then agency links) before putting it on the token — a request, not a grant, with a test proving an inaccessible slug yields an org-less token; the web client persists the selected slug and sends it on refresh; the magic-link verify page selects an org after login. Verified end to end: login → 409 → select → 200 → refresh → still 200 → inaccessible slug → org-less.
+
+### Backend performance — measured, not guessed
+
+Round-trip time to this Neon instance is **254ms**, and an RLS-scoped operation costs 4 of them (BEGIN, `set_config`, query, COMMIT ≈ 1.0s). Measured the `$transaction` batch form too: identical — Prisma does not pipeline through the driver adapter. So the ceiling is set by round-trip *count*, and that is what was cut:
+
+- `requireAuth` wrapped its `users` lookup in `withUserContext` — but `users` has no RLS (verified against the live database's `pg_class`). 4 round trips → 1, on **every authenticated request**.
+- `resolveOrgContext` now issues the org read and the membership transaction together instead of serially.
+- Every CRM read-then-write (leads PATCH, deals PATCH, deals stage, lead convert, activity create) ran two `withOrgContext` calls; now one — halving the trips and closing a real race where the row could be soft-deleted, or a lead double-converted, between the check and the write.
+- Account detail merged three database trips into one overlapped pair.
+
+Result: median CRM request **4.38s → 3.36s**, p95 **6.71s → 4.42s**. The remaining time is ~12 round trips × 254ms — the architectural floor for per-transaction RLS at this distance. **The real lever left is co-location**: deploy `apps/api` in the database's region and the same code drops to tens of milliseconds. That is the deployment decision in GO_LIVE.md §5, not a code change.
+
+### Frontend — the bigger win was request count, not milliseconds
+
+Every CRM screen was making 3–4 *serialized* requests before it could draw a row, because names and links were resolved client-side:
+
+- Leads/deals/activities responses now carry the resolved person (`assignedToUser`, `owner`, `actor`) — one extra `users` query server-side replaces `GET /orgs` → `GET /orgs/:slug/members` on the client. New `GET /api/crm/users` answers the staff-picker question directly instead of the client guessing which org is the internal one.
+- Deals now join their lead/account (`deal.linkedTo`), so the board no longer fetches the entire leads list *and* the entire accounts list just to label cards: **4 requests → 2**.
+- The accounts list carries the converting lead's name/email, dropping a second full leads fetch.
+- `convertLead` was 4 serialized calls; the convert response now returns the updated lead and the new org's slug, so it is 2.
+- Search and filtering moved server-side (`q` on leads/deals/accounts, `leadId`/`accountOrganizationId` on deals). The old client-side filter searched only the page it happened to have — a search that misses matches. Real pagination added to leads and accounts; the leads header counts now come from a `groupBy` in the same transaction, so they describe the whole filtered set rather than the current page.
+
+### Frontend quality
+
+The design system was already strong (real token layers, dark/light with a toggle, Fraunces/Inter/JetBrains Mono, lucide icons, shimmer skeletons, `prefers-reduced-motion` honoured globally). What was missing was interaction feel:
+
+- `useAsyncData` reset to `loading` on every dependency change, so each keystroke of a debounced search and each page turn tore the whole table down to skeletons — seconds of blank layout on a 3s link. It now keeps the previous result and raises `isRefreshing`; skeletons appear only when there is genuinely nothing to show. It returns the same discriminated union, so all 34 call sites were unaffected.
+- New `RefreshOverlay` in `@bebest/ui` for that state — a restrained fade, `aria-busy`, motion-reduce aware.
+- Deal drag-and-drop: the dragged card now lifts and fades, the target column highlights, and the drop is **optimistic** — the card moves immediately and reconciles against the server, with a toast and a revert on failure. Previously it snapped back for the whole round trip and then jumped.
+
+### Verification
+
+- Full suite: **1021 passed, 0 failed** (up from 997 — 24 new tests covering the deals mapping regression, client-IP, audit entity-id resolution, refresh org re-attachment, the leads search/counts, and the new roster route).
+- `typecheck` + `lint` clean across `@bebest/database`, `@bebest/api`, `@bebest/ui`, `@bebest/web`; `@bebest/web build` succeeds.
+- **`pnpm --filter @bebest/api run smoke:crm`** — committed at `apps/api/scripts/crm-smoke.ts`, 40 real HTTP checks against the running API and the real database. This is the tool that found the blockers; it is now in the go-live checklist.
+
+### Not done / open
+
+- The UI was never opened in a browser this session — the Chrome extension was declined, so every frontend claim above rests on typecheck, lint, a successful production build, and the API contracts the smoke test verifies. Worth a human eyeball at `http://localhost:3000/crm/leads`.
+- `data/fixtures.ts` still backs `currentUser`/`currentOrganization` in 15 files (GO_LIVE §4) — untouched, still a real pre-launch decision to make.
+- The 79 tenant-isolation integration tests are still skipped. They now *could* run — there is a real database — and remain the single largest unproven claim in the build.
+
+---
+
+## Session: 2026-09-09 (cont.) — CRM hardened to a 10/10 code bar: 21 more bugs, one of them silently disabling tenant isolation
+
+User asked for the CRM to be right at the code level — "find code bugs, resolve them; external integrations and deployment stay pending" — so this pass was adversarial edge-case hunting against the live database, not feature work.
+
+### How the bugs were found
+
+Two throwaway probe scripts, each asserting what a correct API *should* answer and printing BUG when it didn't. Round one covered column widths, numeric range, foreign keys, identifiers, dates and payloads. Round two covered what a single sequential request can never reveal: concurrency, ordering stability, tenant isolation, and search semantics. Round one found 16, round two found 5 more. Everything worth keeping is now folded into `pnpm --filter @bebest/api run smoke:crm` (59 checks, up from 40).
+
+### Class 1 — validation that disagreed with its own columns (7 x 500)
+
+Every one of these was a plain 500 on ordinary input, because Zod accepted a value Postgres then refused:
+
+- `leads.email` is VARCHAR(255); the schema checked format but not length.
+- `leads.website` is VARCHAR(500) while the field allowed 2048.
+- `deals.value_cents` is a 32-bit INTEGER — an unbounded `.min(0)` let a mistyped amount overflow (`22003`). One extra zero on a $2M deal did it.
+- `notes` / `lost_reason` / activity `body` are TEXT with no bound at all, so a single request could store an unbounded blob.
+
+Fixed centrally in `lib/crm-validation.ts`, where each limit is named beside the column it mirrors. `.strict()` added to every CRM schema so an unknown field is rejected rather than silently dropped.
+
+### Class 2 — unvalidated foreign keys (6 x 500)
+
+A UUID that parses is not a UUID that exists. `assignedTo`, `ownerId`, `accountOrganizationId` and `leadId` all reached Postgres unchecked and came back as foreign-key violations — a 500 for what is really "that teammate/record isn't there". Now checked inside the same transaction, answering 422. `assertInternalStaff` is deliberately stricter than "this user row exists": a CRM assignee or deal owner must be a member of the internal ops workspace, so a lead cannot be assigned to an arbitrary customer's user account.
+
+### Class 3 — malformed identifiers (3 x 500)
+
+`GET /leads/not-a-uuid` reached `findFirst({ where: { id } })` and Postgres answered `22P02`. Every `:id` route in the CRM did this. `lib/http-params.ts`'s `uuidParam` now answers 404 — indistinguishable from "no such row", which is also the honest answer.
+
+### Class 4 — data that contradicted itself
+
+- `currency` accepted any three characters: `ZZZ` was stored, and `usd` and `USD` coexisted as two spellings of one currency — enough to make any sum across deals wrong. Now normalised and checked against the currencies this product actually transacts in.
+- A deal moved out of `lost` kept its `lost_reason`, so a **won** deal read "lost because: budget" on the detail screen, permanently — nothing else ever writes that column.
+- An organization name of pure punctuation slugified to `''`, creating an org no `:slug` route could address and which collided with the next such name on the unique index. Rejected at validation now, for `POST /orgs` as well as lead conversion.
+
+### Class 5 — the double-conversion race
+
+Two simultaneous conversions of one lead BOTH saw `converted_organization_id` as null under READ COMMITTED, and both created an organization: two accounts for one lead, the lead pointing at whichever committed last, the other orphaned. Reproduced reliably. The handler now takes a `FOR UPDATE` row lock before deciding, so the second request waits, re-reads, and correctly answers 409. Verified: `200/409`, exactly one organization.
+
+### Class 6 — search that was interpreted rather than searched
+
+Prisma renders `contains` as SQL `LIKE` and does not escape LIKE's own metacharacters. A search for `%` matched **every row in the table**; "50% discount" silently matched things it shouldn't. `escapeLike` fixes it — `%` now matches only rows containing a literal `%` (3 of 47, not 47 of 47).
+
+### The serious one — tenant isolation was off, and nothing could tell
+
+A query deliberately scoped to the WRONG organization returned every row. RLS was enabled and FORCEd on all 107 tenant tables and the policies were correct — but the connection role (`neondb_owner`, a managed provider's default) carries `BYPASSRLS`, which trumps everything. Every request in this project's history had been running with tenant isolation silently disabled.
+
+Two fixes, because it needs both:
+
+1. **`packages/database/src/rls-check.ts`** — the API asks Postgres at boot whether isolation is real: is the role superuser/BYPASSRLS, does it own tenant tables, and empirically, does a query scoped to an organization that owns nothing still return rows. In production that is fatal; elsewhere a loud warning. `packages/database/scripts/create-app-role.sql` creates the role that passes it.
+2. **Migration `0020_rls_null_safe_settings`** — and this is the one that would have bitten hardest. Every policy read `current_setting('app.current_org', TRUE)::uuid`. The `TRUE` was meant to yield NULL when unset, failing closed. But `set_config(..., true)` is transaction-local: at COMMIT the value reverts to the **empty string**, not to undefined. From then on, on that pooled connection, the policy evaluated `''::uuid` — which is not NULL and not false, it is an **error**. Any read of `memberships` inside `withUserContext` therefore threw `22P02` as soon as that connection had previously served an org-scoped request. `tenant-context.ts` does exactly that on every authenticated request, so the API returned 500 for everything.
+
+   This was invisible while BYPASSRLS was on, because policies that are never evaluated cannot throw. It would have appeared the moment someone deployed *correctly*. Fixed generically across all 107 policies with `NULLIF(current_setting(...), '')::uuid`, restoring the fail-closed behaviour the original comment describes.
+
+The dev database now runs the API as `bebest_app` (no BYPASSRLS): a foreign org context sees 0 leads, the correct one sees all of them, and boot logs `rls_enforced`.
+
+### Also fixed
+
+Prisma's interactive-transaction defaults (`maxWait: 2000ms`, `timeout: 5000ms`) are sized for a database on the same network. Here one scoped operation is four round trips (~1s) and a cold connection ~2s, so the defaults expired mid-transaction and raised P2028 — a 500 on a request doing nothing wrong. Hit while writing the probe itself. Now proportionate and env-tunable.
+
+### Verification
+
+- **1056 unit tests pass** (up from 1021 — 35 new, covering every class above); typecheck and lint clean across all four packages; `@bebest/web` builds.
+- **Both probes: 0 findings.** Two round-two assertions turned out to be wrong rather than the product — the `%` search legitimately matches rows containing a literal `%`, and the probe's own connection is deliberately the admin role — corrected in the probe rather than "fixed" in the product.
+- **`smoke:crm`: 59/59** against the live database, now including the race, the lost-reason contradiction, the escaped search, and every 500-class rejection.
+
+### Still open (unchanged, and out of scope by request)
+
+External integrations (Resend, Stripe, Sentry, pg-boss, a real SEO provider) and the deployment target. Nothing in this pass touched Vercel or any hosting configuration.
+
+---
+
+## Session: 2026-09-09/10 — the same treatment beyond the CRM: platform-wide 500s, and Epic 18's client half was dead
+
+User: "now do the same for the rest of the epics." The CRM pass was per-route hand-probing; that does not scale to 70 route files, and it turned out not to be necessary — most of what the CRM pass found was systemic, so this pass inventoried the bug *classes* across every route and fixed them where they live.
+
+### Inventory first
+
+- **60 sites** across 26 route files passed a raw path parameter straight into a Prisma `where` (`id` ×47, `queryId` ×4, `keywordId` ×4, `competitorId` ×3, `userId` ×2). Same 500-on-malformed-id bug as the CRM, everywhere.
+- **0 unescaped `contains:` filters** outside the CRM — the LIKE bug really was CRM-only.
+- **4 emails** without a length bound; **3 unscoped writes** to RLS-protected tables (down from an initial naive count of 33 once `tx.` uses were excluded).
+
+### One central fix for a whole class
+
+Rather than editing 60 call sites, `lib/db-errors.ts` maps the SQLSTATEs that mean "the request was malformed" onto the answer the caller deserves, in `app.onError`:
+
+| SQLSTATE | Meaning | Was | Now |
+|---|---|---|---|
+| 22P02 | invalid text for uuid | 500 | 404 |
+| 22001 | value too long for column | 500 | 422 |
+| 22003 | numeric out of range | 500 | 422 |
+| 23505 | unique violation | 500 | 409 |
+| 23503 | foreign key violation | 500 | 422 |
+| 23514 | CHECK violation | 500 | 422 |
+
+Deliberately narrow — an RLS refusal (42501), a connection failure or an ordinary bug still reaches the 500 handler untouched, and there is a test asserting exactly that. Verified across **28 non-CRM `:id` routes**: every one now answers 404 for `not-a-uuid`; before, none of those files validated the id at all, so all 28 were 500s. This also covers routes nobody has written yet.
+
+### Epic 18: the client half could never run
+
+The bigger find. `agency_clients` has RLS keyed on `agency_org_id` only. Every client-side path — see incoming invitations, accept one, revoke an agency's access — was written against the un-scoped `db` client with an explicit `client_org_id = ...` WHERE, documented as deliberate and citing `routes/orgs.ts`'s invitation-accept flow as precedent.
+
+**The precedent does not transfer.** `invitations` has no RLS at all, which is why it works there. `agency_clients` does, and the un-scoped client is not exempt from a policy — it is a session with no `app.current_org` set, which under that policy matches nothing. So under any correct role:
+
+- `GET /agency/clients/incoming` → always empty
+- `POST /agency/clients/:id/accept` → always 404
+- `POST /agency/clients/:id/revoke` (client side) → always 404
+
+The client could never accept an agency invitation, and could never revoke an agency's access to its own data — the case Epic 18's own DoD calls its critical path. It worked only while the role carried BYPASSRLS.
+
+Fixed by migration `0022`: the policy now names **both parties** to the link. That is not relaxing RLS (the epic brief forbids that) but completing it — the previous arrangement left the client side to an application-level WHERE with no database backing whatsoever. The client-side handlers now go through `withOrgContext` like everything else, and the explicit `client_org_id === caller's org` checks remain as defense in depth. The file's header comment, which documented the false premise, was rewritten.
+
+Verified end to end with a user belonging to the agency org *only* (a user in both orgs resolves via direct membership and never exercises the agency path — the first version of this probe made exactly that mistake and produced a false "revocation doesn't bite" finding): invite → client sees it → accepts → agency can act as the client → client revokes → **the very next request is 403** → an unrelated org sees nothing and cannot accept. 0 findings.
+
+### The audit trail had stopped completely
+
+`audit_events` has RLS, and `writeAuditEvent` wrote through the un-scoped client — refused with `42501 new row violates row-level security policy`. Because that function deliberately swallows its own failures so an audit write can never break the action it records, the result was silence: **zero audit rows written from the moment the API switched off the BYPASSRLS role**, while logins, conversions and deal stage changes carried on succeeding.
+
+`lib/audit.ts`'s own header had predicted this and deferred it "until integration tests exist against a real Postgres instance". They exist now, and the deferral was not harmless.
+
+Fixed in two halves: migration `0021` splits the policy — reads stay tenant-scoped, appends accept a row that either names no organization or names the caller's; and `writeAuditEvent` runs org-attributed writes inside `withOrgContext`. No UPDATE or DELETE policy exists, so with RLS on, an audit row cannot be altered or removed at all — which is what a tamper-evident log wants. Confirmed live: rows flowing again, including the correct `failure` row for the losing side of a concurrent conversion.
+
+### Verification
+
+- **1068 tests pass** (up from 1056), typecheck and lint clean. 25 test files needed their mocked transaction client to expose `audit_events` — a real consequence of the fix, not a workaround.
+- `smoke:crm` **59/59**; the malformed-id sweep **28/28**; the Epic 18 lifecycle **0 findings**.
+
+### Still open
+
+Per-epic *business-logic* review beyond these classes — the equivalent of the CRM's double-conversion race and stale-lost-reason contradiction — has been done for Epic 18 only. Epics 2–17 have had their systemic 500 classes fixed and their RLS corrected, but not yet a line-by-line semantic read. External integrations and deployment remain untouched by request.

@@ -11,7 +11,9 @@ const db = {
   audit_events: { create: vi.fn() },
 };
 
-const tx = { notifications: db.notifications };
+// writeAuditEvent runs org-attributed writes inside withOrgContext now
+// (see lib/audit.ts), so the transaction client exposes audit_events.
+const tx = { notifications: db.notifications, audit_events: db.audit_events };
 
 vi.mock('@bebest/database', () => ({
   db,

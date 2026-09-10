@@ -16,7 +16,7 @@ import {
 } from "@bebest/ui";
 import { listAgencyClients, switchToOrg } from "@/data/agency/client";
 import type { AgencyClientLink } from "@/data/agency/types";
-import { setCurrentOrgSlug, setOrgScopedAccessToken } from "@/lib/auth-state";
+import { setOrgScopedAccessToken } from "@/lib/auth-state";
 import { useSession } from "@/lib/session-context";
 
 export function OrgSwitcher() {
@@ -27,14 +27,6 @@ export function OrgSwitcher() {
   const [loadError, setLoadError] = useState(false);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
   const { toast } = useToast();
-
-  // Sync from session when org loads
-  useEffect(() => {
-    if (org && !selectedId) {
-      setSelectedId(org.id);
-      setSelectedName(org.name);
-    }
-  }, [org, selectedId]);
 
   useEffect(() => {
     if (!org) return;
@@ -62,8 +54,7 @@ export function OrgSwitcher() {
     setSwitchingId(link.id);
     try {
       const selection = await switchToOrg(link.clientOrgSlug);
-      setOrgScopedAccessToken(selection.accessToken);
-      setCurrentOrgSlug(link.clientOrgSlug);
+      setOrgScopedAccessToken(selection.accessToken, link.clientOrgSlug);
       setSelectedId(link.clientOrgId);
       setSelectedName(selection.organization.name);
       toast({ title: `Now acting as ${selection.organization.name}`, variant: "success" });

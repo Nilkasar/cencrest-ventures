@@ -105,3 +105,5 @@ export {
   type notification_type,
   type notif_channel,
 } from './client.js';
+
+export { assertRlsEnforced, checkRlsEnforcement, type RlsStatus } from './rls-check.js';

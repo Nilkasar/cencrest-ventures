@@ -11,6 +11,7 @@ import leads from './routes/leads.js';
 import deals from './routes/deals.js';
 import activities from './routes/activities.js';
 import accounts from './routes/accounts.js';
+import crmUsers from './routes/crm-users.js';
 import brands from './routes/brands.js';
 import competitors from './routes/competitors.js';
 import brandEntities from './routes/brand-entities.js';
@@ -53,6 +54,7 @@ import whiteLabel from './routes/white-label.js';
 import integrations from './routes/integrations.js';
 import { ConsoleEmailSender } from './lib/email.js';
 import { getDefaultErrorTracker } from './lib/observability/default-error-tracker.js';
+import { clientFaultResponse } from './lib/db-errors.js';
 import type { AppEnv } from './types/context.js';
 
 const app = new Hono<AppEnv>();
@@ -123,6 +125,7 @@ app.route('/api/leads', leads);
 app.route('/api/deals', deals);
 app.route('/api/activities', activities);
 app.route('/api/accounts', accounts);
+app.route('/api/crm/users', crmUsers);
 
 // Epic 2 — Brand Intelligence. Single brand per org (MULTI-BRAND: see
 // Epic 18); every child resource hangs off "the" org's brand, resolved via
@@ -333,6 +336,16 @@ app.notFound((c) => c.json({ error: 'Not found' }, 404));
 // headers, cookies, or the request/response bodies (see
 // `error-tracker.ts`'s `ErrorContext` doc comment for why).
 app.onError((err, c) => {
+  // Some database errors are the database restating, late, that the REQUEST
+  // was malformed — a non-UUID path parameter, a value longer than its
+  // column, an amount beyond an integer. Those are 404/422s, not 500s, and
+  // reporting them as server faults buries a real signal under noise. See
+  // lib/db-errors.ts; anything unrecognised falls through untouched.
+  const clientFault = clientFaultResponse(err);
+  if (clientFault) {
+    return c.json({ error: clientFault.error }, clientFault.status);
+  }
+
   const requestIdValue = (() => {
     try {
       return c.get('requestId');

@@ -20,7 +20,18 @@
  */
 
 const REFRESH_TOKEN_STORAGE_KEY = "bebest.auth.refreshToken.v1";
-const CURRENT_ORG_SLUG_KEY = "bebest.auth.currentOrgSlug.v1";
+/**
+ * Which organization this browser was last acting as.
+ *
+ * Needed because the org lives ONLY on the access token, which is
+ * deliberately memory-only — so every reload started org-less, and every
+ * org-scoped route answered 409 "No organization selected" until something
+ * called `/select-org` again. Nothing did. Persisting the slug lets the
+ * refresh call re-attach it (`POST /auth/refresh { orgSlug }`), where the
+ * server re-verifies membership from the database. A slug is not a
+ * credential: storing it grants nothing on its own.
+ */
+const ORG_SLUG_STORAGE_KEY = "bebest.auth.orgSlug.v1";
 
 let accessToken: string | null = null;
 
@@ -75,9 +86,32 @@ export function setSession(tokens: { accessToken: string; refreshToken: string }
 
 /** `/auth/select-org` mints a new org-scoped access token but does NOT
  *  rotate the refresh token — the session lineage is unchanged, only which
- *  org the access token is scoped to. */
-export function setOrgScopedAccessToken(token: string): void {
+ *  org the access token is scoped to. Pass the slug so the choice survives
+ *  a reload (see `ORG_SLUG_STORAGE_KEY`). */
+export function setOrgScopedAccessToken(token: string, slug?: string): void {
   setAccessToken(token);
+  if (slug) setSelectedOrgSlug(slug);
+}
+
+/** The org this browser last acted as, or null. */
+export function getSelectedOrgSlug(): string | null {
+  if (!hasLocalStorage()) return null;
+  try {
+    return window.localStorage.getItem(ORG_SLUG_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setSelectedOrgSlug(slug: string | null): void {
+  if (!hasLocalStorage()) return;
+  try {
+    if (slug) window.localStorage.setItem(ORG_SLUG_STORAGE_KEY, slug);
+    else window.localStorage.removeItem(ORG_SLUG_STORAGE_KEY);
+  } catch {
+    // Same "storage blocked" tolerance as the refresh token below — the
+    // user keeps working, they just re-select an org after a reload.
+  }
 }
 
 /** True if a refresh token is on disk — i.e. "was logged in on this
@@ -88,33 +122,11 @@ export function hasStoredSession(): boolean {
   return getRefreshToken() !== null;
 }
 
-export function getCurrentOrgSlug(): string | null {
-  if (!hasLocalStorage()) return null;
-  try {
-    return window.localStorage.getItem(CURRENT_ORG_SLUG_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setCurrentOrgSlug(slug: string | null): void {
-  if (!hasLocalStorage()) return;
-  try {
-    if (slug) {
-      window.localStorage.setItem(CURRENT_ORG_SLUG_KEY, slug);
-    } else {
-      window.localStorage.removeItem(CURRENT_ORG_SLUG_KEY);
-    }
-  } catch {
-    // ignore
-  }
-}
-
 /** Clears both tokens and current org slug. Safe to call even if nothing was ever set. */
 export function clearSession(): void {
   setAccessToken(null);
   setRefreshToken(null);
-  setCurrentOrgSlug(null);
+  setSelectedOrgSlug(null);
 }
 
 const AUTH_PAGE_PREFIXES = ["/login", "/auth/magic-link/verify"];

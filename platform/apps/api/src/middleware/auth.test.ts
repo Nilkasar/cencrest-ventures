@@ -4,8 +4,14 @@ import { generateKeyPair } from 'jose';
 
 const findUniqueMock = vi.fn();
 
+// `requireAuth` reads `users` through the un-scoped client, not
+// `withUserContext`: `users` is deliberately not an RLS table, and the
+// transaction that wrapper opens cost four network round trips per
+// authenticated request for no isolation gain (see the middleware's own
+// doc comment). `withUserContext` is still mocked because other modules
+// imported alongside this one use it.
 vi.mock('@bebest/database', () => ({
-  db: {},
+  db: { users: { findUnique: findUniqueMock } },
   withUserContext: vi.fn(async (_userId: string, fn: (tx: unknown) => unknown) =>
     fn({ users: { findUnique: findUniqueMock } }),
   ),

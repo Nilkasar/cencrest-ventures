@@ -455,7 +455,14 @@ model audit_events {
   actor_role      String?  @db.VarChar(50) // role at time of action (point-in-time; roles can change later)
   action          String   @db.VarChar(200)
   entity_type     String   @db.VarChar(100)
-  entity_id       String   @db.Uuid
+  // Nullable: some audited actions have no single entity to point at.
+  // `auth.login` / `auth.logout` are about a session, not a row;
+  // `billing.webhook_received` is about a payload. This column was NOT NULL
+  // and the middleware filled the gap with the literal string 'unknown',
+  // which Postgres rejects for a UUID — so those events silently wrote no
+  // audit row at all (the write is deliberately failure-swallowing). See
+  // apps/api/src/middleware/audit-log.ts's `resolveEntityId`.
+  entity_id       String?  @db.Uuid
   old_value       Json?
   new_value       Json?
   ip_address      String?  @db.Inet

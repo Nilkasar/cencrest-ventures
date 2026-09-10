@@ -282,6 +282,85 @@ describe('POST /auth/refresh', () => {
     );
     expect(db.refresh_tokens.create).toHaveBeenCalledTimes(1);
   });
+
+  // The reload path. A refresh token carries no org, so before `orgSlug`
+  // existed every refreshed access token came back org-less and every
+  // org-scoped route answered 409 — a page reload silently dropped the user
+  // out of their own organization mid-session.
+  describe('org re-attachment', () => {
+    function validRefreshToken() {
+      db.refresh_tokens.findUnique.mockResolvedValue({
+        id: 'rt-1',
+        revoked_at: null,
+        expires_at: new Date(Date.now() + 60_000),
+        user_id: 'user-1',
+        session_id: 'session-1',
+      });
+      db.sessions.findUnique.mockResolvedValue({ id: 'session-1', revoked_at: null });
+      db.users.findUnique.mockResolvedValue({ id: 'user-1', email: 'a@example.com', deleted_at: null });
+      db.refresh_tokens.update.mockResolvedValue({});
+      db.refresh_tokens.create.mockResolvedValue({});
+      db.sessions.update.mockResolvedValue({});
+    }
+
+    async function orgClaim(accessToken: string) {
+      const { verifyAccessToken } = await import('../lib/jwt.js');
+      return (await verifyAccessToken(accessToken)).org;
+    }
+
+    it('re-attaches the org when the caller is still a member of it', async () => {
+      validRefreshToken();
+      db.organizations.findUnique.mockResolvedValue({ id: 'org-1', slug: 'acme', name: 'Acme' });
+      db.memberships.findFirst.mockResolvedValue({ role: 'owner' });
+
+      const { app } = await buildApp();
+      const res = await app.request('/auth/refresh', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken: 'valid', orgSlug: 'acme' }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { accessToken: string; organization: { slug: string } | null };
+      expect(await orgClaim(body.accessToken)).toBe('org-1');
+      expect(body.organization).toMatchObject({ slug: 'acme' });
+    });
+
+    it('is a request, not a grant: no org claim for a slug the caller cannot access', async () => {
+      validRefreshToken();
+      db.organizations.findUnique.mockResolvedValue({ id: 'org-9', slug: 'someone-else', name: 'Other' });
+      db.memberships.findFirst.mockResolvedValue(null);
+      db.memberships.findMany.mockResolvedValue([]); // no agency link either
+
+      const { app } = await buildApp();
+      const res = await app.request('/auth/refresh', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken: 'valid', orgSlug: 'someone-else' }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { accessToken: string; organization: unknown };
+      expect(await orgClaim(body.accessToken)).toBeNull();
+      expect(body.organization).toBeNull();
+    });
+
+    it('still succeeds, org-less, when no orgSlug is sent', async () => {
+      validRefreshToken();
+
+      const { app } = await buildApp();
+      const res = await app.request('/auth/refresh', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken: 'valid' }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { accessToken: string; organization: unknown };
+      expect(await orgClaim(body.accessToken)).toBeNull();
+      expect(body.organization).toBeNull();
+    });
+  });
 });
 
 describe('POST /auth/select-org', () => {

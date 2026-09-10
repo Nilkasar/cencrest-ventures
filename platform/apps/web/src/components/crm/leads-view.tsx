@@ -11,6 +11,8 @@ import {
   CardContent,
   EmptyState,
   Input,
+  Pagination,
+  RefreshOverlay,
   Select,
   SelectContent,
   SelectItem,
@@ -28,7 +30,7 @@ import {
 import { ErrorPanel } from "@/components/patterns/error-panel";
 import { AddLeadDialog } from "@/components/crm/add-lead-dialog";
 import { LeadScore, LeadSourceBadge, LeadStatusBadge } from "@/components/crm/status-badges";
-import { fetchLeads, type LeadFilters } from "@/data/crm/client";
+import { DEFAULT_PAGE_SIZE, fetchLeads, type LeadFilters } from "@/data/crm/client";
 import type { Lead, LeadSource, LeadStatus } from "@/data/crm/types";
 import { useAsyncData } from "@/lib/use-async-data";
 import { formatRelativeTime } from "@/lib/format";
@@ -104,14 +106,21 @@ export function LeadsView() {
   const [source, setSource] = useState<LeadSource | "all">("all");
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
-    const handle = setTimeout(() => setQ(searchInput), 250);
+    const handle = setTimeout(() => {
+      setQ(searchInput);
+      setPage(1);
+    }, 250);
     return () => clearTimeout(handle);
   }, [searchInput]);
 
-  const filters: LeadFilters = useMemo(() => ({ status, source, q }), [status, source, q]);
-  const { reload, ...state } = useAsyncData(() => fetchLeads(filters), [status, source, q]);
+  const filters: LeadFilters = useMemo(
+    () => ({ status, source, q, page, limit: DEFAULT_PAGE_SIZE }),
+    [status, source, q, page],
+  );
+  const { reload, ...state } = useAsyncData(() => fetchLeads(filters), [status, source, q, page]);
 
   const hasFilters = status !== "all" || source !== "all" || q.trim() !== "";
 
@@ -120,17 +129,21 @@ export function LeadsView() {
     setSource("all");
     setSearchInput("");
     setQ("");
+    setPage(1);
   }
 
-  const allLeads = state.status === "success" ? state.data : null;
+  const leads = state.status === "success" ? state.data : null;
+  // Counts come from the API, across every matching row — not from the rows
+  // this page happens to hold.
+  const counts = leads?.statusCounts;
 
   return (
     <div className="flex flex-col gap-6">
-      {allLeads && allLeads.length > 0 && !hasFilters && (
+      {leads && counts && leads.total > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <StatCard label="Total leads" value={String(allLeads.length)} />
-          <StatCard label="Needs a response" value={String(allLeads.filter((l) => l.status === "new").length)} />
-          <StatCard label="Converted" value={String(allLeads.filter((l) => l.status === "converted").length)} />
+          <StatCard label="Total leads" value={String(leads.total)} />
+          <StatCard label="Needs a response" value={String(counts.new)} />
+          <StatCard label="Converted" value={String(counts.converted)} />
         </div>
       )}
 
@@ -145,7 +158,10 @@ export function LeadsView() {
             aria-label="Search leads"
           />
         </div>
-        <Select value={status} onValueChange={(value) => setStatus(value as LeadStatus | "all")}>
+        <Select value={status} onValueChange={(value) => {
+            setStatus(value as LeadStatus | "all");
+            setPage(1);
+          }}>
           <SelectTrigger className="w-full sm:w-40" aria-label="Filter by status">
             <SelectValue />
           </SelectTrigger>
@@ -157,7 +173,10 @@ export function LeadsView() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={source} onValueChange={(value) => setSource(value as LeadSource | "all")}>
+        <Select value={source} onValueChange={(value) => {
+            setSource(value as LeadSource | "all");
+            setPage(1);
+          }}>
           <SelectTrigger className="w-full sm:w-40" aria-label="Filter by source">
             <SelectValue />
           </SelectTrigger>
@@ -185,7 +204,7 @@ export function LeadsView() {
         <ErrorPanel message={state.error.message} onRetry={reload} />
       )}
 
-      {state.status === "success" && state.data.length === 0 && !hasFilters && (
+      {leads && leads.items.length === 0 && !hasFilters && (
         <EmptyState
           icon={<UserPlus size={20} />}
           eyebrow="Leads"
@@ -195,7 +214,7 @@ export function LeadsView() {
         />
       )}
 
-      {state.status === "success" && state.data.length === 0 && hasFilters && (
+      {leads && leads.items.length === 0 && hasFilters && (
         <EmptyState
           compact
           icon={<Search size={18} />}
@@ -209,7 +228,8 @@ export function LeadsView() {
         />
       )}
 
-      {state.status === "success" && state.data.length > 0 && (
+      {leads && leads.items.length > 0 && (
+        <RefreshOverlay active={state.isRefreshing} className="flex flex-col gap-3">
         <Table>
           <TableHeader>
             <TableRow>
@@ -222,7 +242,7 @@ export function LeadsView() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {state.data.map((lead: Lead) => (
+            {leads.items.map((lead: Lead) => (
               <TableRow
                 key={lead.id}
                 className="cursor-pointer"
@@ -259,6 +279,15 @@ export function LeadsView() {
             ))}
           </TableBody>
         </Table>
+
+        <Pagination
+          page={leads.page}
+          pageSize={leads.limit}
+          total={leads.total}
+          onPageChange={setPage}
+          itemLabel="leads"
+        />
+        </RefreshOverlay>
       )}
     </div>
   );

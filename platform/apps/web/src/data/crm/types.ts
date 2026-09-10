@@ -82,10 +82,20 @@ export const DEAL_STAGE_LABEL: Record<DealStage, string> = {
   lost: "Lost",
 };
 
+/** The named record a deal hangs off — its account once one exists, else
+ *  the lead it came from. Resolved by the API alongside the deal, so a
+ *  board can label every card without a second and third list request. */
+export interface DealLink {
+  kind: "account" | "lead";
+  id: string;
+  name: string;
+}
+
 export interface Deal {
   id: string;
   organizationId: string | null;
   leadId: string | null;
+  linkedTo: DealLink | null;
   title: string;
   valueCents: number;
   currency: string;

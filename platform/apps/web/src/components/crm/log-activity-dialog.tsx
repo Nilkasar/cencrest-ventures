@@ -22,7 +22,6 @@ import {
   useToast,
 } from "@bebest/ui";
 import { logActivity } from "@/data/crm/client";
-import { useCurrentUser } from "@/lib/session-context";
 import type { ActivityType } from "@/data/crm/types";
 
 const TYPE_LABEL: Record<Extract<ActivityType, "note" | "email" | "call">, string> = {
@@ -50,7 +49,6 @@ export function LogActivityDialog({
   onLogged: () => void;
   triggerLabel?: string;
 }) {
-  const user = useCurrentUser();
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<ActivityType>("note");
   const [subject, setSubject] = useState("");
@@ -76,7 +74,6 @@ export function LogActivityDialog({
         type,
         subject: subject.trim(),
         body: body.trim(),
-        actor: { id: user?.id ?? "", name: user?.name ?? "" },
       });
       toast({ title: "Activity logged", variant: "success" });
       setOpen(false);

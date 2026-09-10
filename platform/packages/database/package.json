@@ -13,14 +13,18 @@
     "validate": "prisma validate",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:apply": "node scripts/apply-sql.mjs"
   },
   "dependencies": {
-    "@prisma/client": "^6.5.0"
+    "@prisma/adapter-pg": "^6.19.3",
+    "@prisma/client": "^6.5.0",
+    "pg": "^8.23.0"
   },
   "devDependencies": {
     "@bebest/config": "workspace:*",
     "@types/node": "^22.13.10",
+    "@types/pg": "^8.23.1",
     "prisma": "^6.5.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.9"

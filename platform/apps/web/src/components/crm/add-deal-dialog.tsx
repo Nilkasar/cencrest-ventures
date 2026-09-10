@@ -44,8 +44,13 @@ export function AddDealDialog({ onCreated }: { onCreated: (dealId: string) => vo
 
   useEffect(() => {
     if (!open) return;
-    fetchLeads().then((all) => setLeads(all.filter((l) => l.status !== "converted" && l.status !== "lost")));
-    fetchAccounts().then(setAccounts);
+    // Only leads that can still take a new deal. Asking the API for the
+    // two statuses to exclude isn't expressible, so this filters the page
+    // it gets — acceptable for a picker, which shows a bounded list anyway.
+    fetchLeads({ limit: 100 }).then((page) =>
+      setLeads(page.items.filter((l) => l.status !== "converted" && l.status !== "lost")),
+    );
+    fetchAccounts({ limit: 100 }).then((page) => setAccounts(page.items));
     fetchCrmUsers().then((all) => {
       setOwners(all);
       setOwnerId((current) => current || all[0]?.id || "");

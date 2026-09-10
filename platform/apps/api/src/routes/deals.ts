@@ -7,25 +7,65 @@ import { requireCrmAccess } from '../middleware/crm-access.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog } from '../middleware/audit-log.js';
 import { getInternalOrgId } from '../lib/internal-org.js';
+import { loadUserRefs, userRef, type UserRef } from '../lib/crm-users.js';
+import { uuidParam } from '../lib/http-params.js';
+import {
+  LIMITS,
+  containsInsensitive,
+  ReferenceError_,
+  assertInternalStaff,
+  assertLeadExists,
+  assertOrganizationExists,
+  currencyField,
+  valueCentsField,
+} from '../lib/crm-validation.js';
 import type { AppEnv } from '../types/context.js';
 
 const deals = new Hono<AppEnv>();
 
+/** See routes/leads.ts — a bad reference must roll the transaction back but
+ *  answer 422, while any other failure keeps propagating. */
+function rethrowUnlessReference(err: unknown): ReferenceError_ {
+  if (err instanceof ReferenceError_) return err;
+  throw err;
+}
+
 const DEAL_STAGES = ['new', 'qualifying', 'proposal', 'negotiation', 'won', 'lost'] as const;
 
+/**
+ * What a deal is attached to, resolved in the same query that reads the
+ * deal. The board shows "Northwind Logistics" under each card; without
+ * these joins the client had to fetch every lead AND every account just to
+ * translate two foreign keys into two names — two whole list requests to
+ * label rows it already had.
+ */
+const DEAL_LINKS = {
+  leads: { select: { id: true, name: true, company: true } },
+  account_organization: { select: { id: true, name: true, slug: true } },
+} as const;
+
 // ── Create ───────────────────────────────────────────────────────────────
-const createDealSchema = z.object({
-  title: z.string().min(1).max(255),
-  valueCents: z.number().int().min(0).default(0),
-  currency: z.string().length(3).default('USD'),
-  stage: z.enum(DEAL_STAGES).default('new'),
-  probability: z.number().int().min(0).max(100).optional(),
-  expectedCloseDate: z.coerce.date().optional(),
-  ownerId: z.string().uuid(),
-  leadId: z.string().uuid().optional(),
-  accountOrganizationId: z.string().uuid().optional(),
-  lostReason: z.string().optional(),
-});
+// Bounds match the columns behind them (lib/crm-validation.ts). `valueCents`
+// in particular is a 32-bit INTEGER: unbounded, a mistyped amount overflowed
+// into `22003 integer out of range` and surfaced as a 500.
+const createDealSchema = z
+  .object({
+    title: z.string().trim().min(1).max(LIMITS.dealTitle),
+    valueCents: valueCentsField().default(0),
+    currency: currencyField().default('USD'),
+    stage: z.enum(DEAL_STAGES).default('new'),
+    probability: z.number().int().min(0).max(100).optional(),
+    expectedCloseDate: z.coerce.date().optional(),
+    ownerId: z.string().uuid(),
+    leadId: z.string().uuid().optional(),
+    accountOrganizationId: z.string().uuid().optional(),
+    lostReason: z.string().max(LIMITS.lostReason).optional(),
+  })
+  .strict()
+  .refine((d) => d.stage !== 'lost' || Boolean(d.lostReason?.trim()), {
+    message: 'lostReason is required when creating a deal already in the lost stage',
+    path: ['lostReason'],
+  });
 
 deals.post(
   '/',
@@ -46,6 +86,12 @@ deals.post(
     const created = await withOrgContext(internalOrgId, async (tx) => {
       let accountOrganizationId = parsed.data.accountOrganizationId ?? null;
 
+      // Every id the caller supplied is checked before anything is written.
+      // Unchecked, an unknown owner or account reached Postgres as a
+      // foreign-key violation and came back as a 500 rather than a 422.
+      await assertInternalStaff(tx, internalOrgId, [parsed.data.ownerId], 'ownerId');
+      await assertOrganizationExists(tx, accountOrganizationId, 'accountOrganizationId');
+
       if (parsed.data.leadId) {
         const lead = await tx.leads.findFirst({
           where: { id: parsed.data.leadId, deleted_at: null },
@@ -60,6 +106,7 @@ deals.post(
       }
 
       return tx.deals.create({
+        include: DEAL_LINKS,
         data: {
           organization_id: internalOrgId,
           lead_id: parsed.data.leadId ?? null,
@@ -75,13 +122,15 @@ deals.post(
           created_by: user.id,
         },
       });
-    }).catch((err) => {
+    }).catch((err: unknown) => {
       if (err instanceof NotFoundError) return null;
+      if (err instanceof ReferenceError_) return err;
       throw err;
     });
 
+    if (created instanceof ReferenceError_) return c.json({ error: created.detail }, 422);
     if (!created) return c.json({ error: 'leadId does not refer to an existing lead' }, 404);
-    return c.json(serializeDeal(created), 201);
+    return c.json(serializeDeal(created, await loadUserRefs([created.owner_id])), 201);
   },
 );
 
@@ -92,6 +141,14 @@ deals.get('/', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'), 
     .object({
       stage: z.enum(DEAL_STAGES).optional(),
       ownerId: z.string().uuid().optional(),
+      // `leadId` / `accountOrganizationId` / `q` exist because the client
+      // needs exactly these three views ("deals on this lead", "deals on
+      // this account", "search deals") and previously got them by fetching
+      // up to 100 deals and filtering in the browser — wrong beyond the
+      // first page, and a large response for a handful of rows.
+      leadId: z.string().uuid().optional(),
+      accountOrganizationId: z.string().uuid().optional(),
+      q: z.string().trim().min(1).max(200).optional(),
       page: z.coerce.number().int().min(1).default(1),
       limit: z.coerce.number().int().min(1).max(100).default(20),
     })
@@ -101,16 +158,20 @@ deals.get('/', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'), 
     return c.json({ error: 'Validation failed', issues: query.error.issues }, 422);
   }
 
-  const { stage, ownerId, page, limit } = query.data;
+  const { stage, ownerId, leadId, accountOrganizationId, q, page, limit } = query.data;
   const where = {
     deleted_at: null,
     ...(stage ? { stage } : {}),
     ...(ownerId ? { owner_id: ownerId } : {}),
+    ...(leadId ? { lead_id: leadId } : {}),
+    ...(accountOrganizationId ? { account_organization_id: accountOrganizationId } : {}),
+    ...(q ? { title: containsInsensitive(q) } : {}),
   };
 
   const [items, total] = await withOrgContext(internalOrgId, (tx) =>
     Promise.all([
       tx.deals.findMany({
+        include: DEAL_LINKS,
         where,
         orderBy: { created_at: 'desc' },
         skip: (page - 1) * limit,
@@ -120,20 +181,23 @@ deals.get('/', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'), 
     ]),
   );
 
-  return c.json({ data: items.map(serializeDeal), page, limit, total });
+  // Owners resolved in one query — see lib/crm-users.ts.
+  const refs = await loadUserRefs(items.map((item) => item.owner_id));
+  return c.json({ data: items.map((item) => serializeDeal(item, refs)), page, limit, total });
 });
 
 // ── Get one ──────────────────────────────────────────────────────────────
 deals.get('/:id', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'), async (c) => {
   const internalOrgId = getInternalOrgId();
-  const id = c.req.param('id');
+  const id = uuidParam(c, 'id');
+  if (!id) return c.json({ error: 'Deal not found' }, 404);
 
   const deal = await withOrgContext(internalOrgId, (tx) =>
-    tx.deals.findFirst({ where: { id, deleted_at: null } }),
+    tx.deals.findFirst({ include: DEAL_LINKS, where: { id, deleted_at: null } }),
   );
   if (!deal) return c.json({ error: 'Deal not found' }, 404);
 
-  return c.json(serializeDeal(deal));
+  return c.json(serializeDeal(deal, await loadUserRefs([deal.owner_id])));
 });
 
 // ── Update (every field EXCEPT stage) ───────────────────────────────────
@@ -145,15 +209,15 @@ deals.get('/:id', requireAuth, authenticatedRateLimit, requireCrmAccess('viewer'
 // rather than silently ignoring it, so the mistake is loud, not silent.
 const updateDealSchema = z
   .object({
-    title: z.string().min(1).max(255).optional(),
-    valueCents: z.number().int().min(0).optional(),
-    currency: z.string().length(3).optional(),
+    title: z.string().trim().min(1).max(LIMITS.dealTitle).optional(),
+    valueCents: valueCentsField().optional(),
+    currency: currencyField().optional(),
     probability: z.number().int().min(0).max(100).nullable().optional(),
     expectedCloseDate: z.coerce.date().nullable().optional(),
     ownerId: z.string().uuid().optional(),
     leadId: z.string().uuid().nullable().optional(),
     accountOrganizationId: z.string().uuid().nullable().optional(),
-    lostReason: z.string().nullable().optional(),
+    lostReason: z.string().max(LIMITS.lostReason).nullable().optional(),
   })
   .strict();
 
@@ -172,19 +236,56 @@ deals.patch(
 
     const internalOrgId = getInternalOrgId();
     const user = c.get('user');
-    const id = c.req.param('id');
+    const id = uuidParam(c, 'id');
+    if (!id) return c.json({ error: 'Deal not found' }, 404);
 
-    const existing = await withOrgContext(internalOrgId, (tx) =>
-      tx.deals.findFirst({ where: { id, deleted_at: null } }),
-    );
-    if (!existing) return c.json({ error: 'Deal not found' }, 404);
+    const {
+      title,
+      valueCents,
+      currency,
+      probability,
+      expectedCloseDate,
+      ownerId,
+      leadId,
+      accountOrganizationId,
+      lostReason,
+    } = parsed.data;
 
-    const { leadId, accountOrganizationId, ownerId, ...rest } = parsed.data;
-    const updated = await withOrgContext(internalOrgId, (tx) =>
-      tx.deals.update({
+    // One transaction, not two. The read-then-write used to be two separate
+    // `withOrgContext` calls — two BEGIN/COMMIT round trips for one logical
+    // operation, with a window in between where the row could be
+    // soft-deleted by another request.
+    const updated = await withOrgContext(internalOrgId, async (tx) => {
+      const existing = await tx.deals.findFirst({
+        where: { id, deleted_at: null },
+        select: { id: true },
+      });
+      if (!existing) return null;
+
+      // Same reference checks as create: an unknown owner, account or lead
+      // here used to reach Postgres and return a 500.
+      await assertInternalStaff(tx, internalOrgId, [ownerId], 'ownerId');
+      await assertOrganizationExists(tx, accountOrganizationId, 'accountOrganizationId');
+      await assertLeadExists(tx, leadId, 'leadId');
+
+      return tx.deals.update({
+        include: DEAL_LINKS,
         where: { id },
         data: {
-          ...rest,
+          // Each column is named explicitly, in snake_case. The previous
+          // version spread the parsed (camelCase) object straight into
+          // `data`, so any request touching `valueCents`, `probability`,
+          // `expectedCloseDate` or `lostReason` threw
+          // PrismaClientValidationError ("Unknown argument `valueCents`")
+          // and surfaced to the client as a 500. The route's unit tests
+          // mock `tx.deals.update`, which accepts any shape — only a real
+          // database rejects it.
+          ...(title !== undefined ? { title } : {}),
+          ...(valueCents !== undefined ? { value_cents: valueCents } : {}),
+          ...(currency !== undefined ? { currency } : {}),
+          ...(probability !== undefined ? { probability } : {}),
+          ...(expectedCloseDate !== undefined ? { expected_close_date: expectedCloseDate } : {}),
+          ...(lostReason !== undefined ? { lost_reason: lostReason } : {}),
           ...(leadId !== undefined ? { lead_id: leadId } : {}),
           ...(accountOrganizationId !== undefined
             ? { account_organization_id: accountOrganizationId }
@@ -193,10 +294,12 @@ deals.patch(
           updated_by: user.id,
           updated_at: new Date(),
         },
-      }),
-    );
+      });
+    }).catch(rethrowUnlessReference);
 
-    return c.json(serializeDeal(updated));
+    if (updated instanceof ReferenceError_) return c.json({ error: updated.detail }, 422);
+    if (!updated) return c.json({ error: 'Deal not found' }, 404);
+    return c.json(serializeDeal(updated, await loadUserRefs([updated.owner_id])));
   },
 );
 
@@ -204,8 +307,9 @@ deals.patch(
 const stageTransitionSchema = z
   .object({
     stage: z.enum(DEAL_STAGES),
-    lostReason: z.string().min(1).optional(),
+    lostReason: z.string().trim().min(1).max(LIMITS.lostReason).optional(),
   })
+  .strict()
   .refine((d) => d.stage !== 'lost' || Boolean(d.lostReason), {
     message: 'lostReason is required when moving a deal to the lost stage',
     path: ['lostReason'],
@@ -227,26 +331,36 @@ deals.post(
 
     const internalOrgId = getInternalOrgId();
     const user = c.get('user');
-    const id = c.req.param('id');
+    const id = uuidParam(c, 'id');
+    if (!id) return c.json({ error: 'Deal not found' }, 404);
 
-    const existing = await withOrgContext(internalOrgId, (tx) =>
-      tx.deals.findFirst({ where: { id, deleted_at: null } }),
-    );
-    if (!existing) return c.json({ error: 'Deal not found' }, 404);
+    // One transaction for the read and the write — see the PATCH handler
+    // above for why (two round trips, and a soft-delete race between them).
+    const updated = await withOrgContext(internalOrgId, async (tx) => {
+      const existing = await tx.deals.findFirst({
+        where: { id, deleted_at: null },
+        select: { id: true },
+      });
+      if (!existing) return null;
 
-    const updated = await withOrgContext(internalOrgId, (tx) =>
-      tx.deals.update({
+      return tx.deals.update({
+        include: DEAL_LINKS,
         where: { id },
         data: {
           stage: parsed.data.stage,
-          lost_reason: parsed.data.stage === 'lost' ? (parsed.data.lostReason ?? null) : existing.lost_reason,
+          // Leaving `lost` clears the reason. Carrying it forward left a
+          // won deal reading "lost because: budget" — a contradiction the
+          // deal detail screen shows verbatim, and one that survives every
+          // later edit because nothing else ever writes this column.
+          lost_reason: parsed.data.stage === 'lost' ? (parsed.data.lostReason ?? null) : null,
           updated_by: user.id,
           updated_at: new Date(),
         },
-      }),
-    );
+      });
+    });
 
-    return c.json(serializeDeal(updated));
+    if (!updated) return c.json({ error: 'Deal not found' }, 404);
+    return c.json(serializeDeal(updated, await loadUserRefs([updated.owner_id])));
   },
 );
 
@@ -266,7 +380,9 @@ function serializeDeal(deal: {
   lost_reason: string | null;
   created_at: Date;
   updated_at: Date;
-}) {
+  leads?: { id: string; name: string; company: string | null } | null;
+  account_organization?: { id: string; name: string; slug: string } | null;
+}, refs: Map<string, UserRef>) {
   return {
     id: deal.id,
     leadId: deal.lead_id,
@@ -278,6 +394,21 @@ function serializeDeal(deal: {
     probability: deal.probability,
     expectedCloseDate: deal.expected_close_date,
     ownerId: deal.owner_id,
+    // Resolved server-side; `ownerId` stays for id-only callers.
+    owner: userRef(deal.owner_id, refs),
+    // What this deal hangs off, named. `undefined` (rather than null) when
+    // the query didn't ask for the join, so a client can tell "not loaded"
+    // apart from "not linked".
+    lead: deal.leads
+      ? { id: deal.leads.id, name: deal.leads.name, company: deal.leads.company }
+      : (deal.leads ?? null),
+    account: deal.account_organization
+      ? {
+          id: deal.account_organization.id,
+          name: deal.account_organization.name,
+          slug: deal.account_organization.slug,
+        }
+      : (deal.account_organization ?? null),
     lostReason: deal.lost_reason,
     createdAt: deal.created_at,
     updatedAt: deal.updated_at,

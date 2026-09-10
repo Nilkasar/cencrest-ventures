@@ -28,7 +28,7 @@ describe('auditLog middleware', () => {
       (c) => c.json({ ok: true }),
     );
 
-    const res = await app.request('/orgs/acme/members/user-2', { method: 'POST' });
+    const res = await app.request('/orgs/acme/members/22222222-2222-4222-8222-222222222222', { method: 'POST' });
     expect(res.status).toBe(200);
 
     expect(writeAuditEventMock).toHaveBeenCalledTimes(1);
@@ -40,7 +40,7 @@ describe('auditLog middleware', () => {
       actorRole: 'admin',
       action: 'membership.role_changed',
       entityType: 'membership',
-      entityId: 'user-2',
+      entityId: '22222222-2222-4222-8222-222222222222',
       result: 'success',
     });
   });
@@ -55,7 +55,7 @@ describe('auditLog middleware', () => {
       (c) => c.json({ error: 'nope' }, 403),
     );
 
-    const res = await app.request('/orgs/acme/members/user-2', { method: 'POST' });
+    const res = await app.request('/orgs/acme/members/22222222-2222-4222-8222-222222222222', { method: 'POST' });
     expect(res.status).toBe(403);
 
     const call = writeAuditEventMock.mock.calls[0]?.[0];
@@ -79,5 +79,64 @@ describe('auditLog middleware', () => {
     expect(call.userId).toBeNull();
     expect(call.organizationId).toBeNull();
     expect(call.result).toBe('failure');
+  });
+
+  // `audit_events.entity_id` is a UUID column. It used to receive the
+  // literal string 'unknown' whenever a route had no `:id`, which Postgres
+  // rejects — and `writeAuditEvent` swallows its own failures, so those
+  // events wrote no row at all instead of failing loudly.
+  describe('entity id resolution', () => {
+    it('writes null rather than a placeholder when there is no entity', async () => {
+      const { auditLog } = await import('./audit-log.js');
+      const app = new Hono<AppEnv>();
+
+      app.post(
+        '/webhooks/billing',
+        auditLog({ action: 'billing.webhook_received', entityType: 'webhook', actorType: 'system' }),
+        (c) => c.json({ ok: true }),
+      );
+
+      await app.request('/webhooks/billing', { method: 'POST' });
+      expect(writeAuditEventMock.mock.calls[0]?.[0].entityId).toBeNull();
+    });
+
+    it('drops a route param that is not a UUID instead of handing it to the database', async () => {
+      const { auditLog } = await import('./audit-log.js');
+      const app = new Hono<AppEnv>();
+
+      app.post(
+        '/things/:id',
+        auditLog({ action: 'thing.updated', entityType: 'thing' }),
+        (c) => c.json({ ok: true }),
+      );
+
+      await app.request('/things/not-a-uuid', { method: 'POST' });
+      expect(writeAuditEventMock.mock.calls[0]?.[0].entityId).toBeNull();
+    });
+
+    it('falls back to the acting user for user-entity events like login', async () => {
+      const { auditLog } = await import('./audit-log.js');
+      const app = new Hono<AppEnv>();
+
+      app.post(
+        '/logout',
+        async (c, next) => {
+          c.set('user', {
+            id: '33333333-3333-4333-8333-333333333333',
+            email: 'a@example.com',
+            name: 'Ada',
+            tokenOrgId: null,
+          });
+          await next();
+        },
+        auditLog({ action: 'auth.logout', entityType: 'user' }),
+        (c) => c.json({ ok: true }),
+      );
+
+      await app.request('/logout', { method: 'POST' });
+      expect(writeAuditEventMock.mock.calls[0]?.[0].entityId).toBe(
+        '33333333-3333-4333-8333-333333333333',
+      );
+    });
   });
 });

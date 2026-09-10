@@ -9,7 +9,7 @@ const db = {
   organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
   organizations: { findUnique: vi.fn() },
   memberships: { findFirst: vi.fn() },
-  users: { findUnique: vi.fn() },
+  users: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
   leads: { findFirst: vi.fn() },
   deals: { findFirst: vi.fn() },
   activities: { create: vi.fn(), findMany: vi.fn(), count: vi.fn() },

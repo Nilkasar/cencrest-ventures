@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Handshake, Search, X } from "lucide-react";
 import {
@@ -15,17 +15,19 @@ import {
   DialogTitle,
   EmptyState,
   Input,
+  RefreshOverlay,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
   Skeleton,
+  useToast,
 } from "@bebest/ui";
 import { ErrorPanel } from "@/components/patterns/error-panel";
 import { DealCard } from "@/components/crm/deal-card";
 import { AddDealDialog } from "@/components/crm/add-deal-dialog";
-import { fetchAccounts, fetchCrmUsers, fetchDeals, fetchLeads, updateDealStage } from "@/data/crm/client";
+import { fetchCrmUsers, fetchDeals, updateDealStage } from "@/data/crm/client";
 import { DEAL_STAGE_LABEL, DEAL_STAGE_SEQUENCE, type Deal, type DealStage } from "@/data/crm/types";
 import { useAsyncData } from "@/lib/use-async-data";
 import { formatCompactCurrency, formatCurrency } from "@/lib/format";
@@ -53,6 +55,15 @@ function BoardSkeleton() {
   );
 }
 
+/** Every stage gets a column, including the empty ones — a board that
+ *  hides "Negotiation" because nothing is in it stops being a pipeline. */
+function groupByStage(deals: Deal[]): Map<DealStage, Deal[]> {
+  const byStage = new Map<DealStage, Deal[]>();
+  for (const stage of DEAL_STAGE_SEQUENCE) byStage.set(stage, []);
+  for (const deal of deals) byStage.get(deal.stage)?.push(deal);
+  return byStage;
+}
+
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
     <Card>
@@ -69,18 +80,20 @@ export function DealsBoardView() {
   const [ownerId, setOwnerId] = useState<string>("all");
   const [q, setQ] = useState("");
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverStage, setDragOverStage] = useState<DealStage | null>(null);
   const [lostPromptDealId, setLostPromptDealId] = useState<string | null>(null);
   const [lostReason, setLostReason] = useState("");
   const [lostSubmitting, setLostSubmitting] = useState(false);
+  /** Stage moves applied locally, ahead of the server confirming them. */
+  const [pendingStages, setPendingStages] = useState<Record<string, DealStage>>({});
+  const { toast } = useToast();
 
+  // Two requests, not four: each deal already carries the name of whatever
+  // it is linked to (`deal.linkedTo`), so the whole leads list and the
+  // whole accounts list no longer have to be fetched just to label cards.
   const { reload, ...state } = useAsyncData(async () => {
-    const [dealsData, leads, accounts, owners] = await Promise.all([
-      fetchDeals({ ownerId, q }),
-      fetchLeads(),
-      fetchAccounts(),
-      fetchCrmUsers(),
-    ]);
-    return { deals: dealsData, leads, accounts, owners };
+    const [deals, owners] = await Promise.all([fetchDeals({ ownerId, q }), fetchCrmUsers()]);
+    return { deals, owners };
   }, [ownerId, q]);
 
   const hasFilters = ownerId !== "all" || q.trim() !== "";
@@ -90,9 +103,41 @@ export function DealsBoardView() {
     setQ("");
   }
 
+  // Optimistic: the card moves the instant it is dropped, and the server
+  // call reconciles behind it. Waiting for the round trip before moving
+  // anything made a drag feel broken — the card snapped back to its old
+  // column for as long as the request took, then jumped.
+  //
+  // On failure the override is dropped, which restores the card to whatever
+  // the last server response said, and a toast explains why.
   async function applyStageChange(dealId: string, stage: DealStage, reason?: string) {
-    await updateDealStage(dealId, stage, reason);
-    reload();
+    // Drop any override the server has already caught up with while adding
+    // this one, so the map can't grow for the life of the session.
+    setPendingStages((current) => {
+      const server = new Map((dealsPage?.items ?? []).map((deal) => [deal.id, deal.stage]));
+      const next: Record<string, DealStage> = {};
+      for (const [id, pending] of Object.entries(current)) {
+        if (server.get(id) !== pending) next[id] = pending;
+      }
+      next[dealId] = stage;
+      return next;
+    });
+    try {
+      await updateDealStage(dealId, stage, reason);
+      reload();
+    } catch (err) {
+      setPendingStages((current) => {
+        const next = { ...current };
+        delete next[dealId];
+        return next;
+      });
+      toast({
+        title: "Couldn't move that deal",
+        description:
+          err instanceof Error ? err.message : "The stage change didn't save. Try again in a moment.",
+        variant: "danger",
+      });
+    }
   }
 
   function handleMoveStage(dealId: string, stage: DealStage) {
@@ -121,48 +166,47 @@ export function DealsBoardView() {
   }
 
   function handleDrop(stage: DealStage) {
+    setDragOverStage(null);
     if (!draggingId) return;
     const dealId = draggingId;
     setDraggingId(null);
     handleMoveStage(dealId, stage);
   }
 
-  const columns = useMemo(() => {
-    if (state.status !== "success") return null;
-    const byStage = new Map<DealStage, Deal[]>();
-    for (const stage of DEAL_STAGE_SEQUENCE) byStage.set(stage, []);
-    for (const deal of state.data.deals) byStage.get(deal.stage)?.push(deal);
-    return byStage;
-  }, [state]);
+  const dealsPage = state.status === "success" ? state.data.deals : null;
+
+  // Optimistic overrides applied on top of the server's answer, so a card
+  // sits in its new column from the moment it is dropped rather than
+  // snapping back for the length of the round trip.
+  //
+  // Reconciliation happens here, during render, rather than in an effect:
+  // an override is simply ignored once the server reports the same stage,
+  // so there is no state to synchronize and no extra render pass. Entries
+  // that have been overtaken are pruned in `applyStageChange`.
+  // Plain computations, not `useMemo`: the React Compiler memoizes this
+  // component, and hand-written dependency arrays here conflict with it
+  // (`react-hooks/preserve-manual-memoization`).
+  const dealList = (dealsPage?.items ?? []).map((deal) => {
+    const pending = pendingStages[deal.id];
+    return pending && pending !== deal.stage ? { ...deal, stage: pending } : deal;
+  });
+
+  const columns = dealsPage ? groupByStage(dealList) : null;
 
   function linkedInfo(deal: Deal): { name: string | null; href: string | null } {
-    if (state.status !== "success") return { name: null, href: null };
-    if (deal.organizationId) {
-      const account = state.data.accounts.find((a) => a.id === deal.organizationId);
-      if (account) return { name: account.name, href: `/crm/accounts/${account.id}` };
-    }
-    if (deal.leadId) {
-      const lead = state.data.leads.find((l) => l.id === deal.leadId);
-      if (lead) return { name: lead.company ?? lead.name, href: `/crm/leads/${lead.id}` };
-    }
-    return { name: null, href: null };
+    if (!deal.linkedTo) return { name: null, href: null };
+    const { kind, id, name } = deal.linkedTo;
+    return { name, href: kind === "account" ? `/crm/accounts/${id}` : `/crm/leads/${id}` };
   }
 
-  const totalOpenValue = state.status === "success"
-    ? state.data.deals.filter((d) => d.stage !== "won" && d.stage !== "lost").reduce((sum, d) => sum + d.valueCents, 0)
-    : 0;
-  const weightedValue = state.status === "success"
-    ? state.data.deals
-        .filter((d) => d.stage !== "won" && d.stage !== "lost")
-        .reduce((sum, d) => sum + (d.valueCents * d.probability) / 100, 0)
-    : 0;
-  const wonValue = state.status === "success"
-    ? state.data.deals.filter((d) => d.stage === "won").reduce((sum, d) => sum + d.valueCents, 0)
-    : 0;
+  const openDeals = dealList.filter((d) => d.stage !== "won" && d.stage !== "lost");
+  const totalOpenValue = openDeals.reduce((sum, d) => sum + d.valueCents, 0);
+  const weightedValue = openDeals.reduce((sum, d) => sum + (d.valueCents * d.probability) / 100, 0);
+  const wonValue = dealList.filter((d) => d.stage === "won").reduce((sum, d) => sum + d.valueCents, 0);
 
   return (
     <div className="flex flex-col gap-6">
-      {state.status === "success" && state.data.deals.length > 0 && (
+      {dealsPage && dealsPage.items.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <StatCard label="Open pipeline" value={formatCompactCurrency(totalOpenValue)} />
           <StatCard label="Weighted (open)" value={formatCompactCurrency(weightedValue)} />
@@ -203,7 +247,7 @@ export function DealsBoardView() {
 
       {state.status === "error" && <ErrorPanel message={state.error.message} onRetry={reload} />}
 
-      {state.status === "success" && state.data.deals.length === 0 && !hasFilters && (
+      {dealsPage && dealsPage.items.length === 0 && !hasFilters && (
         <EmptyState
           icon={<Handshake size={20} />}
           eyebrow="Deals"
@@ -218,7 +262,7 @@ export function DealsBoardView() {
         />
       )}
 
-      {state.status === "success" && state.data.deals.length === 0 && hasFilters && (
+      {dealsPage && dealsPage.items.length === 0 && hasFilters && (
         <EmptyState
           compact
           icon={<Search size={18} />}
@@ -232,31 +276,58 @@ export function DealsBoardView() {
         />
       )}
 
-      {state.status === "success" && state.data.deals.length > 0 && columns && (
-        <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1">
+      {dealsPage && dealsPage.items.length > 0 && columns && (
+        <RefreshOverlay
+          active={state.isRefreshing && draggingId === null}
+          className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1"
+        >
           {DEAL_STAGE_SEQUENCE.map((stage) => {
             const dealsInStage = columns.get(stage) ?? [];
             const stageValue = dealsInStage.reduce((sum, d) => sum + d.valueCents, 0);
+            const isDropTarget = draggingId !== null && dragOverStage === stage;
             return (
               <div
                 key={stage}
                 className="w-72 shrink-0 flex flex-col gap-3"
-                onDragOver={(event) => event.preventDefault()}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  if (dragOverStage !== stage) setDragOverStage(stage);
+                }}
+                onDragLeave={(event) => {
+                  // Only when the pointer leaves the column itself, not when
+                  // it crosses between the cards inside it.
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    setDragOverStage((current) => (current === stage ? null : current));
+                  }
+                }}
                 onDrop={(event) => {
                   event.preventDefault();
                   handleDrop(stage);
                 }}
               >
-                <div className={`flex items-center justify-between rounded-lg border border-border px-3 py-2 ${STAGE_HEADER_TONE[stage]}`}>
+                <div
+                  className={`flex items-center justify-between rounded-lg border px-3 py-2 transition-colors duration-150 motion-reduce:transition-none ${
+                    isDropTarget ? "border-accent bg-accent-muted" : "border-border"
+                  } ${STAGE_HEADER_TONE[stage]}`}
+                >
                   <div className="flex items-center gap-2">
                     <p className="text-[12.5px] font-semibold text-foreground">{DEAL_STAGE_LABEL[stage]}</p>
                     <span className="font-mono text-[11px] text-subtle-foreground">{dealsInStage.length}</span>
                   </div>
                   <span className="font-mono text-[11.5px] text-muted-foreground">{formatCurrency(stageValue)}</span>
                 </div>
-                <div className="flex flex-col gap-2.5 min-h-[80px]">
+                <div
+                  className={`flex flex-col gap-2.5 min-h-[80px] rounded-lg transition-colors duration-150 motion-reduce:transition-none ${
+                    isDropTarget ? "bg-accent-muted/40 ring-1 ring-accent/40" : ""
+                  }`}
+                >
                   {dealsInStage.length === 0 && (
-                    <div className="rounded-lg border border-dashed border-border py-6 text-center">
+                    <div
+                      className={`rounded-lg border border-dashed py-6 text-center transition-colors duration-150 motion-reduce:transition-none ${
+                        isDropTarget ? "border-accent text-accent" : "border-border"
+                      }`}
+                    >
                       <p className="text-[12px] text-subtle-foreground">Drop a deal here</p>
                     </div>
                   )}
@@ -268,7 +339,13 @@ export function DealsBoardView() {
                         deal={deal}
                         linkedName={info.name}
                         linkedHref={info.href}
+                        isDragging={draggingId === deal.id}
+                        isPending={pendingStages[deal.id] !== undefined}
                         onDragStart={setDraggingId}
+                        onDragEnd={() => {
+                          setDraggingId(null);
+                          setDragOverStage(null);
+                        }}
                         onMoveStage={handleMoveStage}
                       />
                     );
@@ -277,7 +354,7 @@ export function DealsBoardView() {
               </div>
             );
           })}
-        </div>
+        </RefreshOverlay>
       )}
 
       <Dialog

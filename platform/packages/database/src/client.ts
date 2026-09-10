@@ -36,6 +36,7 @@
  */
 
 import { PrismaClient, type Prisma } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 
 // ---------------------------------------------------------------------------
 // Base client (singleton, hot-reload safe in dev)
@@ -44,10 +45,61 @@ import { PrismaClient, type Prisma } from '@prisma/client';
 type GlobalWithPrisma = typeof globalThis & { __bebestPrisma?: PrismaClient };
 const globalForPrisma = globalThis as GlobalWithPrisma;
 
+/**
+ * Connection transport.
+ *
+ * Default is the `@prisma/adapter-pg` driver adapter (node-postgres) rather
+ * than Prisma's bundled Rust query engine connector. Two concrete reasons,
+ * both of which matter for this deployment:
+ *
+ *   1. Correctness on networks without a working IPv6 route. The Rust
+ *      connector resolves the host and does not fall back from a AAAA
+ *      record to an A record, so such a machine cannot reach a managed
+ *      Postgres behind a dual-stack DNS name (Neon, Supabase, RDS) at all
+ *      — it fails with a bare `P1001: Can't reach database server`.
+ *      node-postgres uses Node's Happy Eyeballs (`autoSelectFamily`) and
+ *      connects over IPv4 in that situation.
+ *   2. Pool control. The pool below is sized and timed explicitly, which
+ *      the engine connector only exposes through `?connection_limit=` URL
+ *      parameters, and it keeps connections warm so a request isn't paying
+ *      a fresh TLS handshake to a remote (often cross-region) Postgres.
+ *
+ * Set `PRISMA_DRIVER=engine` to fall back to the bundled engine connector.
+ */
 function createClient(): PrismaClient {
-  return new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+  const log: Prisma.LogLevel[] =
+    process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'];
+
+  if (process.env.PRISMA_DRIVER === 'engine') {
+    return new PrismaClient({ log });
+  }
+
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    // No URL to hand the driver adapter. Fall back to the engine connector,
+    // which raises Prisma's own "DATABASE_URL is not set" at first query —
+    // same failure and same message as before this adapter existed, rather
+    // than a new import-time throw that would break every consumer that
+    // only ever mocks the client (unit tests, codegen, lint).
+    return new PrismaClient({ log });
+  }
+
+  const adapter = new PrismaPg({
+    connectionString,
+    max: Number(process.env.DATABASE_POOL_MAX ?? 10),
+    // Long enough that a normally-used API keeps its connections warm.
+    // Establishing a new one to a managed, cross-region Postgres measured
+    // at ~2s here (TCP + TLS + SASL), so an idle timeout shorter than the
+    // gaps between requests makes users pay that repeatedly for nothing.
+    idleTimeoutMillis: Number(process.env.DATABASE_POOL_IDLE_MS ?? 60_000),
+    connectionTimeoutMillis: Number(process.env.DATABASE_CONNECT_TIMEOUT_MS ?? 10_000),
+    // Stops an idle socket from being silently dropped by a NAT/firewall
+    // and only being discovered on the next query.
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
   });
+
+  return new PrismaClient({ adapter, log });
 }
 
 /**
@@ -83,6 +135,28 @@ export class InvalidOrganizationIdError extends Error {
 }
 
 /**
+ * Interactive-transaction limits for every scoped helper below.
+ *
+ * Prisma's defaults are `maxWait: 2000ms` (how long a caller may wait for a
+ * free pooled connection) and `timeout: 5000ms` (how long the transaction
+ * itself may run). Both are tuned for a database on the same network. Here
+ * a single scoped operation is four sequential round trips — BEGIN,
+ * set_config, the query, COMMIT — so at a measured 254ms RTT one
+ * transaction costs ~1s before it does anything interesting, and opening a
+ * fresh connection costs ~2s more. Under a cold pool or any contention the
+ * defaults expire mid-transaction and Prisma raises P2028, which surfaces
+ * as a 500 on a request that was doing nothing wrong.
+ *
+ * These are raised to something proportionate and made tunable, so a
+ * deployment closer to its database can lower them rather than inherit
+ * numbers chosen for a slow link.
+ */
+const TRANSACTION_OPTIONS = {
+  maxWait: Number(process.env.DATABASE_TX_MAX_WAIT_MS ?? 10_000),
+  timeout: Number(process.env.DATABASE_TX_TIMEOUT_MS ?? 20_000),
+} as const;
+
+/**
  * Runs `fn` with `app.current_org` set to `organizationId` for the duration
  * of a single database transaction, so every tenant-table RLS policy scopes
  * to this org. This is the ONLY sanctioned way to run a query against a
@@ -116,7 +190,7 @@ export async function withOrgContext<T>(
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.current_org', ${organizationId}, true)`;
     return fn(tx);
-  });
+  }, TRANSACTION_OPTIONS);
 }
 
 export class InvalidUserIdError extends Error {
@@ -147,7 +221,7 @@ export async function withUserContext<T>(
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.current_user', ${userId}, true)`;
     return fn(tx);
-  });
+  }, TRANSACTION_OPTIONS);
 }
 
 /**
@@ -169,7 +243,7 @@ export async function withUserAndOrgContext<T>(
     await tx.$executeRaw`SELECT set_config('app.current_user', ${userId}, true)`;
     await tx.$executeRaw`SELECT set_config('app.current_org', ${organizationId}, true)`;
     return fn(tx);
-  });
+  }, TRANSACTION_OPTIONS);
 }
 
 /** Convenience alias for readability at call sites: `forOrg(orgId).brands.findMany()`-style

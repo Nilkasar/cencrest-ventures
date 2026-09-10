@@ -26,6 +26,9 @@ const db = {
 // orgs.ts (create-org, accept-invitation) — good enough since neither test
 // below needs real transactional isolation, just the right method shapes.
 const tx = {
+  // writeAuditEvent runs org-attributed writes inside withOrgContext now
+  // (see lib/audit.ts), so the transaction client exposes audit_events.
+  audit_events: db.audit_events,
   organizations: db.organizations,
   memberships: db.memberships,
   agency_clients: db.agency_clients,

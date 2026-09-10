@@ -19,13 +19,21 @@ export function DealCard({
   deal,
   linkedName,
   linkedHref,
+  isDragging = false,
+  isPending = false,
   onDragStart,
+  onDragEnd,
   onMoveStage,
 }: {
   deal: Deal;
   linkedName: string | null;
   linkedHref: string | null;
+  /** This card is the one currently being dragged. */
+  isDragging?: boolean;
+  /** Moved locally; the server hasn't confirmed the new stage yet. */
+  isPending?: boolean;
   onDragStart: (dealId: string) => void;
+  onDragEnd?: () => void;
   onMoveStage: (dealId: string, stage: DealStage) => void;
 }) {
   return (
@@ -36,7 +44,16 @@ export function DealCard({
         event.dataTransfer.effectAllowed = "move";
         onDragStart(deal.id);
       }}
-      className="group rounded-lg border border-border bg-surface-raised p-3 shadow-xs hover:border-border-strong transition-colors cursor-grab active:cursor-grabbing"
+      onDragEnd={() => onDragEnd?.()}
+      aria-busy={isPending || undefined}
+      // The card being dragged fades and lifts so it reads as "in hand"
+      // rather than still sitting in its old column; a card whose move is
+      // still in flight stays legible but muted until the server confirms.
+      className={`group rounded-lg border bg-surface-raised p-3 shadow-xs transition-[opacity,box-shadow,border-color] duration-150 motion-reduce:transition-none cursor-grab active:cursor-grabbing ${
+        isDragging
+          ? "opacity-40 border-accent shadow-md"
+          : "border-border hover:border-border-strong"
+      } ${isPending && !isDragging ? "opacity-70" : ""}`}
     >
       <div className="flex items-start justify-between gap-2">
         <Link href={`/crm/deals/${deal.id}`} className="min-w-0 flex-1">
