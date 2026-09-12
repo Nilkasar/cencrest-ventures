@@ -35,7 +35,7 @@ const ROLE_RANK: Record<role, number> = {
 };
 
 export function isAtLeast(userRole: role, minRole: role): boolean {
-  return ROLE_RANK[userRole] >= ROLE_RANK[minRole];
+  return (ROLE_RANK[userRole] ?? 0) >= (ROLE_RANK[minRole] ?? 0);
 }
 
 /**
@@ -50,7 +50,7 @@ export function isAtLeast(userRole: role, minRole: role): boolean {
  * tie returns, only on rank comparisons downstream).
  */
 export function lowerRankRole(a: role, b: role): role {
-  return ROLE_RANK[a] <= ROLE_RANK[b] ? a : b;
+  return (ROLE_RANK[a] ?? 0) <= (ROLE_RANK[b] ?? 0) ? a : b;
 }
 
 /** @deprecated use {@link isAtLeast} — kept only because the original
