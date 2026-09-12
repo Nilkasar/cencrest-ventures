@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "pnpm --filter @bebest/database run generate && tsc -p tsconfig.build.json",
+    "build": "pnpm --filter @bebest/database run generate && node build.mjs",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
@@ -29,6 +29,7 @@
   "devDependencies": {
     "@bebest/config": "workspace:*",
     "@types/node": "^22.13.10",
+    "esbuild": "^0.25.0",
     "tsx": "^4.19.3",
     "typescript": "^5.7.0",
     "vitest": "^3.0.9"
