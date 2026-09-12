@@ -19,7 +19,7 @@ function Wordmark() {
 
 function SidebarBody({ onClose }: { onClose?: () => void }) {
   return (
-    <div className="flex h-full flex-col bg-ink-950">
+    <div className="flex h-full flex-col bg-ink-950 border-r border-ink-0/[0.06]">
       <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-ink-0/[0.08] shrink-0">
         <Wordmark />
         {onClose && (

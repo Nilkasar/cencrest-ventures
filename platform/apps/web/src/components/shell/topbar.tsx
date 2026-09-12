@@ -9,7 +9,7 @@ import { UserMenu } from "./user-menu";
 
 export function Topbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
   return (
-    <header data-print-hide className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/95 backdrop-blur-none px-4 sm:px-6">
+    <header data-print-hide className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/90 backdrop-blur-sm px-4 sm:px-6">
       <Button variant="ghost" size="icon" className="lg:hidden" onClick={onOpenMobileNav} aria-label="Open navigation">
         <Menu size={18} />
       </Button>

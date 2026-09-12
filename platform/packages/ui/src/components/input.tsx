@@ -28,6 +28,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Inp
           "h-9 w-full rounded-md border border-border bg-surface-raised px-3 text-[13.5px] text-foreground",
           "placeholder:text-subtle-foreground",
           "transition-colors duration-150",
+          "hover:border-border-strong",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:border-transparent",
           "disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-surface",
           error && "border-danger focus-visible:ring-danger",
