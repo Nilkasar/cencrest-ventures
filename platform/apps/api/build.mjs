@@ -16,6 +16,8 @@ await build({
     'argon2',
     'pg-native',
     '@sentry/node',
+    'bufferutil',
+    'utf-8-validate',
   ],
   // esbuild translates import.meta.dirname to __dirname in CJS output
   define: {

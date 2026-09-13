@@ -17,9 +17,12 @@
     "db:apply": "node scripts/apply-sql.mjs"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "@prisma/adapter-neon": "^7.10.0",
     "@prisma/adapter-pg": "^6.19.3",
     "@prisma/client": "^6.5.0",
-    "pg": "^8.23.0"
+    "pg": "^8.23.0",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@bebest/config": "workspace:*",
