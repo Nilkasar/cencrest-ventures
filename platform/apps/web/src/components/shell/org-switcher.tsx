@@ -85,7 +85,7 @@ export function OrgSwitcher() {
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         )}
       >
-        <span className="flex size-5 items-center justify-center rounded-[5px] bg-accent-muted text-accent text-[10px] font-semibold shrink-0">
+        <span className="flex size-5 items-center justify-center rounded-sm bg-accent-muted text-accent text-[10px] font-semibold shrink-0">
           {displayName.slice(0, 1)}
         </span>
         <span className="truncate max-w-[140px]">{displayName}</span>

@@ -52,26 +52,26 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="rounded-full transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         aria-label="Account menu"
       >
         <Avatar fallback={getInitials(displayName)} size="sm" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
+      <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="flex flex-col gap-0.5 normal-case tracking-normal">
           <span className="text-[13px] font-medium text-foreground">{displayName}</span>
           <span className="text-[12px] text-muted-foreground font-normal">{displayEmail}</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => router.push("/settings")}>
-          <User size={14} className="mr-1" /> Profile
+          <User size={14} /> Profile
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => router.push("/settings")}>
-          <Settings size={14} className="mr-1" /> Settings
+          <Settings size={14} /> Settings
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem destructive disabled={signingOut} onSelect={handleSignOut}>
-          <LogOut size={14} className="mr-1" /> {signingOut ? "Signing out…" : "Sign out"}
+          <LogOut size={14} /> {signingOut ? "Signing out…" : "Sign out"}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

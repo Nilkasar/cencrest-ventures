@@ -27,7 +27,7 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center text-center rounded-xl border border-dashed border-border",
+        "flex flex-col items-center justify-center text-center rounded-xl border border-dashed border-border-strong/50",
         compact ? "py-10 px-6" : "py-20 px-8",
         className,
       )}
@@ -35,7 +35,7 @@ export function EmptyState({
       {icon && (
         <div
           className={cn(
-            "flex items-center justify-center rounded-full border border-border bg-surface text-muted-foreground mb-5",
+            "flex items-center justify-center rounded-full border border-border bg-surface-raised shadow-sm text-muted-foreground mb-5",
             compact ? "size-10" : "size-12",
           )}
           aria-hidden="true"

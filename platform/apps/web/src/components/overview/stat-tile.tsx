@@ -38,14 +38,14 @@ export function StatTile({
     >
       <Card
         className={cn(
-          "h-full min-h-[164px] p-5 flex flex-col gap-3 transition-colors duration-150 group-hover:border-accent group-hover:bg-accent-muted/15",
+          "h-full min-h-[164px] p-5 flex flex-col gap-3 transition-all duration-200 ease-out group-hover:border-accent group-hover:shadow-md group-hover:-translate-y-0.5",
           className,
         )}
       >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             {icon && (
-              <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-surface text-muted-foreground group-hover:text-accent transition-colors">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-surface text-muted-foreground group-hover:bg-accent-muted group-hover:text-accent transition-colors">
                 {icon}
               </span>
             )}

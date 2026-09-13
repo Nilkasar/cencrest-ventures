@@ -151,7 +151,7 @@ function NotificationRow({
   );
 
   return (
-    <div className={cn("flex items-start gap-2 border-b border-border px-4 py-3 last:border-b-0", unread && "bg-accent-muted/25")}>
+    <div className={cn("flex items-start gap-2 border-b border-border px-4 py-3 last:border-b-0", unread && "bg-accent-muted/40")}>
       {notification.actionUrl ? (
         <Link href={notification.actionUrl} onClick={onNavigate} className="flex min-w-0 flex-1 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {body}

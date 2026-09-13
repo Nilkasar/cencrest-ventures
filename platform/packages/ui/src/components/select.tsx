@@ -46,7 +46,7 @@ export const SelectContent = React.forwardRef<
         position={position}
         sideOffset={6}
         className={cn(
-          "z-50 min-w-[10rem] overflow-hidden rounded-lg border border-border bg-surface-raised shadow-lg",
+          "z-50 min-w-[10rem] overflow-hidden rounded-lg border border-border bg-surface-raised shadow-md",
           "data-[state=open]:animate-[bb-menu-in_160ms_var(--ease-decelerate)]",
           "data-[state=closed]:animate-[bb-menu-out_120ms_var(--ease-accelerate)]",
           className,

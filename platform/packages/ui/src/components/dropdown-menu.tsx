@@ -21,7 +21,7 @@ export const DropdownMenuContent = React.forwardRef<
         ref={ref}
         sideOffset={sideOffset}
         className={cn(
-          "z-50 min-w-[10rem] overflow-hidden rounded-lg border border-border bg-surface-raised p-1 shadow-lg",
+          "z-50 min-w-[10rem] overflow-hidden rounded-lg border border-border bg-surface-raised p-1 shadow-md",
           "data-[state=open]:animate-[bb-menu-in_160ms_var(--ease-decelerate)]",
           "data-[state=closed]:animate-[bb-menu-out_120ms_var(--ease-accelerate)]",
           className,
@@ -42,7 +42,7 @@ export const DropdownMenuItem = React.forwardRef<
       className={cn(
         "relative flex cursor-pointer select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] outline-none",
         destructive ? "text-danger" : "text-foreground",
-        "data-[highlighted]:bg-surface",
+        "data-[highlighted]:bg-surface data-[highlighted]:text-foreground",
         "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
         className,
       )}
@@ -61,7 +61,7 @@ export const DropdownMenuCheckboxItem = React.forwardRef<
       checked={checked}
       className={cn(
         "relative flex cursor-pointer select-none items-center rounded-md py-1.5 pl-7 pr-2.5 text-[13px] text-foreground outline-none",
-        "data-[highlighted]:bg-surface",
+        "data-[highlighted]:bg-surface data-[highlighted]:text-foreground",
         "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
         className,
       )}
@@ -86,7 +86,7 @@ export const DropdownMenuRadioItem = React.forwardRef<
       ref={ref}
       className={cn(
         "relative flex cursor-pointer select-none items-center rounded-md py-1.5 pl-7 pr-2.5 text-[13px] text-foreground outline-none",
-        "data-[highlighted]:bg-surface",
+        "data-[highlighted]:bg-surface data-[highlighted]:text-foreground",
         "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
         className,
       )}
