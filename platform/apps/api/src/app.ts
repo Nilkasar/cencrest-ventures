@@ -118,8 +118,16 @@ app.route('/api/health', health);
 app.get('/api/debug/db', async (c) => {
   try {
     const { db } = await import('@bebest/database');
-    const result = await db.$queryRaw`SELECT 1 AS ok` as Array<{ok: number}>;
-    return c.json({ ok: true, result });
+    const result1 = await db.$queryRaw`SELECT 1 AS ok` as Array<{ok: number}>;
+    const now = new Date();
+    const win = new Date(Math.floor(now.getTime() / 1000 / 60) * 60 * 1000);
+    const upsertResult = await db.organization_rate_limits.upsert({
+      where: { bucket_key_window_start: { bucket_key: 'debug:test', window_start: win } },
+      create: { bucket_key: 'debug:test', window_start: win, window_seconds: 60, count: 1, organization_id: null },
+      update: { count: { increment: 1 }, updated_at: now },
+    });
+    const result2 = await db.$queryRaw`SELECT 2 AS ok` as Array<{ok: number}>;
+    return c.json({ ok: true, result1, upsertCount: upsertResult.count, result2 });
   } catch (err: unknown) {
     const e = err as Error;
     return c.json({ ok: false, error: e.message, stack: e.stack?.slice(0, 500) }, 500);
