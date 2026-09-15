@@ -62,18 +62,27 @@ export function createAuthRoutes(emailSender: EmailSender) {
   const magicLinkSchema = z.object({ email: z.string().email() });
 
   auth.post('/magic-link', authRateLimit, async (c) => {
-    try {
-      const { email } = { email: 'test@test.com' }; // skip body parsing for now
-      const { token, hash } = generateOpaqueToken(32);
-      const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL_MS);
-      await db.magic_link_tokens.create({
-        data: { email, token_hash: hash, expires_at: expiresAt },
-      });
-      return c.json({ debug: 'magic_link_tokens.create succeeded' });
-    } catch (err: unknown) {
-      const e = err as Error;
-      return c.json({ debug: true, error: e.message, stack: e.stack?.slice(0, 800) }, 500);
+    const body = await c.req.json().catch(() => null);
+    const parsed = magicLinkSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ success: true });
     }
+
+    const { email } = parsed.data;
+    const { token, hash } = generateOpaqueToken(32);
+    const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL_MS);
+
+    await db.magic_link_tokens.create({
+      data: { email, token_hash: hash, expires_at: expiresAt },
+    });
+
+    const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
+    await emailSender.sendMagicLink({
+      to: email,
+      magicLinkUrl: `${appUrl}/auth/magic-link/verify?token=${token}`,
+    });
+
+    return c.json({ success: true });
   });
 
   // ── Verify a magic link, log in (creating the user on first use) ────────
