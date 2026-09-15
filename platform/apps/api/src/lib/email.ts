@@ -1,10 +1,12 @@
+import { Resend } from 'resend';
+
 /**
- * Email delivery abstraction (ADR-010: Resend, not wired up yet).
+ * Email delivery abstraction (ADR-010: Resend).
  *
  * Route/handler code depends on this interface, never on a concrete
- * provider. Swapping in Resend later means writing one new class and
- * changing the single call site in `server.ts`/`app.ts` that constructs
- * the sender — no route or middleware code changes.
+ * provider. The single construction site is in app.ts — it picks
+ * ResendEmailSender when RESEND_API_KEY is set, falls back to
+ * ConsoleEmailSender otherwise (dev/test with zero external dependency).
  */
 export interface EmailSender {
   sendMagicLink(params: { to: string; magicLinkUrl: string }): Promise<void>;
@@ -72,5 +74,59 @@ export class ConsoleEmailSender implements EmailSender {
   async sendNotification({ to, subject, body }: { to: string; subject: string; body: string }): Promise<void> {
     // eslint-disable-next-line no-console -- deliberate: this class IS the dev-mode "delivery"
     console.log(`[dev email] notification for ${to} — ${subject}: ${body}`);
+  }
+}
+
+const FROM = 'BeBest <hello@bebestwithai.com>';
+
+export class ResendEmailSender implements EmailSender {
+  private readonly resend: Resend;
+
+  constructor(apiKey: string) {
+    this.resend = new Resend(apiKey);
+  }
+
+  async sendMagicLink({ to, magicLinkUrl }: { to: string; magicLinkUrl: string }): Promise<void> {
+    await this.resend.emails.send({
+      from: FROM,
+      to,
+      subject: 'Your BeBest sign-in link',
+      html: `<p>Click the link below to sign in to BeBest. This link expires in 15 minutes.</p>
+<p><a href="${magicLinkUrl}">Sign in to BeBest</a></p>
+<p>If you didn't request this, you can safely ignore this email.</p>`,
+      text: `Sign in to BeBest: ${magicLinkUrl}\n\nThis link expires in 15 minutes. If you didn't request this, ignore this email.`,
+    });
+  }
+
+  async sendInvitation({ to, organizationName, inviteUrl }: { to: string; organizationName: string; inviteUrl: string }): Promise<void> {
+    await this.resend.emails.send({
+      from: FROM,
+      to,
+      subject: `You've been invited to join ${organizationName} on BeBest`,
+      html: `<p>You've been invited to join <strong>${organizationName}</strong> on BeBest.</p>
+<p><a href="${inviteUrl}">Accept invitation</a></p>`,
+      text: `You've been invited to join ${organizationName} on BeBest. Accept here: ${inviteUrl}`,
+    });
+  }
+
+  async sendSnapshotReady({ to, reportUrl }: { to: string; reportUrl: string }): Promise<void> {
+    await this.resend.emails.send({
+      from: FROM,
+      to,
+      subject: 'Your AI Visibility Snapshot is ready',
+      html: `<p>Your AI Visibility Snapshot report is ready.</p>
+<p><a href="${reportUrl}">View your report</a></p>`,
+      text: `Your AI Visibility Snapshot is ready. View it here: ${reportUrl}`,
+    });
+  }
+
+  async sendNotification({ to, subject, body }: { to: string; subject: string; body: string }): Promise<void> {
+    await this.resend.emails.send({
+      from: FROM,
+      to,
+      subject,
+      html: `<p>${body.replace(/\n/g, '<br>')}</p>`,
+      text: body,
+    });
   }
 }

@@ -52,18 +52,18 @@ import apply from './routes/apply.js';
 import agency from './routes/agency.js';
 import whiteLabel from './routes/white-label.js';
 import integrations from './routes/integrations.js';
-import { ConsoleEmailSender } from './lib/email.js';
+import { ConsoleEmailSender, ResendEmailSender } from './lib/email.js';
 import { getDefaultErrorTracker } from './lib/observability/default-error-tracker.js';
 import { clientFaultResponse } from './lib/db-errors.js';
 import type { AppEnv } from './types/context.js';
 
 const app = new Hono<AppEnv>();
 
-// Single `EmailSender` construction site (per lib/email.ts's own header
-// comment: "swapping in Resend later means... changing the single call
-// site... no route or handler changes") — shared by every route that sends
-// an email, never a fresh `new ConsoleEmailSender()` per route module.
-const emailSender = new ConsoleEmailSender();
+// Single `EmailSender` construction site — ResendEmailSender when key is set,
+// ConsoleEmailSender (log-only) otherwise.
+const emailSender = process.env.RESEND_API_KEY
+  ? new ResendEmailSender(process.env.RESEND_API_KEY)
+  : new ConsoleEmailSender();
 
 // Security headers — matches docs/08-security/SECURITY.md's required
 // header list exactly.
