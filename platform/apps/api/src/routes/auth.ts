@@ -62,8 +62,7 @@ export function createAuthRoutes(emailSender: EmailSender) {
   const magicLinkSchema = z.object({ email: z.string().email() });
 
   auth.post('/magic-link', authRateLimit, async (c) => {
-    const rawText = await c.req.text().catch(() => null);
-    const body = (() => { try { return rawText ? JSON.parse(rawText) : null; } catch { return null; } })();
+    const body = await c.req.json().catch(() => null);
     const parsed = magicLinkSchema.safeParse(body);
     if (!parsed.success) {
       return c.json({ success: true });

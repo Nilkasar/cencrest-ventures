@@ -105,26 +105,6 @@ app.use(
 app.use('*', requestId);
 app.use('*', requestLogger);
 
-// Eagerly buffer request bodies before any async middleware runs. In the
-// @hono/node-server + Vercel serverless environment the Node.js IncomingMessage
-// body stream can close between the start of the request and when the handler
-// eventually calls c.req.json() — after any awaited DB operation. Pre-reading
-// the body here causes Hono to cache it internally, so later calls to
-// c.req.json()/c.req.text() use the in-memory copy rather than re-reading the
-// (now-closed) stream.
-app.use('*', async (c, next) => {
-  const m = c.req.method;
-  if (m === 'POST' || m === 'PUT' || m === 'PATCH') {
-    try {
-      await Promise.race([
-        c.req.text(),
-        new Promise<void>((resolve) => setTimeout(resolve, 2000)),
-      ]);
-    } catch { /* ignore read errors */ }
-  }
-  return next();
-});
-
 // Baseline public rate limit on everything (SECURITY.md: "Public
 // (unauthenticated): 30 requests / 1 minute"). Routes needing a stricter
 // or authenticated-aware limit apply their own on top — Hono runs
