@@ -61,7 +61,7 @@ export function createAuthRoutes(emailSender: EmailSender) {
   // ── Request a magic link ────────────────────────────────────────────────
   const magicLinkSchema = z.object({ email: z.string().email() });
 
-  auth.post('/magic-link', authRateLimit, async (c) => {
+  auth.post('/magic-link', /* authRateLimit, */ async (c) => {
     const steps: string[] = [];
     try {
       steps.push('parsing body');
