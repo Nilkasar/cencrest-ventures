@@ -115,7 +115,12 @@ app.use('*', requestLogger);
 app.use('*', async (c, next) => {
   const m = c.req.method;
   if (m === 'POST' || m === 'PUT' || m === 'PATCH') {
-    try { await c.req.text(); } catch { /* ignore read errors */ }
+    try {
+      await Promise.race([
+        c.req.text(),
+        new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+      ]);
+    } catch { /* ignore read errors */ }
   }
   return next();
 });
