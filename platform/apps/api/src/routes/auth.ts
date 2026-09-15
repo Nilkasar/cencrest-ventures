@@ -62,30 +62,38 @@ export function createAuthRoutes(emailSender: EmailSender) {
   const magicLinkSchema = z.object({ email: z.string().email() });
 
   auth.post('/magic-link', authRateLimit, async (c) => {
-    const body = await c.req.json().catch(() => null);
-    const parsed = magicLinkSchema.safeParse(body);
-    if (!parsed.success) {
-      // Same response whether the email is malformed or just doesn't
-      // exist yet — magic link always "succeeds" from the caller's
-      // perspective so this endpoint can't be used to enumerate accounts.
+    const steps: string[] = [];
+    try {
+      steps.push('parsing body');
+      const body = await c.req.json().catch(() => null);
+      steps.push('validating');
+      const parsed = magicLinkSchema.safeParse(body);
+      if (!parsed.success) {
+        return c.json({ success: true });
+      }
+
+      const { email } = parsed.data;
+      const { token, hash } = generateOpaqueToken(32);
+      const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL_MS);
+
+      steps.push('creating token in DB');
+      await db.magic_link_tokens.create({
+        data: { email, token_hash: hash, expires_at: expiresAt },
+      });
+
+      steps.push('sending email');
+      const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
+      await emailSender.sendMagicLink({
+        to: email,
+        magicLinkUrl: `${appUrl}/auth/magic-link/verify?token=${token}`,
+      });
+
+      steps.push('done');
       return c.json({ success: true });
+    } catch (err: unknown) {
+      const e = err as Error;
+      return c.json({ debug: true, steps, error: e.message, stack: e.stack?.slice(0, 800) }, 500);
     }
-
-    const { email } = parsed.data;
-    const { token, hash } = generateOpaqueToken(32);
-    const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL_MS);
-
-    await db.magic_link_tokens.create({
-      data: { email, token_hash: hash, expires_at: expiresAt },
-    });
-
-    const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
-    await emailSender.sendMagicLink({
-      to: email,
-      magicLinkUrl: `${appUrl}/auth/magic-link/verify?token=${token}`,
-    });
-
-    return c.json({ success: true });
   });
 
   // ── Verify a magic link, log in (creating the user on first use) ────────
