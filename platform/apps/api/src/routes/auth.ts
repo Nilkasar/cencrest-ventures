@@ -61,8 +61,8 @@ export function createAuthRoutes(emailSender: EmailSender) {
   // ── Request a magic link ────────────────────────────────────────────────
   const magicLinkSchema = z.object({ email: z.string().email() });
 
-  auth.post('/magic-link', /* authRateLimit, */ async (c) => {
-    return c.json({ debug: 'reached handler', time: Date.now() });
+  auth.post('/magic-link', authRateLimit, async (c) => {
+    return c.json({ debug: 'reached handler after authRateLimit', time: Date.now() });
   });
 
   // ── Verify a magic link, log in (creating the user on first use) ────────
