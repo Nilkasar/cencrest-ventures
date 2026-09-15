@@ -113,6 +113,19 @@ app.use('*', requestLogger);
 app.use('*', publicRateLimit);
 
 app.route('/api/health', health);
+
+// Temporary DB connectivity debug endpoint — remove after confirming auth works
+app.get('/api/debug/db', async (c) => {
+  try {
+    const { db } = await import('@bebest/database');
+    const result = await db.$queryRaw`SELECT 1 AS ok` as Array<{ok: number}>;
+    return c.json({ ok: true, result });
+  } catch (err: unknown) {
+    const e = err as Error;
+    return c.json({ ok: false, error: e.message, stack: e.stack?.slice(0, 500) }, 500);
+  }
+});
+
 app.route('/api/auth', createAuthRoutes(emailSender));
 app.route('/api/orgs', createOrgsRoutes(emailSender));
 
