@@ -36,7 +36,7 @@
  */
 
 import { PrismaClient, type Prisma } from '@prisma/client';
-import { neonConfig, Pool as NeonPool } from '@neondatabase/serverless';
+import { neonConfig } from '@neondatabase/serverless';
 import { PrismaNeon } from '@prisma/adapter-neon';
 import ws from 'ws';
 
@@ -79,13 +79,12 @@ function createClient(): PrismaClient {
     return new PrismaClient({ log });
   }
 
-  const pool = new NeonPool({
+  const adapter = new PrismaNeon({
     connectionString,
     max: Number(process.env.DATABASE_POOL_MAX ?? 10),
     idleTimeoutMillis: Number(process.env.DATABASE_POOL_IDLE_MS ?? 30_000),
     connectionTimeoutMillis: Number(process.env.DATABASE_CONNECT_TIMEOUT_MS ?? 10_000),
   });
-  const adapter = new PrismaNeon(pool);
 
   return new PrismaClient({ adapter, log });
 }
