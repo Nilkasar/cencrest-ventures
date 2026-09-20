@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getCrawlJob, getLatestCrawlJob, startCrawl } from "@/data/website/client";
 import type { CrawlJob } from "@/data/website/types";
 
-const POLL_INTERVAL_MS = 1000;
+const POLL_INTERVAL_MS = 3000;
 
 export type CrawlJobState =
   | { status: "loading" }
