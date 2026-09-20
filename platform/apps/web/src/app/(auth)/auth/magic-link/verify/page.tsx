@@ -25,12 +25,21 @@ interface VerifyResponse {
 }
 
 interface MeResponse {
+  id: string;
+  email: string;
+  name: string;
   organizations: { id: string; name: string; slug: string; role: string }[];
 }
 
 interface SelectOrgResponse {
   accessToken: string;
   organization: { id: string; name: string; slug: string; role: string };
+}
+
+interface CreateOrgResponse {
+  id: string;
+  name: string;
+  slug: string;
 }
 
 /**
@@ -44,8 +53,10 @@ interface SelectOrgResponse {
  * Picking the first membership is the same interim single-org assumption
  * the Settings > Team panel already documents: correct for a user in one
  * organization, and the org switcher is how a multi-org user changes it.
- * Never fatal — a user with no organizations still reaches the app, where
- * onboarding can create one.
+ *
+ * New users (no organizations) get a default org created from their profile
+ * name so the onboarding wizard can load immediately — they can rename it in
+ * Settings > Organization after setup completes.
  *
  * Returns true when an org was selected, which is also the signal for where
  * to send the user next: a member already has a workspace and belongs in
@@ -54,8 +65,22 @@ interface SelectOrgResponse {
 async function selectInitialOrg(): Promise<boolean> {
   try {
     const me = await apiClient.get<MeResponse>("/auth/me");
-    const first = me.organizations[0];
-    if (!first) return false;
+    let first = me.organizations[0];
+
+    if (!first) {
+      // New user — create a default org so the onboarding wizard has something
+      // to load against. The name defaults to their profile name (email prefix);
+      // they can rename it in Settings > Organization.
+      const rawName = me.name && me.name.length >= 2 ? me.name : me.email.split("@")[0] ?? "My Organization";
+      try {
+        const newOrg = await apiClient.post<CreateOrgResponse>("/orgs", { name: rawName });
+        first = { id: newOrg.id, name: newOrg.name, slug: newOrg.slug, role: "owner" };
+      } catch {
+        // Org creation failed (slug collision or validation) — redirect to
+        // onboarding anyway; the wizard handles the no-org state gracefully.
+        return false;
+      }
+    }
 
     const selection = await apiClient.post<SelectOrgResponse>("/auth/select-org", {
       slug: first.slug,
