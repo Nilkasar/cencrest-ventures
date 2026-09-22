@@ -1,18 +1,21 @@
 /**
- * Epic 18 (Agency / White Label / Integrations) —
- * `POST /integrations/:provider/connect` (mock), `POST
- * /integrations/:provider/disconnect`, `GET /integrations`. Backed by the
- * pre-existing, already-hardened `integrations` table (see
- * `@bebest/database` DECISIONS.md's Epic 18 section) — no OAuth flow, no
- * real network call, ever: `config_enc` is populated with a clearly-tagged
- * mock string, never a real token, and is never included in any response
- * or log line.
+ * Integration routes — Google OAuth connect/callback, disconnect, stats, and
+ * the legacy mock connect path retained for backward compatibility.
  *
- * `:provider` is a small, closed allowlist mapping a friendly URL slug onto
- * the DB's `integration_type` enum — currently exactly one real target
- * (`google_search_console` -> `gsc`), since that is the one this epic's
- * `MockSearchConsoleProvider` actually backs. See this file's "not done"
- * note at the bottom for Bing Webmaster.
+ * OAuth flow (new):
+ *   1. `GET /integrations/:provider/authorize` — returns a Google consent URL.
+ *   2. Google redirects to `GET /integrations/google/callback` — exchanges code,
+ *      discovers siteUrl/propertyId, upserts the `integrations` row.
+ *
+ * The callback is PUBLIC (no `requireAuth`) — it is the OAuth redirect target
+ * and must be accessible without a Bearer token. It is mounted in `app.ts`
+ * at the same `/api/integrations` base as the authenticated routes; `app.ts`
+ * must ensure the public `publicRateLimit` already applied at `*` is the only
+ * middleware that runs before this handler.
+ *
+ * `config_enc` fields written here: `{ accessToken, refreshToken, expiresAt,
+ * scope, siteUrl? (gsc), propertyId? (ga4) }`. Never returned in any
+ * response or log line.
  */
 import { Hono } from 'hono';
 import { randomUUID } from 'node:crypto';
@@ -22,24 +25,34 @@ import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { auditLog } from '../middleware/audit-log.js';
+import {
+  generateAuthUrl,
+  verifyState,
+  exchangeCode,
+  refreshAccessToken,
+  type OAuthProvider,
+} from '../lib/google-oauth.js';
+import { GoogleSearchConsoleProvider } from '../lib/seo/google-search-console-provider.js';
+import { GoogleAnalyticsProvider, listGA4Properties } from '../lib/analytics/google-analytics-provider.js';
+import { getGSCStats } from '../lib/analytics/gsc-stats.js';
 import type { AppEnv } from '../types/context.js';
 
 const integrationsRoute = new Hono<AppEnv>();
 
 const MANAGE = 'manage_integrations' as const;
 
-// Friendly URL slug -> DB enum. Only providers with a real (mocked)
-// `SEODataProvider`/consumer belong here — adding a slug with no consumer
-// would be exactly the "connection record exists but nothing ever reads
-// it" gap the epic's end-to-end flow step 5 explicitly asks to be traced
-// and avoided.
 const PROVIDER_SLUGS: Record<string, integration_type> = {
   google_search_console: 'gsc',
+  google_analytics_4: 'ga4',
+};
+
+const SLUG_FOR_TYPE: Partial<Record<integration_type, string>> = {
+  gsc: 'google_search_console',
+  ga4: 'google_analytics_4',
 };
 
 function slugForType(type: integration_type): string {
-  const found = Object.entries(PROVIDER_SLUGS).find(([, t]) => t === type);
-  return found ? found[0] : type;
+  return SLUG_FOR_TYPE[type] ?? type;
 }
 
 function serializeIntegration(row: {
@@ -60,13 +73,25 @@ function serializeIntegration(row: {
   };
 }
 
-// ── GET /integrations — list this org's connections. Never returns
-// `config_enc` (the "encrypted at rest, never logged" token blob). ────────
+function getRedirectUri(): string {
+  if (process.env.GOOGLE_OAUTH_REDIRECT_URI) {
+    return process.env.GOOGLE_OAUTH_REDIRECT_URI;
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    return `http://localhost:3001/api/integrations/google/callback`;
+  }
+  // Fallback for production — prefer GOOGLE_OAUTH_REDIRECT_URI env var so
+  // preview deployments and custom domains don't produce redirect_uri mismatch.
+  return `https://bebest-api.vercel.app/api/integrations/google/callback`;
+}
+
+function getAppUrl(): string {
+  return process.env.APP_URL ?? 'https://app.bebestwithai.com';
+}
+
+// ── GET /integrations — list this org's connections ──────────────────────────
 integrationsRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), async (c) => {
   const org = c.get('org');
-  // Epic 19 (Production Hardening), item 6 — capped server-side for
-  // consistency with every other list endpoint in this codebase, though
-  // this one is naturally small (one row per provider type per org).
   const rows = await withOrgContext(org.organizationId, (tx) =>
     tx.integrations.findMany({
       where: { organization_id: org.organizationId, deleted_at: null },
@@ -77,11 +102,306 @@ integrationsRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromTo
   return c.json(rows.map(serializeIntegration));
 });
 
-// ── POST /integrations/:provider/connect — mock OAuth completion. A real
-// implementation would land here AFTER a genuine OAuth redirect/callback
-// (the deployment-time integration point the epic spec asks to be clearly
-// marked); this build skips straight to "connected" with a tagged mock
-// token, per the epic's explicit "no real OAuth flow" constraint. ─────────
+// ── GET /integrations/:provider/authorize — begin OAuth flow ─────────────────
+integrationsRoute.get(
+  '/:provider/authorize',
+  requireAuth,
+  authenticatedRateLimit,
+  requireOrgFromToken('viewer'),
+  async (c) => {
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+      return c.json(
+        { error: 'google_oauth_not_configured', message: 'Google OAuth credentials are not configured.' },
+        503,
+      );
+    }
+
+    const providerSlug = c.req.param('provider');
+    const integrationType = PROVIDER_SLUGS[providerSlug];
+    if (!integrationType) {
+      return c.json(
+        {
+          error: 'unsupported_provider',
+          message: `Unknown provider "${providerSlug}". Supported: ${Object.keys(PROVIDER_SLUGS).join(', ')}.`,
+        },
+        400,
+      );
+    }
+
+    const org = c.get('org');
+    const oauthProvider = integrationType as OAuthProvider;
+    const url = generateAuthUrl(oauthProvider, org.organizationId, getRedirectUri());
+    return c.json({ url });
+  },
+);
+
+// ── GET /integrations/google/callback — public OAuth redirect target ─────────
+// Registered here but mounted BEFORE auth middleware in app.ts so Google can
+// redirect back without a Bearer token.
+integrationsRoute.get('/google/callback', async (c) => {
+  const appUrl = getAppUrl();
+  const { code, state, error } = c.req.query() as { code?: string; state?: string; error?: string };
+
+  if (error || !code || !state) {
+    return c.redirect(`${appUrl}/connectors?error=oauth_denied`);
+  }
+
+  let provider: OAuthProvider;
+  let orgId: string;
+  try {
+    ({ provider, orgId } = verifyState(state));
+  } catch {
+    return c.redirect(`${appUrl}/connectors?error=oauth_failed`);
+  }
+
+  try {
+    const redirectUri = getRedirectUri();
+    const { accessToken, refreshToken, expiresAt, scope } = await exchangeCode(code, redirectUri);
+
+    const config: {
+      accessToken: string;
+      refreshToken: string;
+      expiresAt: number;
+      scope: string;
+      siteUrl?: string;
+      propertyId?: string;
+    } = { accessToken, refreshToken, expiresAt, scope };
+
+    if (provider === 'gsc') {
+      const gscProvider = new GoogleSearchConsoleProvider(accessToken);
+      const siteUrl = await gscProvider.getSiteUrl();
+      if (siteUrl) config.siteUrl = siteUrl;
+    } else {
+      const properties = await listGA4Properties(accessToken);
+      if (properties.length > 0 && properties[0]) config.propertyId = properties[0].propertyId;
+    }
+
+    const integrationType = provider as integration_type;
+    const now = new Date();
+
+    await withOrgContext(orgId, (tx) =>
+      tx.integrations.upsert({
+        where: { organization_id_integration_type: { organization_id: orgId, integration_type: integrationType } },
+        create: {
+          organization_id: orgId,
+          integration_type: integrationType,
+          config_enc: config,
+          status: 'connected',
+          connected_at: now,
+          disconnected_at: null,
+          // No `created_by` available on a public callback — omit rather
+          // than fabricate a user id. The `created_by` column is nullable
+          // per the schema.
+        },
+        update: {
+          config_enc: config,
+          status: 'connected',
+          connected_at: now,
+          disconnected_at: null,
+          updated_at: now,
+        },
+      }),
+    );
+
+    const providerSlug = SLUG_FOR_TYPE[integrationType] ?? integrationType;
+    return c.redirect(`${appUrl}/connectors?connected=${providerSlug}`);
+  } catch {
+    return c.redirect(`${appUrl}/connectors?error=oauth_failed`);
+  }
+});
+
+// ── Token refresh helper (race-safe) ─────────────────────────────────────────
+// Uses a conditional update keyed on the *current* expiresAt value. If two
+// concurrent requests both see an expired token and both call refreshAccessToken,
+// only one update will match the WHERE condition (updated_at < threshold trick
+// is not available in Prisma without raw SQL, so we instead re-read after a
+// lost race and use whichever token is freshest).
+async function resolveAccessToken(
+  organizationId: string,
+  connectionId: string,
+  cfg: { accessToken: string; refreshToken?: string; expiresAt?: number; [k: string]: unknown },
+  reconnectMessage: string,
+): Promise<{ accessToken: string } | { error: string; message: string; status: 409 }> {
+  const needsRefresh =
+    cfg.expiresAt != null &&
+    cfg.expiresAt < Math.floor(Date.now() / 1000) + 60 &&
+    cfg.refreshToken != null;
+
+  if (!needsRefresh) return { accessToken: cfg.accessToken };
+
+  try {
+    const refreshed = await refreshAccessToken(cfg.refreshToken!);
+
+    // Attempt a conditional write — only update if updated_at hasn't changed
+    // since we read (i.e., nobody else snuck in a refresh). Prisma doesn't
+    // expose WHERE on update directly, so we use updateMany with the id filter;
+    // updateMany returns { count } which is 0 when another writer beat us.
+    const { count } = await withOrgContext(organizationId, (tx) =>
+      (tx.integrations as unknown as {
+        updateMany: (args: {
+          where: { id: string };
+          data: { config_enc: unknown; updated_at: Date };
+        }) => Promise<{ count: number }>;
+      }).updateMany({
+        where: { id: connectionId },
+        data: {
+          config_enc: { ...cfg, accessToken: refreshed.accessToken, expiresAt: refreshed.expiresAt },
+          updated_at: new Date(),
+        },
+      }),
+    );
+
+    if (count > 0) {
+      // We won the race — use our freshly issued token.
+      return { accessToken: refreshed.accessToken };
+    }
+
+    // We lost the race — re-read the row to get whatever fresher token the
+    // other writer stored, rather than using our now-stale refreshed token
+    // (Google may already have revoked our refresh result).
+    const latest = await withOrgContext(organizationId, (tx) =>
+      tx.integrations.findUnique({ where: { id: connectionId } }),
+    );
+    const latestCfg = latest?.config_enc as typeof cfg | null;
+    if (latestCfg?.accessToken) return { accessToken: latestCfg.accessToken };
+
+    // Fallback: use what we got from the refresh even if we lost the race.
+    return { accessToken: refreshed.accessToken };
+  } catch {
+    return { error: 'token_expired', message: reconnectMessage, status: 409 };
+  }
+}
+
+// ── GET /integrations/gsc/stats ──────────────────────────────────────────────
+integrationsRoute.get(
+  '/gsc/stats',
+  requireAuth,
+  authenticatedRateLimit,
+  requireOrgFromToken('viewer'),
+  async (c) => {
+    const org = c.get('org');
+
+    const connection = await withOrgContext(org.organizationId, (tx) =>
+      tx.integrations.findUnique({
+        where: {
+          organization_id_integration_type: {
+            organization_id: org.organizationId,
+            integration_type: 'gsc',
+          },
+        },
+      }),
+    );
+
+    if (!connection || connection.status !== 'connected' || connection.deleted_at) {
+      return c.json({ error: 'not_connected' }, 404);
+    }
+
+    const cfg = connection.config_enc as {
+      accessToken?: string;
+      refreshToken?: string;
+      expiresAt?: number;
+      siteUrl?: string;
+    } | null;
+
+    if (!cfg?.accessToken || !cfg.siteUrl) {
+      return c.json({ error: 'not_connected' }, 404);
+    }
+
+    const tokenResult = await resolveAccessToken(
+      org.organizationId,
+      connection.id,
+      cfg as { accessToken: string; refreshToken?: string; expiresAt?: number; siteUrl?: string },
+      'Please reconnect Google Search Console.',
+    );
+    if ('error' in tokenResult) return c.json({ error: tokenResult.error, message: tokenResult.message }, tokenResult.status);
+    const { accessToken } = tokenResult;
+
+    const rawDays = c.req.query('days');
+    const days = Math.min(Math.max(rawDays ? parseInt(rawDays, 10) || 28 : 28, 1), 90);
+
+    try {
+      const stats = await getGSCStats(accessToken, cfg.siteUrl, days);
+      return c.json(stats);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('401') || message.includes('invalid_grant')) {
+        return c.json(
+          { error: 'token_expired', message: 'Please reconnect Google Search Console.' },
+          409,
+        );
+      }
+      throw err;
+    }
+  },
+);
+
+// ── GET /integrations/ga4/stats ──────────────────────────────────────────────
+integrationsRoute.get(
+  '/ga4/stats',
+  requireAuth,
+  authenticatedRateLimit,
+  requireOrgFromToken('viewer'),
+  async (c) => {
+    const org = c.get('org');
+
+    const connection = await withOrgContext(org.organizationId, (tx) =>
+      tx.integrations.findUnique({
+        where: {
+          organization_id_integration_type: {
+            organization_id: org.organizationId,
+            integration_type: 'ga4',
+          },
+        },
+      }),
+    );
+
+    if (!connection || connection.status !== 'connected' || connection.deleted_at) {
+      return c.json({ error: 'not_connected' }, 404);
+    }
+
+    const cfg = connection.config_enc as {
+      accessToken?: string;
+      refreshToken?: string;
+      expiresAt?: number;
+      propertyId?: string;
+    } | null;
+
+    if (!cfg?.accessToken || !cfg.propertyId) {
+      return c.json({ error: 'not_connected' }, 404);
+    }
+
+    const tokenResult = await resolveAccessToken(
+      org.organizationId,
+      connection.id,
+      cfg as { accessToken: string; refreshToken?: string; expiresAt?: number; propertyId?: string },
+      'Please reconnect Google Analytics 4.',
+    );
+    if ('error' in tokenResult) return c.json({ error: tokenResult.error, message: tokenResult.message }, tokenResult.status);
+    const { accessToken } = tokenResult;
+
+    const rawDays = c.req.query('days');
+    const days = Math.min(Math.max(rawDays ? parseInt(rawDays, 10) || 28 : 28, 1), 90);
+
+    try {
+      const provider = new GoogleAnalyticsProvider(accessToken, cfg.propertyId);
+      const stats = await provider.getStats(days);
+      return c.json(stats);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('401') || message.includes('invalid_grant')) {
+        return c.json(
+          { error: 'token_expired', message: 'Please reconnect Google Analytics 4.' },
+          409,
+        );
+      }
+      throw err;
+    }
+  },
+);
+
+// ── POST /integrations/:provider/connect — mock flow (backward compat) ───────
+// When real OAuth is configured, reject mock tokens to prevent accidentally
+// storing a placeholder alongside a real OAuth flow.
 integrationsRoute.post(
   '/:provider/connect',
   requireAuth,
@@ -90,6 +410,16 @@ integrationsRoute.post(
   requirePermission(MANAGE),
   auditLog({ action: 'integration.connected', entityType: 'integrations' }),
   async (c) => {
+    if (process.env.GOOGLE_CLIENT_ID) {
+      return c.json(
+        {
+          error: 'use_oauth_flow',
+          message: 'Google OAuth is configured — use GET /integrations/:provider/authorize to connect.',
+        },
+        400,
+      );
+    }
+
     const providerSlug = c.req.param('provider');
     const integrationType = PROVIDER_SLUGS[providerSlug];
     if (!integrationType) {
@@ -106,12 +436,6 @@ integrationsRoute.post(
     const user = c.get('user');
     const now = new Date();
 
-    // DEPLOYMENT-TIME INTEGRATION POINT: a real connect flow exchanges an
-    // OAuth authorization code for real access/refresh tokens here. This
-    // mock never makes that call — the string below is clearly tagged as a
-    // placeholder, never mistakeable for a real credential, and is stored
-    // only inside `config_enc` (this table's documented "encrypted at
-    // rest" boundary — see @bebest/database DECISIONS.md), never logged.
     const mockConfig = {
       accessTokenEnc: `mock:${providerSlug}:access:${randomUUID()}`,
       refreshTokenEnc: `mock:${providerSlug}:refresh:${randomUUID()}`,
@@ -143,7 +467,7 @@ integrationsRoute.post(
   },
 );
 
-// ── POST /integrations/:provider/disconnect ─────────────────────────────
+// ── POST /integrations/:provider/disconnect ──────────────────────────────────
 integrationsRoute.post(
   '/:provider/disconnect',
   requireAuth,
@@ -169,8 +493,6 @@ integrationsRoute.post(
     const row = await withOrgContext(org.organizationId, (tx) =>
       tx.integrations.update({
         where: { id: existing.id },
-        // config_enc cleared, not merely left stale — a disconnected
-        // integration must not leave a usable (mock) credential behind.
         data: { status: 'disconnected', disconnected_at: now, config_enc: {}, updated_at: now },
       }),
     );
@@ -180,12 +502,3 @@ integrationsRoute.post(
 );
 
 export default integrationsRoute;
-
-// NOT DONE: Bing Webmaster Tools. `docs/10-seo/SEO_ENGINE.md`'s "Available
-// Without Paid APIs" list names both GSC and Bing; this build wires only
-// Google Search Console end-to-end (the one `MockSearchConsoleProvider`
-// backs). Adding Bing is: one more `integration_type` enum value (schema
-// never applied to a database — safe to add), one more `PROVIDER_SLUGS`
-// entry, and a `MockBingWebmasterProvider` alongside
-// `mock-search-console-provider.ts` — no other file in this epic would
-// need to change.

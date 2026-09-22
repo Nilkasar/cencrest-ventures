@@ -1,14 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { Plug, PlugZap } from "lucide-react";
-import { Badge, Button, Card, CardContent, Skeleton, useToast } from "@bebest/ui";
+import Link from "next/link";
+import { Plug, PlugZap, ExternalLink } from "lucide-react";
+import { Badge, Button, Card, CardContent, Skeleton } from "@bebest/ui";
 import { ErrorPanel } from "@/components/patterns/error-panel";
 import { useAsyncData } from "@/lib/use-async-data";
 import { formatDateTime } from "@/lib/format";
-import { connectIntegration, disconnectIntegration, listIntegrations } from "@/data/integrations/client";
+import { listIntegrations } from "@/data/integrations/client";
 import { SUPPORTED_PROVIDERS, type Integration, type IntegrationStatus } from "@/data/integrations/types";
-import { useSession } from "@/lib/session-context";
 
 const STATUS_LABEL: Record<IntegrationStatus, string> = {
   connected: "Connected",
@@ -22,46 +21,8 @@ const STATUS_VARIANT: Record<IntegrationStatus, "success" | "neutral" | "danger"
   error: "danger",
 };
 
-/** Settings > Integrations. Wires directly into the real Epic 18 routes
- *  (`GET /integrations`, `POST /integrations/:provider/{connect,disconnect}`)
- *  — mock connect/disconnect, no OAuth redirect. Connecting here is what
- *  `apps/api/src/lib/seo/resolve-provider-for-org.ts` checks before
- *  preferring `MockSearchConsoleProvider` over the estimate-only
- *  `NullSEODataProvider` on the next SEO keyword-group generation. */
 export function IntegrationsPanel() {
-  const { org } = useSession();
   const { reload, ...state } = useAsyncData(listIntegrations, []);
-  const [busySlug, setBusySlug] = useState<string | null>(null);
-  const { toast } = useToast();
-
-  const myRole = org?.role ?? "member";
-  const isAdmin = myRole === "owner" || myRole === "admin";
-
-  async function handleConnect(slug: string) {
-    setBusySlug(slug);
-    try {
-      await connectIntegration(slug);
-      toast({ title: "Connected", description: "Rankings will now use this connection's data.", variant: "success" });
-      reload();
-    } catch {
-      toast({ title: "Couldn't connect", description: "Try again in a moment.", variant: "danger" });
-    } finally {
-      setBusySlug(null);
-    }
-  }
-
-  async function handleDisconnect(slug: string) {
-    setBusySlug(slug);
-    try {
-      await disconnectIntegration(slug);
-      toast({ title: "Disconnected", variant: "success" });
-      reload();
-    } catch {
-      toast({ title: "Couldn't disconnect", description: "Try again in a moment.", variant: "danger" });
-    } finally {
-      setBusySlug(null);
-    }
-  }
 
   if (state.status === "loading") {
     return <Skeleton className="h-48 w-full rounded-xl" />;
@@ -75,16 +36,9 @@ export function IntegrationsPanel() {
 
   return (
     <div className="flex flex-col gap-4">
-      {!isAdmin && (
-        <p className="text-[12.5px] text-subtle-foreground">
-          You&apos;re viewing integrations as {myRole}. Only an organization admin or owner can connect or
-          disconnect one.
-        </p>
-      )}
       <p className="text-[12.5px] text-muted-foreground">
-        No real OAuth handshake happens in this build — connecting simulates a completed authorization so the data
-        model and provider-selection logic can be exercised end-to-end. A real Google/Bing OAuth flow is the
-        deployment-time integration point.
+        Connect Google Search Console and Google Analytics 4 from the Connectors page to see your site&apos;s real
+        performance data.
       </p>
       {SUPPORTED_PROVIDERS.map((provider) => {
         const row = byProvider.get(provider.slug);
@@ -106,27 +60,27 @@ export function IntegrationsPanel() {
                   </div>
                   <p className="text-[12.5px] text-muted-foreground mt-0.5">{provider.description}</p>
                   {row?.connectedAt && connected && (
-                    <p className="text-[11.5px] text-subtle-foreground mt-1">Connected {formatDateTime(row.connectedAt)}</p>
+                    <p className="text-[11.5px] text-subtle-foreground mt-1">
+                      Connected {formatDateTime(row.connectedAt)}
+                    </p>
                   )}
                   {row?.disconnectedAt && !connected && (
-                    <p className="text-[11.5px] text-subtle-foreground mt-1">Disconnected {formatDateTime(row.disconnectedAt)}</p>
+                    <p className="text-[11.5px] text-subtle-foreground mt-1">
+                      Disconnected {formatDateTime(row.disconnectedAt)}
+                    </p>
                   )}
                 </div>
               </div>
-              <Button
-                variant={connected ? "outline" : "primary"}
-                size="sm"
-                className="shrink-0"
-                loading={busySlug === provider.slug}
-                disabled={!isAdmin || busySlug !== null}
-                onClick={() => (connected ? handleDisconnect(provider.slug) : handleConnect(provider.slug))}
-              >
-                {connected ? "Disconnect" : "Connect"}
-              </Button>
             </CardContent>
           </Card>
         );
       })}
+      <Button variant="outline" size="sm" className="self-start" asChild>
+        <Link href="/connectors">
+          Manage in Connectors
+          <ExternalLink size={12} className="ml-1.5" />
+        </Link>
+      </Button>
     </div>
   );
 }

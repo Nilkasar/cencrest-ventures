@@ -21,6 +21,7 @@
     "@hono/node-server": "^1.13.7",
     "@hono/zod-validator": "^0.9.0",
     "@sentry/node": "^10.73.0",
+    "googleapis": "^148.0.0",
     "hono": "^4.7.5",
     "jose": "^6.2.10",
     "pg-boss": "^12.30.0",

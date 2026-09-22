@@ -14,6 +14,7 @@
 import { withOrgContext } from '@bebest/database';
 import { getSEODataProvider, type SEODataProvider } from './seo-data-provider.js';
 import { MockSearchConsoleProvider } from './mock-search-console-provider.js';
+import { GoogleSearchConsoleProvider } from './google-search-console-provider.js';
 
 /**
  * Resolves which `SEODataProvider` `organizationId` should get: a
@@ -37,6 +38,10 @@ export async function resolveSEODataProviderForOrg(organizationId: string): Prom
   );
 
   if (connection && connection.status === 'connected' && connection.deleted_at === null) {
+    const config = connection.config_enc as { accessToken?: string; siteUrl?: string } | null;
+    if (config?.accessToken && !config.accessToken.startsWith('mock:')) {
+      return new GoogleSearchConsoleProvider(config.accessToken, config.siteUrl);
+    }
     return new MockSearchConsoleProvider();
   }
 
