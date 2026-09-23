@@ -217,7 +217,7 @@ export function ContentView() {
                   compact
                   icon={<CheckCircle2 size={18} />}
                   title="Published content lives in Actions"
-                  description=”Approving a draft creates a pending action in the Action Center, where a human approves the actual publish. See what's published, where, and when there.”
+                  description="Approving a draft creates a pending action in the Action Center, where a human approves the actual publish. See what's published, where, and when there."
                   action={
                     <Button asChild variant="secondary" size="sm">
                       <Link href="/actions">Go to Actions</Link>
