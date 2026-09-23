@@ -64,7 +64,11 @@ export interface AiVisibilityPipelineDeps {
 }
 
 function defaultPromptsBaseDir(): string {
-  return path.join(import.meta.dirname, '../../prompts');
+  // Production bundle: dist/app.cjs → __dirname = dist/, prompts copied to dist/prompts/
+  // Dev: src/lib/ai-visibility/ → ../../prompts = src/prompts/
+  const prodPath = path.join(import.meta.dirname, 'prompts');
+  const devPath = path.join(import.meta.dirname, '../../prompts');
+  return require('fs').existsSync(prodPath) ? prodPath : devPath;
 }
 
 /** `parseAttempts` from `ExtractionResult` (`@bebest/ai-provider`) is a

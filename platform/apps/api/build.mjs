@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { mkdir } from 'fs/promises';
+import { mkdir, cp } from 'fs/promises';
 
 await mkdir('dist', { recursive: true });
 
@@ -28,5 +28,7 @@ await build({
   },
   logLevel: 'info',
 });
+
+await cp('src/prompts', 'dist/prompts', { recursive: true });
 
 console.log('Build complete: dist/app.cjs');

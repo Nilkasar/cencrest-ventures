@@ -88,7 +88,11 @@ export interface FreeSnapshotAiRunResult {
 }
 
 function defaultPromptsBaseDir(): string {
-  return path.join(import.meta.dirname, '../../prompts');
+  // Production bundle: dist/app.cjs → __dirname = dist/, prompts copied to dist/prompts/
+  // Dev: src/lib/free-snapshot/ → ../../prompts = src/prompts/
+  const prodPath = path.join(import.meta.dirname, 'prompts');
+  const devPath = path.join(import.meta.dirname, '../../prompts');
+  return require('fs').existsSync(prodPath) ? prodPath : devPath;
 }
 
 /**

@@ -91,7 +91,7 @@ export default function SettingsPage() {
       <PageHeader
         eyebrow="Organization"
         title="Settings"
-        description="Brand profile, competitors, integrations, team, notifications, billing, and autonomy — organized by what Epic each depends on."
+        description="Brand profile, competitors, integrations, team, notifications, billing, and autonomy."
       />
       <Suspense fallback={null}>
         <SettingsTabs />

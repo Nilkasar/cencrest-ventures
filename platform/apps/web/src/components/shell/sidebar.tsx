@@ -33,9 +33,6 @@ function SidebarBody({ onClose }: { onClose?: () => void }) {
         )}
       </div>
       <SidebarNav onNavigate={onClose} />
-      <div className="shrink-0 px-5 py-3 border-t border-ink-0/[0.08] text-[11px] text-ink-0/35 font-mono">
-        rebuild/platform · epic 0
-      </div>
     </div>
   );
 }

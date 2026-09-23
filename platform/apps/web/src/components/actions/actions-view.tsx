@@ -137,7 +137,7 @@ export function ActionsView() {
       <PageHeader
         eyebrow="Execution"
         title="Actions"
-        description="What have I done and what happened? Pending approvals, in-progress work, completed publishes with their outcome, and anything rolled back. Nothing here ever publishes without your explicit approval (ADR-007)."
+        description="Pending approvals, in-progress work, completed publishes with their outcome, and anything rolled back. Nothing here ever publishes without your explicit approval."
       />
 
       {state.status === "success" && !canPublish && (
