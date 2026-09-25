@@ -6,6 +6,65 @@ Nothing here is a code change. Everything below is configuration, infrastructure
 
 ---
 
+## 0. The runbook — do these in this order
+
+Sections 1–7 are reference, organised by topic. This section is the sequence, because
+several steps produce a value a later step needs. Each one links to its detail below.
+
+Set `DATABASE_URL` to the `bebest_admin` role for steps 2–5 (they create and seed
+schema) and to `bebest_app` everywhere afterwards.
+
+| # | Step | Produces / needs | Detail |
+|---|---|---|---|
+| 1 | Provision Postgres 16 (Neon, Supabase, RDS, anything) | the connection string | §1.1 |
+| 2 | Create the `bebest_app` and `bebest_admin` roles | **`bebest_app` must not have `BYPASSRLS` and must not own the tables**, or tenant isolation is silently off | §1.2 |
+| 3 | `pnpm --filter @bebest/database run db:apply` | 128 tables, constraints, indexes, RLS. Add `--dry-run` first. **`prisma migrate deploy` does nothing here** | §1.1 |
+| 4 | `pnpm --filter @bebest/api run seed:plans` | the `plans` catalog. Every billing route 500s without it | §1.3 |
+| 5 | `pnpm --filter @bebest/api run seed:dev` | prints `CRM_INTERNAL_ORG_ID=` — copy it, three later steps need it | §1.4 |
+| 6 | Generate a production RSA keypair for `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` | never ship the dev pair | §2 |
+| 7 | Resend: add the sending domain, complete DNS verification, create an API key | `RESEND_API_KEY`, `EMAIL_FROM`. **Verify the domain first** — an unverified domain fails every send, and magic link is the only way to log in | §3 |
+| 8 | Stripe: create one recurring Price per paid tier with `lookup_key` = the plan slug (`starter`, `growth`, `pro`, `agency`, `managed`, `enterprise`; `free` needs none) | lets a plan resolve to a Price | §3 |
+| 9 | Stripe: add a webhook endpoint pointing at `POST /api/webhooks/billing`, copy its `whsec_…` | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | §3 |
+| 10 | Get at least one real AI provider key | the env var is `GOOGLE_API_KEY`, not `GOOGLE_AI_API_KEY` | §2 |
+| 11 | Create the worker host (Railway / Render / Fly / a container). Build `pnpm --filter @bebest/api run build`, start `pnpm --filter @bebest/api run start:worker` | the process that actually runs jobs | §5 |
+| 12 | Set the worker's env, including `JOB_QUEUE_DATABASE_URL` | **without it the worker exits 1.** It also needs the AI keys, `RESEND_API_KEY`, `APP_URL` and `CRM_INTERNAL_ORG_ID` — keys set only on Vercel buy you nothing, because the worker makes the AI calls | §2 |
+| 13 | Set the Vercel `bebest-api` env (everything in §2 Backend, `NODE_ENV=production`) | | §2 |
+| 14 | Point `NEXT_PUBLIC_API_URL` on `bebest-web` at the deployed API | | §2 |
+| 15 | `pnpm --filter @bebest/api run smoke:crm` against the deployed API | first real end-to-end signal | §7 |
+| 16 | Un-skip and run the 85 tenant-isolation integration tests against the real database | the largest unproven claim in the build. Do this before onboarding anyone | §1.5 |
+
+### Verify the worker is actually consuming
+
+The failure this split exists to fix is silent, so prove it rather than assuming:
+
+1. Trigger an AI Visibility run.
+2. The API should return `202` and the `ai_runs` row should go `queued` → `running`.
+3. Watch the worker's logs — the work happens there, not on Vercel.
+4. The row must reach `completed`. **If it sits at `running` forever, the worker is not
+   consuming** — check `JOB_QUEUE_DATABASE_URL` is set on the worker and points at the
+   same database, and that the worker process is alive.
+5. Redeploy the worker mid-run on purpose once. The run should end `failed`, not stay
+   `running` — that is the shutdown release working (§5).
+
+### Known gaps to expect on day one
+
+None of these block launch, but you will hit them, so know them going in:
+
+- **A customer cannot self-serve pay.** `StripeProvider` creates real subscriptions, but
+  nothing in the product collects card details, so a new paid subscription is created
+  `incomplete` until paid out of band. Invoicing works; checkout does not. See §3's Stripe
+  caveat.
+- **Dunning emails do not send.** A customer whose card fails hears nothing. §3.
+- **The SEO half has no data source.** `NullSEODataProvider` returns word-count estimates.
+  Anything sold as keyword or search-volume data cannot be delivered yet. §3.
+- **AI cost figures are partly unverified.** Anthropic's rates were checked 2026-09-25;
+  OpenAI, Google and Perplexity are still first-pass estimates (`PRICING_LAST_VERIFIED` is
+  `null`). Fine for internal margin analysis, not for anything customer-facing. §6.
+- **Metering measures but does not yet enforce.** A customer can spend more on model calls
+  than their subscription is worth. §6.
+
+---
+
 ## 1. Database
 
 ### 1.1 Provision Postgres and apply the schema
@@ -97,8 +156,27 @@ Without this, every CRM route (`/api/leads`, `/api/deals`, `/api/activities`, `/
 | `STRIPE_SECRET_KEY` | **Required** (for billing) | Switches `apps/api` from `NullPaymentProvider` to the real `StripeProvider`. Unset = billing is non-functional but harmless. |
 | `STRIPE_WEBHOOK_SECRET` | **Required** (for billing) | The endpoint signing secret (`whsec_…`) from Stripe → Developers → Webhooks. `BILLING_WEBHOOK_SECRET` is honoured as a fallback. |
 | `SENTRY_DSN` | Not usable yet | Reserved, but never `.init()`-ed — see §3 |
-| `JOB_QUEUE_DATABASE_URL` | Not usable yet | Reserved, `PgBossJobQueue` is never started — see §3 |
+| `JOB_QUEUE_DATABASE_URL` | **Required** (for any background job to complete) | Postgres connection string for the pg-boss job queue. **Set** → `apps/api` uses `PgBossJobQueue` and only ENQUEUES; the separate worker process consumes. **Unset** → `InMemoryJobQueue`, i.e. jobs run inside the HTTP process and on Vercel are killed the moment the response returns. Normally the same database as `DATABASE_URL` (pg-boss creates its own `pgboss` schema). See §5. |
 | `ALLOW_DEV_AUTH_BYPASS` | Never in prod | Dev/test only; requires both this AND `NODE_ENV !== 'production'` |
+
+### Worker (`platform/apps/api`, `pnpm start:worker`)
+
+The worker is the same package deployed a second time as a persistent process
+(§5). It needs, at minimum:
+
+| Variable | Required? | Purpose |
+|---|---|---|
+| `JOB_QUEUE_DATABASE_URL` | **Required** | Without it the worker refuses to start (exit 1) — it would have nothing to consume |
+| `DATABASE_URL` | **Required** | Same `bebest_app` role as the API. RLS is in force here too; every handler sets `app.current_org` via `withOrgContext` |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `PERPLEXITY_API_KEY` / `OLLAMA_BASE_URL` | **Required** | This is the process that actually makes the AI calls. Keys set only on Vercel buy you nothing |
+| `RESEND_API_KEY`, `EMAIL_FROM` | **Required** (for email) | The free-snapshot "your report is ready" email is sent from the worker, not the API |
+| `APP_URL` | **Required** | The report link in that email is built from it |
+| `CRM_INTERNAL_ORG_ID` | **Required** | Free-snapshot AI spend is attributed to this org |
+| `NODE_ENV=production`, `SENTRY_DSN` | As per the API | Same meaning |
+| `WORKER_SHUTDOWN_GRACE_MS` | Optional | Not read from the environment today — the grace period is `DEFAULT_SHUTDOWN_GRACE_MS` (20s) in `lib/queue/worker-runtime.ts`. Keep the host's SIGTERM→SIGKILL window above it |
+
+It does **not** need `JWT_PRIVATE_KEY`/`JWT_PUBLIC_KEY`, `STRIPE_*`, or
+`BILLING_WEBHOOK_SECRET` — it serves no requests and touches no billing.
 
 ### Frontend (`platform/apps/web`)
 
@@ -116,7 +194,7 @@ Every one of these follows the same pattern: a single factory/singleton construc
 |---|---|---|---|---|
 | **Email** | `ConsoleEmailSender` (logs, sends nothing) | **Yes** — `ResendEmailSender` written and wired | `apps/api/src/app.ts:64` | Set `RESEND_API_KEY` (and `EMAIL_FROM`), verify the sending domain in Resend. Nothing left to write. |
 | **Error tracking** | `ConsoleErrorTracker` | **Yes** — `SentryErrorTracker` fully written, just never started | `lib/observability/default-error-tracker.ts` | Construct `new SentryErrorTracker(process.env.SENTRY_DSN!)`, call `.init()` once at boot |
-| **Durable job queue** | `InMemoryJobQueue` (a process restart loses pending jobs) | **Yes** — `PgBossJobQueue` fully written, just never started | `lib/queue/default-job-queue.ts` | Construct `new PgBossJobQueue(connectionString)`, call `.start()` once at boot — **needs §5's deployment decision first** |
+| **Durable job queue** | `PgBossJobQueue` when `JOB_QUEUE_DATABASE_URL` is set; `InMemoryJobQueue` otherwise (dev/test) | **Yes — and now wired and started.** `createJobQueueFromEnv()` selects it; the worker process (`src/worker.ts`, `pnpm start:worker`) registers every handler via `lib/queue/job-registry.ts` and calls `.start()` | `lib/queue/default-job-queue.ts` | Nothing left to write. Set `JOB_QUEUE_DATABASE_URL` on **both** the Vercel project and the worker host, and deploy the worker (§5). With it unset, jobs still "run" inside the HTTP process and on Vercel are killed when the response returns |
 | **Billing** | `NullPaymentProvider` | **Yes** — `StripeProvider` written and wired | `lib/billing/payment-provider.ts` (`createPaymentProviderFromEnv`) | Set `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET`, and create one recurring Stripe Price per paid tier with `lookup_key` = the plan slug (`starter`/`growth`/`pro`/`agency`/`managed`/`enterprise`). See the caveat below. |
 | **SEO data** | `NullSEODataProvider` | No — needs writing | `lib/seo/seo-data-provider.ts:176` | Write a real class against Search Console / DataForSEO / Semrush / Ahrefs / Serper (the file's own comment names these as the original candidates) |
 | **CMS publishing** | `NullPublishTarget` | Intentionally out of scope — no real external CMS integration was ever meant to exist in this build | — | Not a go-live blocker, a future epic |
@@ -155,17 +233,96 @@ Every one of these follows the same pattern: a single factory/singleton construc
 
 ---
 
-## 5. Deployment target — an undecided infrastructure question
+## 5. Deployment target — decided: Vercel for HTTP, a persistent host for the worker
 
-Root `CLAUDE.md` documents Vercel for the **marketing site only** (static HTML, project `cencrest`). Nothing in `platform/` targets Vercel — no `vercel.json` exists anywhere under it, and `apps/api` is a standard long-running Node/Hono server (`pnpm build` → `tsc`, `pnpm start` → `node dist/server.js`), not a serverless function shape.
+> **Correction (2026-09-25).** This section previously said "nothing in
+> `platform/` targets Vercel — no `vercel.json` exists anywhere under it" and
+> framed the deployment target as an open question. Both halves were wrong.
+> `platform/apps/api/vercel.json` exists and rewrites every path to
+> `/api/index`; `platform/apps/api/api/index.js` is the serverless entry that
+> adapts Hono's fetch handler to Node's request/response (Vercel project
+> `bebest-api`, root directory `platform/apps/api`). `apps/api` has been
+> deployed as serverless functions the whole time. `pnpm start`
+> (`node dist/server.js`) is also still broken on its own terms: `build.mjs`
+> emits `dist/app.cjs` and `dist/worker.cjs`, never `dist/server.js`.
 
-**This matters concretely**: `PgBossJobQueue` (§3) needs a persistent process to poll for jobs. A serverless platform (including Vercel functions) does not provide that. Before wiring the durable queue in, decide:
-- A persistent-process host for `apps/api` (Railway, Render, Fly.io, a plain VM/container — anything that stays running), **or**
-- Accept the in-memory job queue's limitation (a restart loses pending jobs) if a serverless platform is chosen anyway.
+### The split
 
-`apps/web` (Next.js) deploys normally to Vercel or any Next.js host with no special constraint.
+`apps/api` is deployed **twice from one codebase**, because the two halves have
+irreconcilable runtime needs:
 
----
+| Process | Where | What it does | Entry |
+|---|---|---|---|
+| **HTTP** | Vercel serverless (project `bebest-api`) | Serves every route. Only ever ENQUEUES jobs — it registers no job handlers | `apps/api/api/index.js` → `dist/app.cjs` |
+| **Worker** | A persistent host (Railway / Render / Fly.io / a container / a VM) | Consumes the pg-boss queue and runs every job to completion | `pnpm --filter @bebest/api run start:worker` → `dist/worker.cjs` |
+| **Web** | Vercel | Next.js frontend, no special constraint | — |
+
+Why it has to be this way: an AI Visibility baseline run is ~1,400 prompts x 4
+models (x competitors) — thousands of AI calls and hours of wall time. A
+serverless invocation is frozen the instant the response returns and capped in
+the seconds-to-minutes range regardless, so before this split a run returned
+`202` and then died, leaving its `ai_runs` row `running` forever. That is the
+flagship feature of the product, and it could not complete. Moving the whole
+API to a persistent host was considered and rejected — the HTTP side works well
+on Vercel; only the jobs need a process that stays alive.
+
+### How registration is split
+
+Handlers must be registered in the worker and NOT in the HTTP process (a
+registered handler on a durable queue means pg-boss `work()`, i.e. actively
+claiming jobs this process cannot finish). One environment variable decides:
+
+- `lib/queue/job-types.ts` is the canonical list of every job type. Nothing
+  else may name a job type: a source scan in `lib/queue/job-registry.test.ts`
+  fails the suite on any `enqueue()` that does not use `JOB_TYPES.*`.
+- `lib/queue/job-registry.ts` maps each declared type to its handler and
+  `assertJobHandlerCoverage()` **refuses to start the worker** if any declared
+  type has no handler, naming it. Adding an enqueue without a consumer is
+  therefore a failed test and then a failed boot, never a silently unclaimed
+  job.
+- `lib/queue/register-in-process.ts` keeps the old single-process behaviour for
+  `pnpm dev` and the test suite, and becomes a no-op as soon as
+  `JOB_QUEUE_DATABASE_URL` is set.
+
+### What a human has to provision
+
+1. A persistent host for the worker. Build command
+   `pnpm install && pnpm --filter @bebest/api run build`, start command
+   `pnpm --filter @bebest/api run start:worker`. One instance is enough to
+   start; pg-boss's locking makes more than one safe (each job is claimed
+   once), and horizontal scale is how throughput grows later.
+2. `JOB_QUEUE_DATABASE_URL` on **both** the Vercel `bebest-api` project and the
+   worker host — pointing at the same database. If only one side has it, the
+   enqueuing side and the consuming side are looking at different queues.
+   (Normally the same connection string as `DATABASE_URL`; pg-boss creates and
+   owns its own `pgboss` schema on first `start()`.) The role needs CREATE on
+   the database for that first run.
+3. The worker's own environment: see §2's worker table. AI provider keys and
+   `RESEND_API_KEY` matter more there than on Vercel — the worker is what makes
+   the model calls and sends the snapshot-ready email.
+4. A SIGTERM→SIGKILL window above 20 seconds on the worker host (Railway, Fly
+   and Render all default to ~30s, which is fine). On SIGTERM the worker stops
+   fetching, gives in-flight handlers that window, then marks whatever is still
+   running `failed` (`releaseOnShutdown`) so no `ai_runs`/`crawl_jobs`/
+   `agent_runs` row is left `running` with nothing alive to finish it, and
+   exits. A deploy mid-run therefore produces a visibly failed, retryable run
+   rather than a permanently hung one.
+5. Worker logs and alerting. It is a process nobody is watching by definition:
+   `worker_released_in_flight_jobs`, `pgboss_job_queue_handler_failed` and
+   `pgboss_job_queue_undeclared_job_type` are the lines worth alerting on.
+
+### Still open
+
+- **Restarting a released run is manual.** `releaseOnShutdown` marks the run
+  `failed`; nothing automatically re-enqueues it, and pg-boss's own retry of
+  the job would restart the pipeline from the beginning rather than resuming.
+  Resumable runs are a separate piece of work.
+- `lib/measurement/schedule-remeasurement.ts` (Epic 14's 4-week
+  re-measurement) is the one background path that is **not** on the queue at
+  all — it still uses a real, in-process `setTimeout`, deliberately, per its
+  own header comment. On serverless that timer never fires. It needs its own
+  job type and handler (`JobQueue.enqueue` already supports `delayMs`); until
+  then, automatic re-measurement does not happen in production.
 
 ## 6. Known gaps to tell users/stakeholders about
 
@@ -194,6 +351,16 @@ Real, honestly-documented, not oversights — worth setting expectations before 
 
 ## 7. Final pre-launch checklist
 
+> **Before shipping any change from here on: build the artifact and run it.**
+> `node build.mjs && node dist/worker.cjs` (and the app entry). This is not
+> belt-and-braces. On 2026-09-25 typecheck, lint and 1156 tests were all green
+> while `dist/worker.cjs` crashed on its first line — `load-env.ts` read
+> `import.meta.url`, which esbuild compiles to an undefined property in CJS
+> output. Every gate in this repo exercises the TypeScript source; nothing
+> exercised the bundle, so a dead entrypoint looked perfectly healthy. Any bug
+> that lives only in the build output is invisible to the whole test suite.
+
+- [ ] Built artifacts run: `node build.mjs`, then start `dist/app.cjs` and `dist/worker.cjs` and confirm each reaches its own startup checks
 - [ ] Postgres provisioned, `DATABASE_URL` set
 - [ ] `pnpm --filter @bebest/database run db:apply` run (schema + all 20 folders' constraints, indexes and RLS — see §1.1; `prisma migrate deploy` does **not** do this)
 - [ ] `bebest_app` / `bebest_admin` Postgres roles created correctly (no `BYPASSRLS`, no ownership on `bebest_app`)
@@ -208,10 +375,12 @@ Real, honestly-documented, not oversights — worth setting expectations before 
 - [ ] `CRM_INTERNAL_ORG_ID` set **before the free-snapshot flow is opened to traffic** — without it, anonymous snapshot AI spend is logged (`ai_usage_write_skipped_no_org`) but not recorded
 - [ ] A cost report / dashboard reads `ai_usage` (nothing does yet — the rows are written but nothing surfaces them)
 - [ ] `NODE_ENV=production` set
-- [ ] Deployment target for `apps/api` decided (§5) — persistent process, not serverless, if the durable queue matters at launch
+- [ ] Worker deployed to a persistent host (§5) — `pnpm --filter @bebest/api run start:worker`, with the worker env from §2, and a SIGTERM→SIGKILL window above 20s
 - [ ] Email: `RESEND_API_KEY` + `EMAIL_FROM` set and the sending domain verified in Resend (the sender itself is written and wired)
 - [ ] Error tracking: `SentryErrorTracker` wired and started, or accept console-only logging until it is
-- [ ] Durable job queue: `PgBossJobQueue` wired and started, or accept the in-memory limitation until it is
+- [ ] Durable job queue: `JOB_QUEUE_DATABASE_URL` set on **both** the Vercel `bebest-api` project and the worker host, pointing at the same database (the code itself is wired and started — see §5). Verify on the first deploy that `worker_started` appears in the worker's logs listing all 4 job types, and that a triggered AI Visibility run reaches `completed` rather than sitting in `running`
+- [ ] Alerting on the worker's `worker_released_in_flight_jobs`, `pgboss_job_queue_handler_failed` and `pgboss_job_queue_undeclared_job_type` log lines
+- [ ] Accept (or schedule work for) the 4-week re-measurement trigger not firing — it is still an in-process `setTimeout`, not a queued job (§5)
 - [ ] Billing: `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` set, one Stripe Price per paid tier created with `lookup_key` = plan slug, webhook endpoint pointed at `POST /api/webhooks/billing` (the provider itself is written and wired)
 - [ ] Billing: decide how a card actually gets collected — see §3's Stripe caveat; a new paid subscription is created `incomplete` and nothing in the product collects payment details yet
 - [ ] `NEXT_PUBLIC_API_URL` (frontend) pointed at the real deployed API
