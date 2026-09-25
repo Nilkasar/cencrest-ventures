@@ -382,3 +382,10 @@ app.onError((err, c) => {
 });
 
 export default app;
+
+// Re-exported so the Vercel serverless entry (api/index.js) can await the
+// Row-Level Security gate before serving — it requires only `dist/app.cjs`, and
+// unlike server.ts/worker.ts it has no startup sequence of its own to run the
+// check in. See lib/rls-gate.ts.
+export { ensureRlsEnforced } from './lib/rls-gate.js';
+export { describeError } from './lib/describe-error.js';

@@ -251,9 +251,16 @@ Every one of these follows the same pattern: a single factory/singleton construc
 > `/api/index`; `platform/apps/api/api/index.js` is the serverless entry that
 > adapts Hono's fetch handler to Node's request/response (Vercel project
 > `bebest-api`, root directory `platform/apps/api`). `apps/api` has been
-> deployed as serverless functions the whole time. `pnpm start`
-> (`node dist/server.js`) is also still broken on its own terms: `build.mjs`
-> emits `dist/app.cjs` and `dist/worker.cjs`, never `dist/server.js`.
+> deployed as serverless functions the whole time.
+>
+> **Update (2026-09-25, later).** `pnpm start` was broken on its own terms —
+> `build.mjs` emitted `dist/app.cjs` and `dist/worker.cjs`, never the
+> `dist/server.js` the script named. Fixed by building `src/server.ts` as a
+> third bundle (`dist/server.cjs`) rather than deleting the script: it is the
+> only entrypoint that serves HTTP with a real boot sequence, so it is the
+> fallback if the API ever has to run somewhere other than Vercel. Verified by
+> running the built bundle — it listens, and it now refuses to start with a
+> readable error instead of `[object Object]` (see §5.1).
 
 ### The split
 
@@ -265,6 +272,45 @@ irreconcilable runtime needs:
 | **HTTP** | Vercel serverless (project `bebest-api`) | Serves every route. Only ever ENQUEUES jobs — it registers no job handlers | `apps/api/api/index.js` → `dist/app.cjs` |
 | **Worker** | A persistent host (Railway / Render / Fly.io / a container / a VM) | Consumes the pg-boss queue and runs every job to completion | `pnpm --filter @bebest/api run start:worker` → `dist/worker.cjs` |
 | **Web** | Vercel | Next.js frontend, no special constraint | — |
+| _(fallback)_ **HTTP, self-hosted** | Any Node host, if the API ever leaves Vercel | Same routes, as one long-lived process | `pnpm --filter @bebest/api run start` → `dist/server.cjs` |
+
+### 5.1 The RLS gate now runs on the serverless path too
+
+`assertRlsEnforced()` is the check that stands between a mis-granted database
+role and every tenant reading every other tenant's rows, and in production it is
+fatal by design — the process refuses to start (`packages/database/src/rls-check.ts`).
+
+Until 2026-09-25 **it did not run on the deployed HTTP path.** `server.ts` and
+`worker.ts` both awaited it in their boot sequences; `api/index.js` requires
+`dist/app.cjs` and serves immediately, and a serverless function has no boot
+sequence to hang the check on. So the only process that verified tenant
+isolation was the worker — and only whenever it next happened to start. Every
+customer-facing route ran unverified. This is the same shape as the two bundle
+bugs in §7: the check existed, was correct, and was tested, and simply was not
+on the path that ships.
+
+`api/index.js` now awaits `ensureRlsEnforced()` (`apps/api/src/lib/rls-gate.ts`)
+before delegating to Hono, and returns **503** if it cannot confirm isolation.
+
+What an operator needs to know about it:
+
+- **It costs one check per cold start, not per request.** The result is memoized
+  per instance; later requests await an already-settled promise.
+- **Failures are deliberately not memoized.** A cached rejection would take an
+  instance out for its whole lifetime over a single unreachable-database blip at
+  cold start, so a failed attempt is discarded and the next request retries —
+  while the request that saw the failure is still refused.
+- **A 503 with `{"error":"Service unavailable"}` and a
+  `rls_gate_failed_refusing_to_serve` log line means this gate fired.** The log
+  carries the real cause (the connected role name, or the connection error); the
+  response body never does, because the message names internal roles and paths.
+- **`SKIP_RLS_CHECK=true` bypasses it**, exactly as it does for `server.ts`.
+  Never set it on the production HTTP deployment — it disables the only thing
+  confirming isolation is on. It exists for a deliberately database-less boot.
+- If the deployment starts returning 503 across the board right after a database
+  or role change, check this log line first: it is far more likely that
+  `bebest_app` was re-granted `BYPASSRLS` or lost its grants than that the whole
+  API broke.
 
 Why it has to be this way: an AI Visibility baseline run is ~1,400 prompts x 4
 models (x competitors) — thousands of AI calls and hours of wall time. A
@@ -382,13 +428,14 @@ Real, honestly-documented, not oversights — worth setting expectations before 
 > exercised the bundle, so a dead entrypoint looked perfectly healthy. Any bug
 > that lives only in the build output is invisible to the whole test suite.
 
-- [ ] Built artifacts run: `node build.mjs`, then start `dist/app.cjs` and `dist/worker.cjs` and confirm each reaches its own startup checks
+- [ ] Built artifacts run: `node build.mjs`, then start `dist/app.cjs`, `dist/worker.cjs` and `dist/server.cjs` and confirm each reaches its own startup checks
 - [ ] **One real job completes from `dist/worker.cjs`.** Booting is not enough and has already proved it twice: `load-env.ts`'s `import.meta.url` killed the bundle on its first line, and the prompt templates resolved to a non-existent directory in the bundle — that one let both artifacts boot cleanly while 100% of AI jobs died on their first template load, immediately after the run row had been marked `running`. Run an actual AI Visibility run against the built worker and watch it reach `completed`
 - [ ] Postgres provisioned, `DATABASE_URL` set
 - [ ] `pnpm --filter @bebest/database run db:apply` run (schema + every folder's constraints, indexes and RLS — see §1.1; `prisma migrate deploy` does **not** do this)
 - [ ] **Drain the AI-visibility queue before applying `0023_ai_run_cost_preflight`.** Runs already queued carry no price, and the new guard fails closed — they will fail with `RunNotPricedError` rather than execute unpriced. Let the queue empty, apply, then re-dispatch anything outstanding. This only bites on the one deploy that crosses 0023
 - [ ] After `0024_billing_webhook_ordering`: confirm `bebest_app` can `SELECT … FOR UPDATE` on `subscriptions` under RLS — the webhook handler now serializes concurrent Stripe deliveries with a row lock, so a role that cannot take it breaks billing rather than degrading it
 - [ ] `bebest_app` / `bebest_admin` Postgres roles created correctly (no `BYPASSRLS`, no ownership on `bebest_app`)
+- [ ] **Confirm the deployed HTTP function passes the RLS gate**, not just that it responds: hit any route on the Vercel deployment and confirm it is NOT a 503, and that the function log shows `{"msg":"rls_enforced"}` rather than `rls_gate_failed_refusing_to_serve` (§5.1). A green `/health` on a deployment with `SKIP_RLS_CHECK=true` set proves nothing — check that variable is absent from production while you are there
 - [ ] `pnpm --filter @bebest/api run seed:plans` run
 - [ ] Internal CRM org bootstrapped (`pnpm --filter @bebest/api run seed:dev`), `CRM_INTERNAL_ORG_ID` set
 - [ ] `pnpm --filter @bebest/api run smoke:crm` passes against the deployed API

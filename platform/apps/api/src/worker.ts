@@ -22,6 +22,7 @@ import './load-env.js';
 import { assertRlsEnforced } from '@bebest/database';
 import { jobsRunInSeparateWorker } from './lib/queue/default-job-queue.js';
 import { createWorkerRuntime, installSignalHandlers } from './lib/queue/worker-runtime.js';
+import { describeError } from './lib/describe-error.js';
 
 function log(entry: Record<string, unknown>): void {
   console.error(JSON.stringify(entry));
@@ -56,6 +57,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  log({ level: 'error', msg: 'worker_start_failed', error: err instanceof Error ? err.message : String(err) });
+  log({ level: 'error', msg: 'worker_start_failed', error: describeError(err) });
   process.exit(1);
 });
