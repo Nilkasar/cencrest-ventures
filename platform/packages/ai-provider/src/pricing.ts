@@ -28,10 +28,21 @@
  * !!! THE COMMITTED NUMBERS BELOW ARE A STARTING POINT, NOT VERIFIED !!!
  * They are realistic public list rates for each model family as understood
  * at the date in `PRICING_TABLE_VERSION`, committed so metering produces
- * usable dollars from day one instead of zeros. EVERY entry must be checked
- * against the provider's current public pricing page before launch — this is
- * a tracked launch-blocking item in `platform/GO_LIVE.md` §7. Treat any cost
- * figure in a customer-visible surface as an estimate until that pass is done.
+ * usable dollars from day one instead of zeros.
+ *
+ * VERIFICATION STATUS — partial, which is why `PRICING_LAST_VERIFIED` is still
+ * null:
+ *   - Anthropic: verified 2026-09-25 against published API rates. The first
+ *     pass had the bare `claude-opus`/`claude-sonnet`/`claude-haiku` families
+ *     carrying retired-generation prices, so a current id like
+ *     `claude-opus-5` prefix-matched onto $15/$75 against a real $5/$25 —
+ *     a 3x overstatement of the single most expensive thing we call.
+ *   - OpenAI, Google, Perplexity: NOT verified. Still first-pass estimates.
+ *
+ * Every unverified entry must be checked against the provider's current public
+ * pricing page before launch — a tracked launch-blocking item in
+ * `platform/GO_LIVE.md` §7. Treat any cost figure in a customer-visible
+ * surface as an estimate until the whole table is done.
  *
  * Deliberately NOT in scope here (a follow-up task owns these): the response
  * cache, dollar-based entitlement enforcement, and the pre-flight run cost
@@ -118,17 +129,44 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
   // NOTE: for Anthropic, `completion_tokens` (output) is where nearly all
   // the money is — a 20x input/output ratio, so a verbose GEO answer is the
   // expensive case, not a long prompt.
+  // VERIFIED 2026-09-25 against Anthropic's published API rates. The bare
+  // family keys below are fallbacks for an unrecognized variant, so they carry
+  // CURRENT-generation prices — a new `claude-opus-*` id is far likelier to be
+  // the current Opus than a retired one. Dated/retired models that cost
+  // something different get their own longer key, which prefix matching
+  // prefers. Cached-input rates follow Anthropic's standard 0.1x-of-input
+  // convention; confirm per model if cache reads ever become material.
   'claude-haiku': {
-    inputPerMillionUsd: '0.80',
-    outputPerMillionUsd: '4.00',
+    inputPerMillionUsd: '1.00',
+    outputPerMillionUsd: '5.00',
+    cachedInputPerMillionUsd: '0.10',
     source: 'https://www.anthropic.com/pricing#api',
   },
+  'claude-haiku-4-5': {
+    inputPerMillionUsd: '1.00',
+    outputPerMillionUsd: '5.00',
+    cachedInputPerMillionUsd: '0.10',
+    source: 'https://www.anthropic.com/pricing#api',
+  },
+  // Retired generation — genuinely cheaper than Haiku 4.5, so it keeps its own key.
   'claude-3-5-haiku': {
     inputPerMillionUsd: '0.80',
     outputPerMillionUsd: '4.00',
     source: 'https://www.anthropic.com/pricing#api',
   },
   'claude-sonnet': {
+    inputPerMillionUsd: '2.00',
+    outputPerMillionUsd: '10.00',
+    cachedInputPerMillionUsd: '0.20',
+    source: 'https://www.anthropic.com/pricing#api',
+  },
+  'claude-sonnet-5': {
+    inputPerMillionUsd: '2.00',
+    outputPerMillionUsd: '10.00',
+    cachedInputPerMillionUsd: '0.20',
+    source: 'https://www.anthropic.com/pricing#api',
+  },
+  'claude-sonnet-4-6': {
     inputPerMillionUsd: '3.00',
     outputPerMillionUsd: '15.00',
     cachedInputPerMillionUsd: '0.30',
@@ -140,9 +178,28 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
     source: 'https://www.anthropic.com/pricing#api',
   },
   'claude-opus': {
-    inputPerMillionUsd: '15.00',
-    outputPerMillionUsd: '75.00',
-    cachedInputPerMillionUsd: '1.50',
+    inputPerMillionUsd: '5.00',
+    outputPerMillionUsd: '25.00',
+    cachedInputPerMillionUsd: '0.50',
+    source: 'https://www.anthropic.com/pricing#api',
+  },
+  'claude-opus-5': {
+    inputPerMillionUsd: '5.00',
+    outputPerMillionUsd: '25.00',
+    cachedInputPerMillionUsd: '0.50',
+    source: 'https://www.anthropic.com/pricing#api',
+  },
+  'claude-opus-4': {
+    inputPerMillionUsd: '5.00',
+    outputPerMillionUsd: '25.00',
+    cachedInputPerMillionUsd: '0.50',
+    source: 'https://www.anthropic.com/pricing#api',
+  },
+  // Most capable tier — priced well above Opus. Without its own key this would
+  // fall back to `claude-opus`-style rates and halve the recorded cost.
+  'claude-fable': {
+    inputPerMillionUsd: '10.00',
+    outputPerMillionUsd: '50.00',
     source: 'https://www.anthropic.com/pricing#api',
   },
 

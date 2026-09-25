@@ -65,8 +65,25 @@ describe('MODEL_PRICING table integrity', () => {
 describe('resolveModelPricing', () => {
   it('longest-prefix matches a dated snapshot id onto its family', () => {
     expect(resolveModelPricing('gpt-4o-2024-11-20')?.key).toBe('gpt-4o');
-    expect(resolveModelPricing('claude-sonnet-4-6')?.key).toBe('claude-sonnet');
+    expect(resolveModelPricing('claude-sonnet-5-preview')?.key).toBe('claude-sonnet-5');
     expect(resolveModelPricing('claude-3-5-sonnet-20241022')?.key).toBe('claude-3-5-sonnet');
+  });
+
+  it('never collapses two Claude generations that are priced differently', () => {
+    // Sonnet 5 is $2/$10 and Sonnet 4.6 is $3/$15. Resolving either onto the
+    // bare `claude-sonnet` family would misprice one of them by 50%.
+    expect(resolveModelPricing('claude-sonnet-4-6')?.key).toBe('claude-sonnet-4-6');
+    expect(resolveModelPricing('claude-sonnet-5')?.key).toBe('claude-sonnet-5');
+
+    const sonnet46 = computeAiCallCost({ model: 'claude-sonnet-4-6', tokensIn: 1_000_000, tokensOut: 1_000_000 });
+    const sonnet5 = computeAiCallCost({ model: 'claude-sonnet-5', tokensIn: 1_000_000, tokensOut: 1_000_000 });
+    expect(sonnet46.micros).toBeGreaterThan(sonnet5.micros);
+
+    // The most capable tier costs strictly more than Opus — if it ever fell
+    // back to an Opus-family rate, recorded spend would be halved.
+    const opus = computeAiCallCost({ model: 'claude-opus-5', tokensIn: 1_000_000, tokensOut: 1_000_000 });
+    const fable = computeAiCallCost({ model: 'claude-fable-5-1', tokensIn: 1_000_000, tokensOut: 1_000_000 });
+    expect(fable.micros).toBeGreaterThan(opus.micros);
   });
 
   it('prefers the more specific family when two prefixes match', () => {
