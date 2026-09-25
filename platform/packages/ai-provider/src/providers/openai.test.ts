@@ -87,3 +87,60 @@ describe('OpenAIProvider', () => {
     await expect(provider.healthCheck()).resolves.toBe(true);
   });
 });
+
+describe('OpenAIProvider usage + finish-reason mapping (cost metering input)', () => {
+  it("maps OpenAI's real usage field names, including cached and reasoning token details", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({
+        model: 'gpt-4o-2024-11-20',
+        choices: [{ message: { content: 'hello' }, finish_reason: 'stop' }],
+        usage: {
+          prompt_tokens: 1200,
+          completion_tokens: 340,
+          prompt_tokens_details: { cached_tokens: 1024 },
+          completion_tokens_details: { reasoning_tokens: 64 },
+        },
+      }),
+    );
+    const provider = new OpenAIProvider({ apiKey: 'sk-test', fetchImpl });
+
+    const result = await provider.complete({ userPrompt: 'hi', promptVersion: 'test.v1' });
+
+    expect(result.tokensUsed).toEqual({
+      promptTokens: 1200,
+      completionTokens: 340,
+      totalTokens: 1540,
+      cachedPromptTokens: 1024,
+      reasoningTokens: 64,
+    });
+    expect(result.finishReason).toBe('stop');
+    // The dated snapshot id is echoed back verbatim so pricing can family-match it.
+    expect(result.model).toBe('gpt-4o-2024-11-20');
+  });
+
+  it('omits the optional detail counters entirely when OpenAI does not report them', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({ choices: [{ message: { content: 'x' } }], usage: { prompt_tokens: 3, completion_tokens: 1 } }),
+    );
+    const provider = new OpenAIProvider({ apiKey: 'sk-test', fetchImpl });
+
+    const result = await provider.complete({ userPrompt: 'hi', promptVersion: 'test.v1' });
+
+    expect(result.tokensUsed).toEqual({ promptTokens: 3, completionTokens: 1, totalTokens: 4 });
+    expect(result.finishReason).toBeNull();
+  });
+
+  it('surfaces finish_reason "length" so a truncated-but-billed response is visible', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({
+        choices: [{ message: { content: 'trunc' }, finish_reason: 'length' }],
+        usage: { prompt_tokens: 5, completion_tokens: 1024 },
+      }),
+    );
+    const provider = new OpenAIProvider({ apiKey: 'sk-test', fetchImpl });
+
+    await expect(provider.complete({ userPrompt: 'hi', promptVersion: 'test.v1' })).resolves.toMatchObject({
+      finishReason: 'length',
+    });
+  });
+});
