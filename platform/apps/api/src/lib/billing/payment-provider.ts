@@ -194,7 +194,7 @@ function verifySignature(payload: string, signature: string): void {
  * usually treat "customer already exists for this email" as an upsert, not
  * a fresh row every time). */
 function deterministicId(prefix: string, ...parts: string[]): string {
-  const digest = createHash('sha256').update(parts.join(' ')).digest('hex').slice(0, 24);
+  const digest = createHash('sha256').update(parts.join('\0')).digest('hex').slice(0, 24);
   return `${prefix}_${digest}`;
 }
 

@@ -4,6 +4,15 @@ Everything left between "code is merged to `main`" and "this is a real, running 
 
 Nothing here is a code change. Everything below is configuration, infrastructure, or a decision.
 
+> **Where the credential list lives.** `../CREDENTIALS.md` (repo root) is the
+> collection sheet: every variable the code reads, where to get each value,
+> which ones are required, and which must be *absent* in production. It was
+> reconciled against the code on 2026-09-25 — it had been missing 14 of the 32
+> variables, including two that each break a core feature with no visible error.
+> This document owns the sequence, the reasoning and the verification; that one
+> owns the values. Where a variable appears in both, `CREDENTIALS.md` is the list
+> to work from, and the code is the arbiter if they ever disagree.
+
 ---
 
 ## 0. The runbook — do these in this order
