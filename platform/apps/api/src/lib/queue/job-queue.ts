@@ -10,6 +10,14 @@
  * `getDefaultJobQueue()` (see `default-job-queue.ts`) instead of calling
  * `setImmediate` directly.
  *
+ * Since the HTTP/worker split (see `src/worker.ts` and
+ * `platform/GO_LIVE.md` §5), `PgBossJobQueue` IS started — by the worker
+ * process, not by the HTTP process. The paragraphs below describing it as
+ * "never constructed or `.start()`-ed anywhere" were true for Epic 19 only;
+ * `default-job-queue.ts` now selects it whenever `JOB_QUEUE_DATABASE_URL`
+ * is configured, exactly the way `lib/email.ts`/`payment-provider.ts` select
+ * a real provider from the environment.
+ *
  * Two implementations exist:
  * - `InMemoryJobQueue` — functionally equivalent to the `setImmediate`
  *   behavior every call site had before this epic. Remains the default
@@ -31,6 +39,30 @@
  * own `// TODO` comments already named, now centralized in one place
  * instead of four.
  */
+
+/**
+ * A job type, its handler, and what to do about an in-flight instance of it
+ * when the process is shutting down.
+ *
+ * `JobDefinition` is what the worker's registry (`job-registry.ts`) hands to
+ * the queue, and what `register-in-process.ts` registers in single-process
+ * dev/test. `releaseOnShutdown` is the part that only matters once a real
+ * worker exists: a handler that is still mid-run when the host sends SIGTERM
+ * would otherwise leave its domain row (`ai_runs`, `crawl_jobs`,
+ * `agent_runs`, `snapshot_requests`) stuck in `running`/`processing`
+ * forever — the exact failure `lib/ai-visibility/schedule-run.ts`'s header
+ * comment has always admitted to. It must move that row OUT of the
+ * in-progress state, using the same "mark it failed, best effort" shape each
+ * handler's own error path already uses.
+ */
+export interface JobDefinition<TPayload> {
+  jobType: string;
+  handler: JobHandler<TPayload>;
+  /** Called at most once per in-flight payload, during graceful shutdown,
+   * after the queue has stopped accepting work and the grace period has
+   * expired. Must never throw (the caller catches and logs regardless). */
+  releaseOnShutdown?: (payload: TPayload) => Promise<void>;
+}
 
 /** A job's handler. Must never throw past its own internal error handling
  * for InMemoryJobQueue callers that want a specific on-failure side effect

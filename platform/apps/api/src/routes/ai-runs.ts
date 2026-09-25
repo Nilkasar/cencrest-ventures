@@ -128,7 +128,7 @@ aiRunsRoute.post('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('
 
   await writeManualAuditEvent(c, { action: 'ai_run.created', entityType: 'ai_run', entityId: run.id });
 
-  scheduleAiVisibilityRun(run.id, org.organizationId, brand.id);
+  await scheduleAiVisibilityRun(run.id, org.organizationId, brand.id);
 
   return c.json(serializeAiRun(run), 202);
 });

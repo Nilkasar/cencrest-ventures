@@ -206,7 +206,7 @@ competitorAiRunsRoute.post(
 
     await writeManualAuditEvent(c, { action: 'competitor_ai_run.created', entityType: 'ai_run', entityId: run.id });
 
-    scheduleAiVisibilityRun(run.id, org.organizationId, brand.id);
+    await scheduleAiVisibilityRun(run.id, org.organizationId, brand.id);
 
     return c.json(serializeAiRun(run), 202);
   },

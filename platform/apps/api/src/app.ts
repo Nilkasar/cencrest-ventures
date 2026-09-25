@@ -52,7 +52,7 @@ import apply from './routes/apply.js';
 import agency from './routes/agency.js';
 import whiteLabel from './routes/white-label.js';
 import integrations from './routes/integrations.js';
-import { ConsoleEmailSender, ResendEmailSender } from './lib/email.js';
+import { createEmailSenderFromEnv } from './lib/email.js';
 import { getDefaultErrorTracker } from './lib/observability/default-error-tracker.js';
 import { clientFaultResponse } from './lib/db-errors.js';
 import type { AppEnv } from './types/context.js';
@@ -60,10 +60,10 @@ import type { AppEnv } from './types/context.js';
 const app = new Hono<AppEnv>();
 
 // Single `EmailSender` construction site — ResendEmailSender when key is set,
-// ConsoleEmailSender (log-only) otherwise.
-const emailSender = process.env.RESEND_API_KEY
-  ? new ResendEmailSender(process.env.RESEND_API_KEY)
-  : new ConsoleEmailSender();
+// ConsoleEmailSender (log-only) otherwise. The factory lives in `lib/email.ts`
+// so the worker process (`worker.ts`) selects its sender identically; see that
+// function's comment.
+const emailSender = createEmailSenderFromEnv();
 
 // Security headers — matches docs/08-security/SECURITY.md's required
 // header list exactly.

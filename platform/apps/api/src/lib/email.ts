@@ -237,3 +237,20 @@ export class ResendEmailSender implements EmailSender {
     });
   }
 }
+
+/**
+ * The single environment-driven construction site for `EmailSender`, shared
+ * by the HTTP process (`app.ts`) and the worker process (`worker.ts`).
+ *
+ * It exists because of the HTTP/worker split: the free-snapshot job's handler
+ * needs a sender, and before the split it only ever got one from `app.ts`'s
+ * inline `new ResendEmailSender(...) : new ConsoleEmailSender()` expression.
+ * Two processes choosing their sender with two copies of that expression is
+ * how one of them ends up silently on `ConsoleEmailSender` in production —
+ * i.e. how a customer's snapshot-ready email never sends. Same
+ * "one factory, selected from env" shape as
+ * `lib/billing/payment-provider.ts`'s `createPaymentProviderFromEnv`.
+ */
+export function createEmailSenderFromEnv(env: NodeJS.ProcessEnv = process.env): EmailSender {
+  return env.RESEND_API_KEY ? new ResendEmailSender(env.RESEND_API_KEY) : new ConsoleEmailSender();
+}

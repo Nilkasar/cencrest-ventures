@@ -7,18 +7,10 @@ import { getInternalOrgId } from '../lib/internal-org.js';
 import { freeSnapshotRateLimit } from '../middleware/rate-limit.js';
 import { writeManualAuditEvent } from '../middleware/audit-log.js';
 import { clientIp } from '../lib/client-ip.js';
-import { runFreeSnapshotPipeline, type FreeSnapshotInput } from '../lib/free-snapshot/orchestrator.js';
-import { getDefaultJobQueue } from '../lib/queue/default-job-queue.js';
+import type { FreeSnapshotInput } from '../lib/free-snapshot/orchestrator.js';
+import { registerFreeSnapshotJobInProcess, scheduleFreeSnapshot } from '../lib/free-snapshot/snapshot-job.js';
 import type { EmailSender } from '../lib/email.js';
 import type { AppEnv } from '../types/context.js';
-
-interface FreeSnapshotJobPayload {
-  snapshotRequestId: string;
-  token: string;
-  input: FreeSnapshotInput;
-}
-
-const FREE_SNAPSHOT_JOB_TYPE = 'free_snapshot_pipeline';
 
 function domainOf(url: string): string {
   try {
@@ -55,28 +47,14 @@ const CONFIRMATION_MESSAGE = "Your snapshot is being prepared. We'll email you w
 export function createSnapshotRoutes(emailSender: EmailSender) {
   const snapshot = new Hono<AppEnv>();
 
-  // Epic 19 (Production Hardening), item 1 — registered once per
-  // `createSnapshotRoutes` call (this factory has exactly one call site,
-  // `app.ts`, so this runs once per process) rather than a raw
-  // `setImmediate` call. See `lib/queue/job-queue.ts`'s header comment for
-  // the full design; behaviorally unchanged in this build (default queue
-  // is `InMemoryJobQueue`, still fires via `setImmediate` under the hood).
-  getDefaultJobQueue().register<FreeSnapshotJobPayload>(FREE_SNAPSHOT_JOB_TYPE, async ({ snapshotRequestId, token, input }) => {
-    await runFreeSnapshotPipeline(snapshotRequestId, token, input, { emailSender }).catch((err: unknown) => {
-      // runFreeSnapshotPipeline already catches everything internally and
-      // marks the row `failed` — this is a final backstop in case
-      // something outside that try/catch (e.g. a synchronous throw before
-      // its own try block) escapes.
-      console.error(
-        JSON.stringify({
-          level: 'error',
-          msg: 'free_snapshot_pipeline_uncaught',
-          snapshotRequestId,
-          error: err instanceof Error ? err.message : String(err),
-        }),
-      );
-    });
-  });
+  // The job HANDLER lives in `lib/free-snapshot/snapshot-job.ts`, not here:
+  // under the HTTP/worker split this route runs on Vercel serverless, where
+  // the execution context is frozen the moment the 202 returns, so it can
+  // never run the pipeline. This call registers the handler in THIS process
+  // only when no separate worker is configured (single-process dev and the
+  // test suite); with `JOB_QUEUE_DATABASE_URL` set it is a no-op and the
+  // worker (`src/worker.ts`) is the only consumer.
+  registerFreeSnapshotJobInProcess(emailSender);
 
   // ── POST /snapshot — public, unauthenticated, rate-limited ──────────────
   // Order matches docs/epics/17-free-snapshot.md's explicit "IN THIS ORDER"
@@ -153,7 +131,11 @@ export function createSnapshotRoutes(emailSender: EmailSender) {
     // registration above), same "create the row synchronously, run the
     // real work in the background" shape as routes/crawl.ts/routes/
     // ai-runs.ts.
-    void getDefaultJobQueue().enqueue<FreeSnapshotJobPayload>(FREE_SNAPSHOT_JOB_TYPE, {
+    // Awaited: with a durable queue this is a real INSERT, and a serverless
+    // function that returned its 202 first would freeze before the row
+    // landed — the lead would get a confirmation for a snapshot nothing was
+    // ever going to run.
+    await scheduleFreeSnapshot({
       snapshotRequestId: snapshotRequest.id,
       token,
       input: pipelineInput,
