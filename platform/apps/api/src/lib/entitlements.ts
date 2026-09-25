@@ -54,9 +54,10 @@ import {
   type PlanTier,
   type PlanLimits,
   type NumericPlanLimitKey,
+  type CostPlanLimitKey,
 } from './billing/plan-catalog.js';
 
-export { PLAN_TIERS, type PlanTier, type PlanLimits, type NumericPlanLimitKey };
+export { PLAN_TIERS, type PlanTier, type PlanLimits, type NumericPlanLimitKey, type CostPlanLimitKey };
 
 const DEFAULT_PLAN: PlanTier = 'free';
 
@@ -88,7 +89,7 @@ export async function resolvePlanLimits(
   // fallback below rather than trusting an unexpected value).
   const joinedPlan = subscription?.plans;
   if (joinedPlan && joinedPlan.active !== false && isPlanTier(joinedPlan.slug)) {
-    return { plan: joinedPlan.slug, limits: joinedPlan.limits as unknown as PlanLimits };
+    return { plan: joinedPlan.slug, limits: normalizeLegacyLimits(joinedPlan.limits as unknown as PlanLimits) };
   }
 
   // FALLBACK path — no joined `plans` row available. See this file's header
@@ -96,6 +97,41 @@ export async function resolvePlanLimits(
   // not a second hardcoded map.
   const plan = subscription && isPlanTier(subscription.plan) ? subscription.plan : DEFAULT_PLAN;
   return { plan, limits: PLAN_CATALOG[plan].limits };
+}
+
+/**
+ * Bridges a `plans.limits` JSONB row seeded BEFORE the
+ * `ai_queries_per_month` -> `prompt_model_executions_per_month` rename (the
+ * COUNTER was always `queries x providers`, i.e. already prompt-model
+ * executions; only the key name and the seeded numbers were wrong — see
+ * `billing/plan-catalog.ts`'s `PlanLimits`).
+ *
+ * Without this, a staging row carrying only the old key would resolve
+ * `prompt_model_executions_per_month` to `undefined`, and `checkUsageLimit`'s
+ * `limit === null` unlimited branch is the one place `undefined` would be
+ * indistinguishable from "no cap" — i.e. the rename itself would silently
+ * open the valve it exists to close. Carries the OLD number across, which is
+ * too low rather than too high: fail toward refusing, then re-seed.
+ *
+ * Returns the object unchanged when the new key is already present, so a
+ * correctly-seeded row never goes through any transformation at all.
+ */
+function normalizeLegacyLimits(limits: PlanLimits): PlanLimits {
+  // A JSONB row is `unknown` shaped at runtime no matter what the TYPE
+  // claims, so this reads it as a bag of keys rather than trusting the cast
+  // `resolvePlanLimits` performed.
+  const bag = limits as unknown as Record<string, unknown> | null;
+  if (bag === null || typeof bag !== 'object') return limits;
+
+  // PRESENCE, not truthiness: `null` is a legitimate seeded value meaning
+  // "unlimited" (managed/enterprise), and must never be overwritten by a
+  // stale legacy number that happens to sit alongside it.
+  if ('prompt_model_executions_per_month' in bag) return limits;
+  if (!('ai_queries_per_month' in bag)) return limits;
+
+  const legacy = bag.ai_queries_per_month;
+  if (legacy !== null && typeof legacy !== 'number') return limits;
+  return { ...limits, prompt_model_executions_per_month: legacy };
 }
 
 /**
@@ -119,7 +155,10 @@ export class EntitlementLimitError extends Error {
   }
 }
 
-function nextTierUp(plan: PlanTier): PlanTier | null {
+/** Exported so `lib/ai-usage/cost-entitlements.ts` names the same upgrade
+ * path this module's own `EntitlementLimitError` does, rather than
+ * re-deriving tier ordering. */
+export function nextTierUp(plan: PlanTier): PlanTier | null {
   const i = PLAN_TIERS.indexOf(plan);
   if (i < 0 || i >= PLAN_TIERS.length - 1) return null;
   return PLAN_TIERS[i + 1] ?? null;

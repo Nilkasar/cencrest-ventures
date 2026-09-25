@@ -291,3 +291,205 @@ run) plus additional stress runs forcing worker reuse
 (`--pool=threads --maxWorkers=2 --minWorkers=2`, 3 runs) to confirm the
 fix holds even under configurations that maximize the chance of a
 process.env leak surfacing.
+
+---
+
+## AI cost metering — where `organization_id` is threaded in (2026-09-25)
+
+**Decision.** Metering lives in an app-side decorator, `MeteredAIProvider`
+(`src/lib/ai-usage/metered-provider.ts`), obtained through
+`getMeteredAiProviderRegistry(attribution)`. `@bebest/ai-provider` gained a
+price table (`pricing.ts`) and richer usage/finish-reason reporting, but no
+database access and no concept of a tenant.
+
+**The alternatives, and why they lost.**
+
+1. *Meter inside each provider in `packages/ai-provider`.* Rejected. That
+   package's stated contract is that it persists nothing ("this package does
+   not persist anything itself — no database access here", `types.ts`). Doing
+   the write there would put Prisma, `withOrgContext` and `organization_id`
+   inside the one package whose purpose (ADR-003) is to be the only thing
+   that knows how to talk to a vendor, and would make the pure package
+   depend on `@bebest/database`.
+2. *Add `organizationId` to `CompletionRequest`.* Rejected. It changes the
+   `AIProvider` interface that every route, pipeline and agent depends on,
+   and — worse — it makes tenancy a per-call argument that a call site can
+   forget or get wrong. A forgotten field is exactly the silent leak this
+   work exists to close.
+3. *Meter at call sites.* Rejected outright, per the task's own framing: the
+   next feature forgets, and the leak reopens with no test failing.
+
+**What the decorator buys.** The org travels with the *registry instance* a
+caller asks for, not with each request object, so `AIProvider` is
+byte-identical and no caller signature changed. Four call sites now ask for a
+metered registry (`lib/ai-visibility/pipeline.ts`, `lib/agents/runner.ts`,
+`lib/free-snapshot/ai-run.ts`, `routes/content-brief-details.ts`).
+`getDefaultAiProviderRegistry()` survives ONLY for the three callers that
+read the routing table (`resolveNames('geo.query')`) without making a model
+call; `lib/ai-usage/metered-provider.test.ts` enforces that allowlist by
+scanning `src/`, so adding an unmetered AI call fails a test.
+
+**Why it extends `BaseAIProvider` rather than delegating `extract()`.**
+`extract()` retries until the JSON validates and every attempt is separately
+billed. Delegating to `inner.extract()` would route those retries through the
+*inner* provider's `this.complete()`, bypassing the decorator, so only the
+final attempt would ever be metered — an under-count concentrated precisely
+on the badly-behaving, expensive calls. Extending `BaseAIProvider` reuses the
+same shared retry loop while each attempt goes through the metered
+`complete()`.
+
+**RLS and the awkward cases.** The write goes through `withOrgContext`, so it
+runs inside a transaction with `app.current_org` set and satisfies
+`ai_usage`'s `WITH CHECK` policy. Every writer is a background path (AI
+Visibility pipeline, agent runs, free-snapshot orchestrator) with no HTTP
+request to inherit context from; they get it from the attribution their
+registry was built with. Anonymous free-snapshot spend has no org at all, and
+`ai_usage.organization_id` is `NOT NULL` with RLS on read and write (a NULL
+row would be write-only data, invisible even to the role that wrote it), so it
+is attributed to `CRM_INTERNAL_ORG_ID` — an already-established concept here
+(Epic 1 CRM, `lib/internal-org.ts`) for BeBest's own tenant, which runs no
+customer pipelines. See `GO_LIVE.md` §6 for the consequence: that spend is
+visible in aggregate but not separable from internal CRM AI spend without a
+new `feature` column.
+
+**Non-negotiable.** A metering failure never fails the AI call or loses the
+response. `recordAiUsage` swallows its own errors AND the decorator wraps the
+recorder call in its own try/catch, so a future recorder that throws still
+cannot destroy a paid-for response. Both are tested.
+
+**Deliberately out of scope** (follow-up, and the reason `estimateCost()` is
+exported as a pure function): the response cache, dollar-based entitlement
+enforcement, and the pre-flight run cost estimator. This is the sensor, not
+the valve — nothing here blocks, throttles or refuses a call.
+
+## HTTP/worker process split (2026-09-25)
+
+- **`apps/api` now deploys as two processes from one codebase**, not one.
+  `api/index.js` → `dist/app.cjs` serves HTTP on Vercel serverless and only
+  ENQUEUES; `src/worker.ts` → `dist/worker.cjs` runs on a persistent host and
+  is the only process that CONSUMES. The alternative — moving the whole API to
+  a persistent host — was considered and rejected: the HTTP side works on
+  Vercel, only the jobs need a process that outlives a request. See
+  `GO_LIVE.md` §5.
+- **Why it was forced.** An AI Visibility baseline run is ~1,400 prompts x 4
+  models (x competitors): thousands of AI calls, hours of wall time. Run via
+  `InMemoryJobQueue` inside a Vercel function, it was frozen the instant the
+  202 returned, leaving `ai_runs` in `running` forever. The flagship feature
+  could not complete.
+- **Registration is data, checked twice, not a module-load side effect.**
+  `lib/queue/job-types.ts` declares every job type with no imports and no side
+  effects. `lib/queue/job-registry.ts` maps each to its `JobDefinition` and
+  `assertJobHandlerCoverage()` refuses to boot the worker if any declared type
+  has no handler. `lib/queue/job-registry.test.ts` additionally scans the
+  source tree so an `enqueue()` that does not use `JOB_TYPES.*` fails the
+  suite. The previous shape — each module calling
+  `getDefaultJobQueue().register()` at import time — is wrong in both
+  directions under a split: the HTTP process would register handlers it can
+  never run, and the worker would consume nothing it did not happen to import.
+- **`lib/queue/register-in-process.ts` keeps single-process dev/test
+  unchanged.** It registers on the default queue only while
+  `JOB_QUEUE_DATABASE_URL` is unset. That one variable is the whole switch:
+  unset → `InMemoryJobQueue` and handlers fire in-process exactly as before
+  (which is why the 1,156-test baseline needed no changes); set →
+  `PgBossJobQueue`, and the HTTP process registers nothing.
+- **Enqueues are awaited now, not `void`-ed.** With a durable queue the enqueue
+  is a real INSERT. `void enqueue(...)` let a serverless function return its
+  202 and freeze before the row landed, losing the job silently. So
+  `scheduleAiVisibilityRun`, `scheduleCrawlJob`, `scheduleFreeSnapshot` and
+  `scheduleAgentRun` all return promises their callers await.
+- **`releaseOnShutdown` is part of every job definition.** A worker is
+  SIGTERM'd on every deploy, and with hours-long runs that lands mid-run more
+  often than not. `lib/queue/in-flight-jobs.ts` tracks what is running;
+  shutdown stops fetching, waits a bounded grace period, then marks whatever
+  is still in flight `failed` using the same best-effort write each handler's
+  own error path already used. A deploy mid-run yields a visibly failed,
+  retryable run instead of a permanently hung one. It does NOT resume work —
+  resumable runs are separate.
+- **Job handlers moved out of route files.** `routes/crawl.ts`'s and
+  `routes/snapshot.ts`'s handlers now live in `lib/crawler/crawl-job.ts` and
+  `lib/free-snapshot/snapshot-job.ts`, so the worker can import a handler
+  without importing a Hono route tree.
+- **RLS applies identically in the worker.** It connects as `bebest_app` (no
+  BYPASSRLS) and every handler and release path sets `app.current_org` via
+  `withOrgContext` before touching a tenant table —
+  `lib/queue/job-tenancy.test.ts` asserts it, including that the unscoped `db`
+  client is used for exactly one table (`snapshot_requests`, which has no
+  `organization_id` and is therefore not a tenant table).
+
+## The priced run vs. the executed run (2026-09-25)
+
+The dollar valve (`lib/ai-usage/run-preflight.ts`) prices a run at DISPATCH
+time; `lib/ai-visibility/pipeline.ts` re-reads the query set LIVE at EXECUTION
+time, which is correct (a run must measure the set as it stands) but means the
+two are different reads separated by the queue. The certificate named an org and
+a dollar figure and nothing else, so nothing connected them.
+
+- **The certificate now states its SIZE** (`RunCostPreflight.pricedQueryCount`),
+  and `ai_runs` persists it alongside the projected micro-dollars and the
+  pricing-table version (migration 0023). Persisting the projection is what
+  makes an overspend detectable afterwards at all — it can be set against the
+  org's real `ai_usage` rows; previously the approved number existed only for
+  the length of one HTTP request.
+- **Execution refuses a set that grew** (`assertRunWithinPricedSize`, called
+  before the run is marked `running` and before any provider call). A set that
+  SHRANK proceeds — the work is then strictly cheaper than what was approved.
+- **A run carrying no price cannot execute.** Fail closed: "never
+  cost-approved" must not be readable as "unlimited". The three dispatchers
+  (`routes/ai-runs.ts`, `routes/competitor-ai-runs.ts`,
+  `lib/agents/run-ai-visibility-step.ts`) all stamp the same
+  `pricedRunColumns()` fragment, and `scheduleAiVisibilityRun` refuses to queue
+  a row whose stamp disagrees with the certificate it was handed.
+- **Not continuous enforcement.** Once an approved run starts it runs to
+  completion; there is still no per-call budget check mid-run. This closes the
+  gap between the price and the START of execution, which is where the size
+  could change behind the valve's back.
+
+Deploy note: runs already queued when 0023 ships carry no price and will fail
+with `RunNotPricedError`. Drain the AI-visibility queue first, or re-dispatch
+them.
+
+## Billing webhooks: atomicity and ordering (2026-09-25)
+
+`routes/billing-webhooks.ts` dedupes on `billing_webhook_events.processed_at`,
+but `processed_at` used to be the last of four sequential writes. That made a
+replay idempotent for the subscription's STATE and not for its EFFECTS: a crash
+between the effects and the marker left the event looking unprocessed with its
+transition, its `organizations.update` and its audit rows already committed, so
+the provider's retry re-ran all of them — possibly over a state a later event
+had since set. Separately, `occurredAt` was handed to the state machine and
+compared against nothing, so events applied in ARRIVAL order, and Stripe
+guarantees no order (its own retries reorder aggressively).
+
+- **One transaction.** The fresh read, the ordering check, the state write, the
+  org status, the audit rows and `processed_at` all happen inside a single
+  `withOrgContext` transaction. `setSubscriptionPlanWithin` and
+  `writeAuditEventWithin` exist for that reason — the plan_id/plan sync rule and
+  the audit row shape each stay in exactly one place rather than being copied
+  for the transactional path.
+- **`writeAuditEventWithin` THROWS**, inverting `writeAuditEvent`'s
+  never-throw contract on purpose: inside a transaction a failed INSERT has
+  already aborted everything after it, and for this caller the right outcome is
+  that the billing change rolls back and the provider retries, not that it lands
+  unaudited.
+- **Ordering is decided on provider time.** `subscriptions.last_billing_event_at`
+  is the `occurredAt` of the newest event already applied; strictly older events
+  are acknowledged (200 — otherwise Stripe retries for days) and recorded with
+  `skipped_reason = 'superseded_by_newer_event'` plus a
+  `billing.webhook_superseded` audit row. Equal timestamps still apply: Stripe's
+  `event.created` is second-resolution and inventing an order for same-second
+  events would be a guess.
+- **A `SELECT ... FOR UPDATE` on the subscription row** serializes concurrent
+  deliveries for one customer; without it two events read the same "current"
+  state and the ordering guard loses to a race rather than to a stale delivery.
+- **Emails are sent AFTER the commit and are therefore at-most-once.** Sending
+  is an external call with no rollback. After the commit, a crash drops one
+  notification; before it, a rolled-back transition could have told a customer
+  their payment failed. Exactly-once dunning mail needs an outbox table, which
+  is separate work.
+- Unchanged, deliberately: HMAC verification before any parsing, and the
+  200-ack with no row for `UnsupportedWebhookEventError`.
+
+Still not covered: a user-initiated plan change (`routes/subscription.ts`) does
+not advance `last_billing_event_at`, so a stale provider event can still land on
+top of one. Stripe emits its own event for that change with a newer timestamp,
+which then becomes the watermark, but the window exists.

@@ -50,10 +50,12 @@ export class MockSearchConsoleProvider implements SEODataProvider {
       return {
         keyword,
         intent: classifyIntent(keyword),
-        // A real customer's actual measured monthly impressions/clicks-
-        // derived volume, not a word-count heuristic — deterministically
-        // derived here (100-10099) so this genuinely differs from
-        // `NullSEODataProvider`'s tiered estimates for the same keyword.
+        // NOT measured data. A deterministic hash of the keyword (100-10099),
+        // used only so dev/test sees values that differ from
+        // `NullSEODataProvider`'s tiered estimates. `confidence: 'high'` is
+        // part of the fixture shape, not a claim about accuracy — which is
+        // exactly why `resolve-provider-for-org.ts` refuses to serve this
+        // class in production.
         monthlyVolume: 100 + (h % 10000),
         difficulty: h % 101, // 0-100
         confidence: 'high',

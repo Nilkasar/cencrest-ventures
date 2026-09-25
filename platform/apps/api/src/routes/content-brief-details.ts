@@ -20,7 +20,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
-import { getDefaultAiProviderRegistry } from '../lib/ai-visibility/provider-registry.js';
+import { getMeteredAiProviderRegistry } from '../lib/ai-visibility/provider-registry.js';
 import { generateDraftContent } from '../lib/content/draft-generator.js';
 import { runAllQualityChecks, type ExistingPageForDuplicateCheck } from '../lib/content/quality-checks.js';
 import { serializeBrief, serializeDraft, serializeQualityCheck } from '../lib/content/serialize.js';
@@ -94,7 +94,7 @@ contentBriefDetailsRoute.post('/:id/draft', requireAuth, authenticatedRateLimit,
       outline: brief.outline as unknown as OutlineSection[],
       brandClaims,
     },
-    { registry: getDefaultAiProviderRegistry() },
+    { registry: getMeteredAiProviderRegistry({ organizationId: org.organizationId, feature: 'content_draft' }) },
   );
 
   const lastVersion = await withOrgContext(org.organizationId, (tx) =>

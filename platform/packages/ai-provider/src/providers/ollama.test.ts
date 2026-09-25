@@ -112,3 +112,33 @@ describe('OllamaProvider', () => {
     expect(result.parseAttempts).toBe(1);
   });
 });
+
+describe('OllamaProvider usage + finish-reason mapping (cost metering input)', () => {
+  it("maps Ollama's eval-count fields and done_reason", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({
+        model: 'qwen3:8b',
+        message: { role: 'assistant', content: 'hello' },
+        prompt_eval_count: 42,
+        eval_count: 17,
+        done_reason: 'stop',
+      }),
+    );
+    const provider = new OllamaProvider({ fetchImpl });
+
+    const result = await provider.complete({ userPrompt: 'hi', promptVersion: 'test.v1' });
+
+    expect(result.tokensUsed).toEqual({ promptTokens: 42, completionTokens: 17, totalTokens: 59 });
+    expect(result.finishReason).toBe('stop');
+  });
+
+  it('reports zero tokens (never a string-length estimate) when Ollama omits the counters', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ message: { role: 'assistant', content: 'a much longer body of text' } }));
+    const provider = new OllamaProvider({ fetchImpl });
+
+    const result = await provider.complete({ userPrompt: 'hi', promptVersion: 'test.v1' });
+
+    expect(result.tokensUsed).toEqual({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+    expect(result.finishReason).toBeNull();
+  });
+});

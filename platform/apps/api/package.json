@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "dev:worker": "tsx watch src/worker.ts",
     "build": "pnpm --filter @bebest/database run generate && node build.mjs",
-    "start": "node dist/server.js",
+    "start": "node dist/server.cjs",
+    "start:worker": "node dist/worker.cjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "test": "vitest run",
@@ -26,6 +28,7 @@
     "jose": "^6.2.10",
     "pg-boss": "^12.30.0",
     "resend": "^6.28.1",
+    "stripe": "^22.6.2",
     "zod": "^3.24.2"
   },
   "devDependencies": {

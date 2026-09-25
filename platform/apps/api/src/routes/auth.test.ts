@@ -48,6 +48,26 @@ async function buildApp() {
   return { app, sender };
 }
 
+/** A sender whose delivery fails — what `ResendEmailSender` now does when
+ * Resend rejects a send (unverified domain, revoked key, rate limit). Magic
+ * link is the ONLY sign-in method, so this route must NOT answer
+ * `{ success: true }` in that case. */
+class FailingEmailSender implements EmailSender {
+  async sendMagicLink(): Promise<void> {
+    throw new Error('Email send failed ("Your BeBest sign-in link"): Domain is not verified');
+  }
+  async sendInvitation(): Promise<void> {}
+  async sendSnapshotReady(): Promise<void> {}
+  async sendNotification(): Promise<void> {}
+}
+
+async function buildAppWithFailingSender() {
+  const { createAuthRoutes } = await import('./auth.js');
+  const app = new Hono();
+  app.route('/auth', createAuthRoutes(new FailingEmailSender()));
+  return app;
+}
+
 beforeEach(async () => {
   vi.clearAllMocks();
   const { __setKeysForTesting } = await import('../lib/jwt.js');
@@ -462,5 +482,26 @@ describe('POST /auth/select-org', () => {
       body: JSON.stringify({ slug: 'client' }),
     });
     expect(res.status).toBe(403);
+  });
+});
+
+describe('POST /auth/magic-link — a failed send must NOT look like a success', () => {
+  it('surfaces the delivery failure instead of answering { success: true }', async () => {
+    db.magic_link_tokens.create.mockResolvedValue({});
+    const app = await buildAppWithFailingSender();
+
+    const res = await app.request('/auth/magic-link', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'ada@example.com' }),
+    });
+
+    // The route deliberately does not catch: a 5xx is the honest answer when
+    // the one and only sign-in email could not be delivered. A 200
+    // `{ success: true }` here would be the silent production-login outage
+    // this whole path exists to prevent.
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    const body = (await res.json().catch(() => ({}))) as { success?: boolean };
+    expect(body.success).not.toBe(true);
   });
 });

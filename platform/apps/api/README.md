@@ -52,7 +52,7 @@ step, not something this codebase can do for itself.
 | `ALLOW_DEV_AUTH_BYPASS` | No | Must be `true` (in addition to `NODE_ENV !== 'production'`) to enable the `X-User-Id` header bypass for local dev/tests. Two separate opt-ins by design — see `src/middleware/auth.ts`. |
 | `APP_URL` | No | Used to build the magic-link URL sent to `EmailSender`. Defaults to `http://localhost:3000`. |
 | `RESEND_API_KEY` | Not used yet | Reserved for ADR-010 — no `ResendEmailSender` exists yet, see "Not done" below. |
-| `CRM_INTERNAL_ORG_ID` | Yes (to use `/api/leads`, `/api/deals`, `/api/activities`, `/api/accounts`) | UUID of the `organizations` row that is BeBest's own internal operations tenant — every CRM row is RLS-scoped to it (see `src/lib/internal-org.ts` and `@bebest/database` DECISIONS.md §14). Nothing seeds this row automatically; create one org (e.g. via `POST /api/orgs`) and put its id here. |
+| `CRM_INTERNAL_ORG_ID` | Yes (to use `/api/leads`, `/api/deals`, `/api/activities`, `/api/accounts`, **and to record anonymous free-snapshot AI spend** — see `src/lib/ai-usage/attribution.ts`) | UUID of the `organizations` row that is BeBest's own internal operations tenant — every CRM row is RLS-scoped to it (see `src/lib/internal-org.ts` and `@bebest/database` DECISIONS.md §14). Nothing seeds this row automatically; create one org (e.g. via `POST /api/orgs`) and put its id here. |
 
 Generate a dev RSA keypair:
 

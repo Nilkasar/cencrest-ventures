@@ -25,7 +25,10 @@ import { requirePermission } from '../middleware/rbac.js';
 import { writeManualAuditEvent } from '../middleware/audit-log.js';
 import { getBrandForOrg, NO_BRAND_ERROR } from '../lib/brand-context.js';
 import { checkUsageLimit, EntitlementLimitError } from '../lib/entitlements.js';
-import { countAiQueriesThisMonth } from '../lib/ai-visibility/usage.js';
+import { countPromptModelExecutionsThisMonth } from '../lib/ai-visibility/usage.js';
+import { preflightAiVisibilityRunCost } from '../lib/ai-usage/run-preflight.js';
+import { pricedRunColumns } from '../lib/ai-usage/priced-run.js';
+import { CostBudgetExceededError, costRefusalBody } from '../lib/ai-usage/cost-entitlements.js';
 import { countTrackedCompetitors } from '../lib/ai-visibility/competitor-usage.js';
 import { getDefaultAiProviderRegistry } from '../lib/ai-visibility/provider-registry.js';
 import { scheduleAiVisibilityRun } from '../lib/ai-visibility/schedule-run.js';
@@ -161,19 +164,27 @@ competitorAiRunsRoute.post(
       }
     }
 
-    // Entitlement 2 — identical `ai_queries_per_month` check `routes/ai-runs.ts`
-    // applies: a competitor run makes exactly as many real provider calls as
-    // a brand run and consumes the same monthly pool
-    // (`countAiQueriesThisMonth` sums `ai_runs.total_jobs` org-wide,
-    // brand and competitor runs alike).
+    // Entitlement 2 — identical count check `routes/ai-runs.ts` applies: a
+    // competitor run makes exactly as many real provider calls as a brand run
+    // and consumes the same monthly pool
+    // (`countPromptModelExecutionsThisMonth` sums `ai_runs.total_jobs`
+    // org-wide, brand and competitor runs alike). THIS IS THE CASE THE COST
+    // VALVE BELOW MATTERS MOST FOR: Epic 8 re-runs the whole 1,400 x 4
+    // universe per competitor, so three competitors is ~22,400 calls — the
+    // single easiest way for a customer to outspend their plan.
     try {
-      await checkUsageLimit(org.organizationId, 'ai_queries_per_month', () => countAiQueriesThisMonth(org.organizationId), totalJobs);
+      await checkUsageLimit(
+        org.organizationId,
+        'prompt_model_executions_per_month',
+        () => countPromptModelExecutionsThisMonth(org.organizationId),
+        totalJobs,
+      );
     } catch (err) {
       if (err instanceof EntitlementLimitError) {
         return c.json(
           {
             error: 'ai_query_limit_reached',
-            message: `Your ${err.plan} plan allows up to ${err.limit.toLocaleString()} AI queries per month (this run would use ${totalJobs.toLocaleString()}, and you've already used ${err.current.toLocaleString()} this month).${
+            message: `Your ${err.plan} plan allows up to ${err.limit.toLocaleString()} prompt-model executions per month (this run would use ${totalJobs.toLocaleString()}, and you've already used ${err.current.toLocaleString()} this month).${
               err.upgradeTo ? ` Upgrade to ${err.upgradeTo} for a higher limit.` : ''
             }`,
             metric: err.metric,
@@ -189,6 +200,18 @@ competitorAiRunsRoute.post(
       throw err;
     }
 
+    // Entitlement 3 — the dollar valve, identical to the brand route's.
+    let costPreflight;
+    try {
+      costPreflight = await preflightAiVisibilityRunCost({
+        organizationId: org.organizationId,
+        queryCount: queries.length,
+      });
+    } catch (err) {
+      if (err instanceof CostBudgetExceededError) return c.json(costRefusalBody(err), 402);
+      throw err;
+    }
+
     const run = await withOrgContext(org.organizationId, (tx) =>
       tx.ai_runs.create({
         data: {
@@ -199,6 +222,11 @@ competitorAiRunsRoute.post(
           providers,
           status: 'queued',
           total_jobs: totalJobs,
+          // Same approved-size stamp as the brand route — see
+          // lib/ai-usage/priced-run.ts. A competitor run re-runs the whole
+          // query universe, so this is the dispatcher where a set that grew
+          // in the queue costs the most.
+          ...pricedRunColumns(costPreflight),
           created_by: user.id,
         },
       }),
@@ -206,7 +234,7 @@ competitorAiRunsRoute.post(
 
     await writeManualAuditEvent(c, { action: 'competitor_ai_run.created', entityType: 'ai_run', entityId: run.id });
 
-    scheduleAiVisibilityRun(run.id, org.organizationId, brand.id);
+    await scheduleAiVisibilityRun(run.id, org.organizationId, brand.id, costPreflight);
 
     return c.json(serializeAiRun(run), 202);
   },

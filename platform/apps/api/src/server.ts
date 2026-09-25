@@ -3,6 +3,7 @@ import './load-env.js';
 import { serve } from '@hono/node-server';
 import { assertRlsEnforced } from '@bebest/database';
 import app from './app.js';
+import { describeError } from './lib/describe-error.js';
 
 const port = Number(process.env.PORT ?? 3001);
 
@@ -29,6 +30,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : err);
+  console.error(describeError(err));
   process.exit(1);
 });

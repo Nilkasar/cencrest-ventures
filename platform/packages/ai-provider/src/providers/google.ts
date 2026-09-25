@@ -12,8 +12,14 @@ export interface GoogleProviderOptions {
 
 interface GoogleGenerateContentResponse {
   modelVersion?: string;
-  candidates: Array<{ content: { parts: Array<{ text?: string }> } }>;
-  usageMetadata?: { promptTokenCount: number; candidatesTokenCount: number };
+  candidates: Array<{ content: { parts: Array<{ text?: string }> }; finishReason?: string | null }>;
+  /** Real field names from `generateContent`'s `usageMetadata`. */
+  usageMetadata?: {
+    promptTokenCount: number;
+    candidatesTokenCount: number;
+    cachedContentTokenCount?: number;
+    thoughtsTokenCount?: number;
+  };
 }
 
 /** Gemini's API key travels as a `?key=` query parameter, not a header —
@@ -66,6 +72,11 @@ export class GoogleProvider extends BaseAIProvider {
     const data = (await res.json()) as GoogleGenerateContentResponse;
     const candidate = data.candidates[0];
     const usage = data.usageMetadata ?? { promptTokenCount: 0, candidatesTokenCount: 0 };
+    const cachedPromptTokens = usage.cachedContentTokenCount;
+    const thoughts = usage.thoughtsTokenCount;
+    // Gemini reports thinking tokens OUTSIDE `candidatesTokenCount` but
+    // bills them as output — so they are added in, not just surfaced.
+    const completionTokens = usage.candidatesTokenCount + (thoughts ?? 0);
 
     return {
       provider: this.name,
@@ -74,9 +85,12 @@ export class GoogleProvider extends BaseAIProvider {
       rawResponse: candidate?.content.parts.map((part) => part.text ?? '').join('') ?? '',
       tokensUsed: {
         promptTokens: usage.promptTokenCount,
-        completionTokens: usage.candidatesTokenCount,
-        totalTokens: usage.promptTokenCount + usage.candidatesTokenCount,
+        completionTokens,
+        totalTokens: usage.promptTokenCount + completionTokens,
+        ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
+        ...(thoughts !== undefined ? { reasoningTokens: thoughts } : {}),
       },
+      finishReason: candidate?.finishReason ?? null,
       latencyMs,
       ...buildRequestMeta(),
     };

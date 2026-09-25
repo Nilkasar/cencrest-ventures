@@ -1,5 +1,5 @@
 /**
- * Usage counting for the `ai_queries_per_month` entitlement
+ * Usage counting for the `prompt_model_executions_per_month` entitlement
  * (`lib/entitlements.ts`) — how many (query x provider) AI Visibility jobs
  * an org has already dispatched this calendar month, so
  * `POST /brands/:id/ai-runs` can reject a run that would exceed the plan's
@@ -11,8 +11,14 @@
  * not `ai_run_responses` rows, which would undercount a run that's still
  * in progress or that had provider-call failures (no row for those jobs at
  * all, see pipeline.ts). "How many jobs this org has committed to running
- * this month" is the metric BILLING_ARCHITECTURE.md's `ai_queries_per_month`
+ * this month" is the metric BILLING_ARCHITECTURE.md's monthly AI cap
  * describes, not "how many happened to succeed."
+ *
+ * NOTE ON THE RENAME: this counter's ARITHMETIC is unchanged. It has always
+ * summed `ai_runs.total_jobs`, i.e. `queries x providers` — prompt-model
+ * executions. Only the plan-limit key it feeds was misnamed
+ * (`ai_queries_per_month`) and mis-sized; see `lib/billing/plan-catalog.ts`.
+ * A "query" in the old name was never one unit of anything billable.
  */
 import { withOrgContext } from '@bebest/database';
 
@@ -20,7 +26,7 @@ function startOfCurrentMonthUtc(now: Date = new Date()): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 }
 
-export async function countAiQueriesThisMonth(organizationId: string, now: Date = new Date()): Promise<number> {
+export async function countPromptModelExecutionsThisMonth(organizationId: string, now: Date = new Date()): Promise<number> {
   const result = await withOrgContext(organizationId, (tx) =>
     tx.ai_runs.aggregate({
       where: { organization_id: organizationId, created_at: { gte: startOfCurrentMonthUtc(now) } },

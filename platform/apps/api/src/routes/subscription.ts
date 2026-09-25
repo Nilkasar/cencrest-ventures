@@ -9,7 +9,8 @@ import { requirePermission } from '../middleware/rbac.js';
 import { auditLog } from '../middleware/audit-log.js';
 import { getBrandForOrg } from '../lib/brand-context.js';
 import { resolvePlanLimits } from '../lib/entitlements.js';
-import { countAiQueriesThisMonth } from '../lib/ai-visibility/usage.js';
+import { countPromptModelExecutionsThisMonth } from '../lib/ai-visibility/usage.js';
+import { sumOrgAiSpendThisMonth, formatSpendUsd } from '../lib/ai-usage/spend.js';
 import { PLAN_TIERS, type PlanTier } from '../lib/billing/plan-catalog.js';
 import { getPaymentProvider } from '../lib/billing/payment-provider.js';
 import {
@@ -50,7 +51,7 @@ async function buildUsageSummary(organizationId: string) {
   const { limits } = await resolvePlanLimits(organizationId);
   const brand = await getBrandForOrg(organizationId);
 
-  const [competitorsUsed, activeQuerySet, aiQueriesUsed, teamMembersUsed] = await Promise.all([
+  const [competitorsUsed, activeQuerySet, executionsUsed, teamMembersUsed, aiSpendMicros] = await Promise.all([
     brand
       ? withOrgContext(organizationId, (tx) =>
           tx.competitors.count({ where: { organization_id: organizationId, brand_id: brand.id, deleted_at: null } }),
@@ -64,14 +65,20 @@ async function buildUsageSummary(organizationId: string) {
           }),
         )
       : Promise.resolve(null),
-    countAiQueriesThisMonth(organizationId),
+    countPromptModelExecutionsThisMonth(organizationId),
     withOrgContext(organizationId, (tx) => tx.memberships.count({ where: { organization_id: organizationId } })),
+    // REAL dollars from `ai_usage` — the only place cost exists. This is what
+    // makes the dollar ceilings visible to the customer instead of only being
+    // discoverable by hitting a 402.
+    sumOrgAiSpendThisMonth(organizationId),
   ]);
 
   return {
     competitors_tracked: { used: competitorsUsed, limit: limits.competitors_tracked },
     queries_per_query_set: { used: activeQuerySet?.query_count ?? null, limit: limits.queries_per_query_set },
-    ai_queries_per_month: { used: aiQueriesUsed, limit: limits.ai_queries_per_month },
+    prompt_model_executions_per_month: { used: executionsUsed, limit: limits.prompt_model_executions_per_month },
+    ai_cost_budget_usd_per_month: { used: formatSpendUsd(aiSpendMicros), limit: limits.ai_cost_budget_usd_per_month },
+    max_cost_per_run_usd: { used: null, limit: limits.max_cost_per_run_usd },
     team_members: { used: teamMembersUsed, limit: limits.team_members },
     // Not tracked by any prior epic yet — see this function's doc comment.
     pages_analyzed: { used: null, limit: limits.pages_analyzed },
@@ -94,8 +101,8 @@ subscriptionRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromTo
 
 // ── GET /api/orgs/me/subscription/invoices — same read-only permission
 // level as GET / (viewer+, not owner-only — viewing billing history isn't a
-// mutation). Fake data from `NullPaymentProvider.getInvoices` until a real
-// `PaymentProvider` is wired (epic spec's UI surface, verbatim). An org that
+// mutation). Real Stripe invoices once `STRIPE_SECRET_KEY` is set; fake data
+// from `NullPaymentProvider.getInvoices` otherwise. An org that
 // never went through upgrade/downgrade has no `external_customer_id` yet —
 // same as a real Stripe customer that was never created — so it gets an
 // honest empty list, not a fabricated invoice. ─────────────────────────────
@@ -146,11 +153,18 @@ async function changePlan(
     externalCustomerId = customer.id;
   }
 
+  // The provider is handed the plan SLUG, not `targetPlan.id`. A local
+  // `plans` row UUID is meaningless to an external payment provider:
+  // `StripeProvider` resolves a slug to a Stripe Price by that Price's
+  // `lookup_key`/`metadata.plan_slug`, which is how prices stay in Stripe
+  // and in the `plans` table rather than in code. `NullPaymentProvider` is
+  // unaffected — it only needs a stable string to derive its deterministic
+  // id from, and the slug is more stable than the UUID.
   let externalSubscription;
   if (current.external_id) {
-    externalSubscription = await provider.upgradeSubscription(current.external_id, targetPlan.id);
+    externalSubscription = await provider.upgradeSubscription(current.external_id, targetPlan.slug);
   } else {
-    externalSubscription = await provider.createSubscription(externalCustomerId, targetPlan.id);
+    externalSubscription = await provider.createSubscription(externalCustomerId, targetPlan.slug);
   }
 
   const updated = await setSubscriptionPlan(organizationId, current.id, targetSlug, {

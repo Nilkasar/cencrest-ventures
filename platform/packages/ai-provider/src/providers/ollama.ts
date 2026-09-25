@@ -15,6 +15,7 @@ interface OllamaChatResponse {
   message?: { role: string; content: string };
   prompt_eval_count?: number;
   eval_count?: number;
+  done_reason?: string | null;
 }
 
 /** Local dev default — no API key, talks to a locally running `ollama
@@ -70,6 +71,7 @@ export class OllamaProvider extends BaseAIProvider {
       promptVersion: request.promptVersion,
       rawResponse: data.message?.content ?? '',
       tokensUsed: { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens },
+      finishReason: data.done_reason ?? null,
       latencyMs,
       ...buildRequestMeta(),
     };
