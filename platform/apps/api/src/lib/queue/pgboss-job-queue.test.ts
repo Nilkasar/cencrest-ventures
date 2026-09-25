@@ -125,3 +125,78 @@ describe('PgBossJobQueue — stop()', () => {
     expect(mockBoss.stop).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('PgBossJobQueue — the serverless enqueue path', () => {
+  it('enqueue() connects on demand: a cold Vercel function that only enqueues need not call start() itself', async () => {
+    const queue = new PgBossJobQueue('postgres://example/db', { ensureQueues: ['crawl_job'] });
+
+    await queue.enqueue('crawl_job', { jobId: 'a' });
+
+    expect(mockBoss.start).toHaveBeenCalledTimes(1);
+    expect(mockBoss.createQueue).toHaveBeenCalledWith('crawl_job');
+    expect(mockBoss.send).toHaveBeenCalledWith('crawl_job', { jobId: 'a' }, undefined);
+  });
+
+  it('connects only once across many enqueues', async () => {
+    const queue = new PgBossJobQueue('postgres://example/db', { ensureQueues: ['crawl_job'] });
+
+    await Promise.all([queue.enqueue('crawl_job', { jobId: 'a' }), queue.enqueue('crawl_job', { jobId: 'b' })]);
+    await queue.enqueue('crawl_job', { jobId: 'c' });
+
+    expect(mockBoss.start).toHaveBeenCalledTimes(1);
+    expect(mockBoss.createQueue).toHaveBeenCalledTimes(1);
+    expect(mockBoss.send).toHaveBeenCalledTimes(3);
+  });
+
+  it('creates every declared queue on connect, so the first enqueue can precede the worker ever booting', async () => {
+    const queue = new PgBossJobQueue('postgres://example/db', { ensureQueues: ['crawl_job', 'agent_run'] });
+
+    await queue.start();
+
+    expect(mockBoss.createQueue).toHaveBeenCalledWith('crawl_job');
+    expect(mockBoss.createQueue).toHaveBeenCalledWith('agent_run');
+    expect(mockBoss.work).not.toHaveBeenCalled();
+  });
+
+  it('a createQueue that loses a race with another process does not fail the enqueue', async () => {
+    mockBoss.createQueue.mockRejectedValueOnce(new Error('duplicate key value violates unique constraint'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const queue = new PgBossJobQueue('postgres://example/db', { ensureQueues: ['crawl_job'] });
+
+    await expect(queue.enqueue('crawl_job', { jobId: 'a' })).resolves.toBeUndefined();
+
+    expect(mockBoss.send).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(errorSpy.mock.calls[0]![0] as string)).toMatchObject({
+      msg: 'pgboss_job_queue_create_queue_failed',
+      jobType: 'crawl_job',
+    });
+    errorSpy.mockRestore();
+  });
+
+  it('logs loudly when a job type outside the declared list is enqueued — a job with no consumer must be detectable', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const queue = new PgBossJobQueue('postgres://example/db', { ensureQueues: ['crawl_job'] });
+
+    await queue.enqueue('ai_response_cache_warm', { x: 1 });
+
+    expect(JSON.parse(errorSpy.mock.calls[0]![0] as string)).toMatchObject({
+      level: 'error',
+      msg: 'pgboss_job_queue_undeclared_job_type',
+      jobType: 'ai_response_cache_warm',
+      declared: ['crawl_job'],
+    });
+    // Still persisted rather than dropped, so it can be redriven once a
+    // handler exists.
+    expect(mockBoss.send).toHaveBeenCalledWith('ai_response_cache_warm', { x: 1 }, undefined);
+    errorSpy.mockRestore();
+  });
+
+  it('stops gracefully so in-flight handlers get a chance to finish', async () => {
+    const queue = new PgBossJobQueue('postgres://example/db', { gracefulStopSeconds: 7 });
+    await queue.start();
+
+    await queue.stop();
+
+    expect(mockBoss.stop).toHaveBeenCalledWith({ graceful: true, timeout: 7000 });
+  });
+});
