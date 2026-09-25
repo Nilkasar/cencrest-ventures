@@ -326,12 +326,16 @@ claiming jobs this process cannot finish). One environment variable decides:
   `failed`; nothing automatically re-enqueues it, and pg-boss's own retry of
   the job would restart the pipeline from the beginning rather than resuming.
   Resumable runs are a separate piece of work.
-- `lib/measurement/schedule-remeasurement.ts` (Epic 14's 4-week
-  re-measurement) is the one background path that is **not** on the queue at
-  all — it still uses a real, in-process `setTimeout`, deliberately, per its
-  own header comment. On serverless that timer never fires. It needs its own
-  job type and handler (`JobQueue.enqueue` already supports `delayMs`); until
-  then, automatic re-measurement does not happen in production.
+- ~~`lib/measurement/schedule-remeasurement.ts` is the one background path not
+  on the queue — an in-process `setTimeout` that never fires on serverless.~~
+  **Fixed.** It is now the fifth job type (`remeasurement`), enqueued with a
+  four-week `delayMs` so the wait lives in Postgres rather than in a timer
+  belonging to a frozen function. The 32-bit `setTimeout` ceiling that forced
+  the old chunked implementation is gone with it. It is the one job with no
+  `releaseOnShutdown`, because it writes nothing until it succeeds — so a killed
+  worker leaves no partial state — and it carries `retryLimit: 1` so the attempt
+  is not lost. `job-registry.test.ts` holds an allowlist for that exemption, so
+  a future job cannot quietly omit a release path.
 
 ## 6. Known gaps to tell users/stakeholders about
 

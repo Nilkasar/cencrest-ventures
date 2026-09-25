@@ -16,7 +16,7 @@ vi.mock('@bebest/database', () => {
   };
 });
 
-import { ALL_JOB_TYPES, JOB_TYPES } from './job-types.js';
+import { ALL_JOB_TYPES, JOB_POLICIES, JOB_TYPES } from './job-types.js';
 import {
   assertJobHandlerCoverage,
   buildJobDefinitions,
@@ -62,12 +62,33 @@ describe('registerAllJobHandlers — the worker consumes every job type the API 
     }
   });
 
+  // A job that owns a domain row MUST release it: with no `releaseOnShutdown`
+  // the row stays in whatever in-progress state it reached when the worker was
+  // killed, which is the exact bug the worker split exists to fix.
+  //
+  // A job may omit it only if it owns no in-progress row AND the queue will
+  // re-run it. `remeasurement` is that case: `run-measurement.ts` only
+  // `create`s its `measurements`/`outcome_records` rows once the work has
+  // succeeded, so a killed worker leaves nothing partial behind, and
+  // `JOB_POLICIES` gives it `retryLimit: 1` so the attempt is not lost. This is
+  // an allowlist rather than a blanket rule so that a NEW job cannot quietly
+  // opt out — adding one without a release fails here until someone justifies
+  // it the same way.
+  const MAY_OMIT_RELEASE: readonly string[] = [JOB_TYPES.REMEASUREMENT];
+
   it('every job definition can release an in-flight instance of itself on shutdown', () => {
-    // A job with no `releaseOnShutdown` leaves its domain row in whatever
-    // in-progress state it reached when the worker was killed — the exact bug
-    // the worker split exists to fix. All four jobs own a row.
     for (const definition of buildJobDefinitions({ emailSender })) {
+      if (MAY_OMIT_RELEASE.includes(definition.jobType)) continue;
       expect(definition.releaseOnShutdown, `${definition.jobType} has no releaseOnShutdown`).toBeTypeOf('function');
+    }
+  });
+
+  it('a job allowed to omit releaseOnShutdown is retryable, so the attempt is not simply lost', () => {
+    for (const jobType of MAY_OMIT_RELEASE) {
+      expect(
+        JOB_POLICIES[jobType as keyof typeof JOB_POLICIES].retryLimit,
+        `${jobType} omits releaseOnShutdown but is not retryable`,
+      ).toBeGreaterThan(0);
     }
   });
 });

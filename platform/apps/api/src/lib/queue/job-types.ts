@@ -32,6 +32,11 @@ export const JOB_TYPES = {
   /** `lib/free-snapshot/snapshot-job.ts` — the public free-snapshot
    * pipeline (Epic 17). */
   FREE_SNAPSHOT: 'free_snapshot_pipeline',
+  /** `lib/measurement/schedule-remeasurement.ts` — Epic 14's re-measurement,
+   * enqueued with a 4-week `delayMs`. The delay lives in the queue, not in a
+   * JS timer, which is the only way it survives the process that scheduled it
+   * going away. */
+  REMEASUREMENT: 'remeasurement',
 } as const;
 
 export type JobType = (typeof JOB_TYPES)[keyof typeof JOB_TYPES];
@@ -84,4 +89,11 @@ export const JOB_POLICIES: Record<JobType, JobPolicy> = {
   [JOB_TYPES.AGENT_RUN]: { expireInSeconds: 2 * HOURS, retryLimit: 0 },
   // 20-50 queries x 4 models plus a small crawl — minutes, not hours.
   [JOB_TYPES.FREE_SNAPSHOT]: { expireInSeconds: 1 * HOURS, retryLimit: 1 },
+  // Re-runs the brand's active query set and compares against the snapshot
+  // taken at approval, so it is a scaled-down AI visibility run. The 4-week
+  // wait is `delayMs` and is NOT counted here — `expireInSeconds` starts when
+  // the job becomes active, not when it was enqueued. One retry: it writes a
+  // measurement rather than mutating a customer's site, and a lost
+  // re-measurement silently breaks the before/after story the product sells.
+  [JOB_TYPES.REMEASUREMENT]: { expireInSeconds: 2 * HOURS, retryLimit: 1 },
 };

@@ -178,7 +178,10 @@ describe('no job handler reaches a tenant table outside an org context', () => {
       autonomyLevel: 1,
     };
 
-    const definitions = buildJobDefinitions({ emailSender });
+    // Only the jobs that own a domain row have a release path; `remeasurement`
+    // deliberately has none (it writes nothing until it succeeds) — see
+    // job-registry.test.ts's MAY_OMIT_RELEASE for why.
+    const definitions = buildJobDefinitions({ emailSender }).filter((definition) => definition.releaseOnShutdown);
     for (const definition of definitions) {
       await definition.releaseOnShutdown!(payload);
     }

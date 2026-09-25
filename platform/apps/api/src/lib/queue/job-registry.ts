@@ -32,6 +32,7 @@ import { aiVisibilityRunJob } from '../ai-visibility/schedule-run.js';
 import { crawlJob } from '../crawler/crawl-job.js';
 import { agentRunJob } from '../agents/runner.js';
 import { createFreeSnapshotJob } from '../free-snapshot/snapshot-job.js';
+import { remeasurementJob } from '../measurement/schedule-remeasurement.js';
 
 export interface JobRegistryDeps {
   /** The free-snapshot pipeline needs a sender to email the finished report.
@@ -48,6 +49,7 @@ export function buildJobDefinitions(deps: JobRegistryDeps = {}): RegisteredJob[]
     crawlJob as unknown as JobDefinition<never>,
     agentRunJob as unknown as JobDefinition<never>,
     createFreeSnapshotJob(emailSender) as unknown as JobDefinition<never>,
+    remeasurementJob as unknown as JobDefinition<never>,
   ];
   return definitions.map((definition) => toRegisteredJob(definition));
 }
