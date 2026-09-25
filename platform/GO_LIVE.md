@@ -283,6 +283,15 @@ claiming jobs this process cannot finish). One environment variable decides:
 - `lib/queue/register-in-process.ts` keeps the old single-process behaviour for
   `pnpm dev` and the test suite, and becomes a no-op as soon as
   `JOB_QUEUE_DATABASE_URL` is set.
+- `JOB_POLICIES` (same file as the job types) sets each job's
+  `expireInSeconds`/`retryLimit`. This is not tuning: pg-boss's default
+  `expireInSeconds` is **15 minutes**, after which it treats the worker as dead
+  and re-dispatches the job. An hours-long AI Visibility run on that default
+  would have several copies of itself running at several times the AI spend. The
+  three expensive jobs also have `retryLimit: 0` — nothing here can resume a
+  partial run, so an automatic retry means re-paying for thousands of AI calls
+  (or, for an agent run, re-executing actions already taken on a customer's
+  site). A failed run is marked `failed` for a human to retry deliberately.
 
 ### What a human has to provision
 
