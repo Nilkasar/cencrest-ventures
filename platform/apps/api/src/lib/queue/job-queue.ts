@@ -23,21 +23,17 @@
  *   behavior every call site had before this epic. Remains the default
  *   (see `default-job-queue.ts`), so nothing changes behaviorally without
  *   a real Postgres connection being wired in.
- * - `PgBossJobQueue` — a real, complete implementation on top of the
- *   `pg-boss` package (added as a dependency in this epic). Correct code,
- *   but never constructed or `.start()`-ed anywhere in this build — same
- *   `NullXProvider` discipline every prior epic's external integration
- *   (email, payments) uses. Swapping to it is a config change: construct
- *   `new PgBossJobQueue(connectionString)` instead of `new
- *   InMemoryJobQueue()` in `default-job-queue.ts`, call `.start()` once at
- *   server boot, and register every handler the same way — no call-site
- *   changes, because every call site already goes through the `JobQueue`
- *   interface, never a concrete class.
+ * - `PgBossJobQueue` — the real, durable implementation on top of the
+ *   `pg-boss` package. Selected by `default-job-queue.ts` whenever
+ *   `JOB_QUEUE_DATABASE_URL` is configured, enqueued onto by the HTTP
+ *   process and `.start()`-ed by the worker process (`src/worker.ts`), which
+ *   registers every handler through `job-registry.ts`. No call site needed
+ *   changing for any of it, because every call site already went through
+ *   this interface rather than a concrete class.
  *
- * A process restart losing whatever `InMemoryJobQueue` had in flight is an
- * honestly-documented gap — the same one every one of the four call sites'
- * own `// TODO` comments already named, now centralized in one place
- * instead of four.
+ * A process restart losing whatever `InMemoryJobQueue` had in flight remains
+ * true of `InMemoryJobQueue` — which is why it is now the dev/test-only
+ * choice rather than the production default.
  */
 
 /**

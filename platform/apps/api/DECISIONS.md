@@ -361,3 +361,57 @@ cannot destroy a paid-for response. Both are tested.
 exported as a pure function): the response cache, dollar-based entitlement
 enforcement, and the pre-flight run cost estimator. This is the sensor, not
 the valve — nothing here blocks, throttles or refuses a call.
+
+## HTTP/worker process split (2026-09-25)
+
+- **`apps/api` now deploys as two processes from one codebase**, not one.
+  `api/index.js` → `dist/app.cjs` serves HTTP on Vercel serverless and only
+  ENQUEUES; `src/worker.ts` → `dist/worker.cjs` runs on a persistent host and
+  is the only process that CONSUMES. The alternative — moving the whole API to
+  a persistent host — was considered and rejected: the HTTP side works on
+  Vercel, only the jobs need a process that outlives a request. See
+  `GO_LIVE.md` §5.
+- **Why it was forced.** An AI Visibility baseline run is ~1,400 prompts x 4
+  models (x competitors): thousands of AI calls, hours of wall time. Run via
+  `InMemoryJobQueue` inside a Vercel function, it was frozen the instant the
+  202 returned, leaving `ai_runs` in `running` forever. The flagship feature
+  could not complete.
+- **Registration is data, checked twice, not a module-load side effect.**
+  `lib/queue/job-types.ts` declares every job type with no imports and no side
+  effects. `lib/queue/job-registry.ts` maps each to its `JobDefinition` and
+  `assertJobHandlerCoverage()` refuses to boot the worker if any declared type
+  has no handler. `lib/queue/job-registry.test.ts` additionally scans the
+  source tree so an `enqueue()` that does not use `JOB_TYPES.*` fails the
+  suite. The previous shape — each module calling
+  `getDefaultJobQueue().register()` at import time — is wrong in both
+  directions under a split: the HTTP process would register handlers it can
+  never run, and the worker would consume nothing it did not happen to import.
+- **`lib/queue/register-in-process.ts` keeps single-process dev/test
+  unchanged.** It registers on the default queue only while
+  `JOB_QUEUE_DATABASE_URL` is unset. That one variable is the whole switch:
+  unset → `InMemoryJobQueue` and handlers fire in-process exactly as before
+  (which is why the 1,156-test baseline needed no changes); set →
+  `PgBossJobQueue`, and the HTTP process registers nothing.
+- **Enqueues are awaited now, not `void`-ed.** With a durable queue the enqueue
+  is a real INSERT. `void enqueue(...)` let a serverless function return its
+  202 and freeze before the row landed, losing the job silently. So
+  `scheduleAiVisibilityRun`, `scheduleCrawlJob`, `scheduleFreeSnapshot` and
+  `scheduleAgentRun` all return promises their callers await.
+- **`releaseOnShutdown` is part of every job definition.** A worker is
+  SIGTERM'd on every deploy, and with hours-long runs that lands mid-run more
+  often than not. `lib/queue/in-flight-jobs.ts` tracks what is running;
+  shutdown stops fetching, waits a bounded grace period, then marks whatever
+  is still in flight `failed` using the same best-effort write each handler's
+  own error path already used. A deploy mid-run yields a visibly failed,
+  retryable run instead of a permanently hung one. It does NOT resume work —
+  resumable runs are separate.
+- **Job handlers moved out of route files.** `routes/crawl.ts`'s and
+  `routes/snapshot.ts`'s handlers now live in `lib/crawler/crawl-job.ts` and
+  `lib/free-snapshot/snapshot-job.ts`, so the worker can import a handler
+  without importing a Hono route tree.
+- **RLS applies identically in the worker.** It connects as `bebest_app` (no
+  BYPASSRLS) and every handler and release path sets `app.current_org` via
+  `withOrgContext` before touching a tenant table —
+  `lib/queue/job-tenancy.test.ts` asserts it, including that the unscoped `db`
+  client is used for exactly one table (`snapshot_requests`, which has no
+  `organization_id` and is therefore not a tenant table).
