@@ -89,7 +89,7 @@ export function countWords(text: string): number {
 
 /**
  * Runs the ACTUAL generation call. `deps.registry` defaults to
- * `getDefaultAiProviderRegistry()` in the route (never constructed here —
+ * `getMeteredAiProviderRegistry()` in the route (never constructed here —
  * same "tests inject a hand-rolled fake `AIProvider`, never a real network
  * call" discipline `pipeline.ts` documents), routed via
  * `taskDefaults['content.generation']` (`['openai', 'ollama']` per Epic 6 —

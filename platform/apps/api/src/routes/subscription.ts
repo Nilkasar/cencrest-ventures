@@ -94,8 +94,8 @@ subscriptionRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromTo
 
 // ── GET /api/orgs/me/subscription/invoices — same read-only permission
 // level as GET / (viewer+, not owner-only — viewing billing history isn't a
-// mutation). Fake data from `NullPaymentProvider.getInvoices` until a real
-// `PaymentProvider` is wired (epic spec's UI surface, verbatim). An org that
+// mutation). Real Stripe invoices once `STRIPE_SECRET_KEY` is set; fake data
+// from `NullPaymentProvider.getInvoices` otherwise. An org that
 // never went through upgrade/downgrade has no `external_customer_id` yet —
 // same as a real Stripe customer that was never created — so it gets an
 // honest empty list, not a fabricated invoice. ─────────────────────────────
@@ -146,11 +146,18 @@ async function changePlan(
     externalCustomerId = customer.id;
   }
 
+  // The provider is handed the plan SLUG, not `targetPlan.id`. A local
+  // `plans` row UUID is meaningless to an external payment provider:
+  // `StripeProvider` resolves a slug to a Stripe Price by that Price's
+  // `lookup_key`/`metadata.plan_slug`, which is how prices stay in Stripe
+  // and in the `plans` table rather than in code. `NullPaymentProvider` is
+  // unaffected — it only needs a stable string to derive its deterministic
+  // id from, and the slug is more stable than the UUID.
   let externalSubscription;
   if (current.external_id) {
-    externalSubscription = await provider.upgradeSubscription(current.external_id, targetPlan.id);
+    externalSubscription = await provider.upgradeSubscription(current.external_id, targetPlan.slug);
   } else {
-    externalSubscription = await provider.createSubscription(externalCustomerId, targetPlan.id);
+    externalSubscription = await provider.createSubscription(externalCustomerId, targetPlan.slug);
   }
 
   const updated = await setSubscriptionPlan(organizationId, current.id, targetSlug, {

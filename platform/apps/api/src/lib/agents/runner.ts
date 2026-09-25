@@ -27,7 +27,7 @@
  */
 import { withOrgContext, type agent_runs, type Prisma } from '@bebest/database';
 import { checkUsageLimit, resolvePlanLimits } from '../entitlements.js';
-import { getDefaultAiProviderRegistry } from '../ai-visibility/provider-registry.js';
+import { getMeteredAiProviderRegistry } from '../ai-visibility/provider-registry.js';
 import { notify } from '../notifications/notify.js';
 import { getDefaultJobQueue } from '../queue/default-job-queue.js';
 import { countAgentRunsThisMonth } from './usage.js';
@@ -197,7 +197,10 @@ async function executeAgentRun(runId: string, params: TriggerAgentRunParams, aut
     triggeredById: params.triggeredById,
     parameters: params.parameters ?? {},
     autonomyLevel,
-    registry: getDefaultAiProviderRegistry(),
+    // Agents run as the `system` role but still spend a TENANT's money, so
+    // the registry is metered against this run's org — an autonomous agent
+    // is exactly the caller most likely to burn budget unnoticed.
+    registry: getMeteredAiProviderRegistry({ organizationId, feature: `agent:${agentName}` }),
     logger: console,
   };
 

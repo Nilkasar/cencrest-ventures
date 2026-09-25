@@ -43,7 +43,7 @@ import {
   type KnownProviderName,
   type PromptTemplate,
 } from '@bebest/ai-provider';
-import { getDefaultAiProviderRegistry } from './provider-registry.js';
+import { getMeteredAiProviderRegistry } from './provider-registry.js';
 import { BRAND_OBSERVATION_SCHEMA, type BrandObservation } from './observation-schema.js';
 import { computeAiVisibilityScore, type ScoredObservation } from './scoring.js';
 
@@ -56,7 +56,8 @@ const GEO_QUERY_TEMPERATURE = 0.7;
 export interface AiVisibilityPipelineDeps {
   /** Injected for testing — a hand-rolled fake `AIProviderRegistry`, never
    * a real network call (task hard constraint). Defaults to
-   * `getDefaultAiProviderRegistry()` in production. */
+   * `getMeteredAiProviderRegistry()` in production, so every provider call
+   * this pipeline makes writes an `ai_usage` cost row for `organizationId`. */
   registry?: AIProviderRegistry;
   /** Root prompts directory (see `@bebest/ai-provider`'s `loadPromptTemplate`
    * convention). Defaults to `apps/api/src/prompts`. */
@@ -243,7 +244,10 @@ export async function runAiVisibilityRun(
   brandId: string,
   deps: AiVisibilityPipelineDeps = {},
 ): Promise<void> {
-  const registry = deps.registry ?? getDefaultAiProviderRegistry();
+  // Metered by default: the registry carries this run's org, so every
+  // `complete()`/`extract()` below (including each `extract()` RETRY, which
+  // is a separately billed call) lands an `ai_usage` row for this tenant.
+  const registry = deps.registry ?? getMeteredAiProviderRegistry({ organizationId, feature: 'ai_visibility_run' });
   const baseDir = deps.promptsBaseDir ?? defaultPromptsBaseDir();
 
   const run = await withOrgContext(organizationId, (tx) => tx.ai_runs.findUniqueOrThrow({ where: { id: runId } }));

@@ -1,7 +1,11 @@
 import { Hono } from 'hono';
 import { db } from '@bebest/database';
 import { writeAuditEvent } from '../lib/audit.js';
-import { getPaymentProvider, type BillingWebhookEventType } from '../lib/billing/payment-provider.js';
+import {
+  getPaymentProvider,
+  UnsupportedWebhookEventError,
+  type BillingWebhookEventType,
+} from '../lib/billing/payment-provider.js';
 import { applyBillingWebhookEvent, type SubscriptionState } from '../lib/billing/webhook-state-machine.js';
 import { findSubscriptionByExternalCustomerId, setSubscriptionPlan } from '../lib/billing/subscription-store.js';
 import type { PlanTier } from '../lib/billing/plan-catalog.js';
@@ -9,10 +13,14 @@ import type { AppEnv } from '../types/context.js';
 
 const billingWebhooksRoute = new Hono<AppEnv>();
 
-/** Real Stripe uses `stripe-signature`; a generic, provider-agnostic header
- * name is used here to match the `PaymentProvider` abstraction — a future
- * `StripeProvider` reads whichever header its own SDK expects internally,
- * this route only ever deals with the abstraction's `constructWebhookEvent`. */
+/** Real Stripe sends `Stripe-Signature`; `x-billing-signature` is the
+ * generic, provider-agnostic name `NullPaymentProvider`'s HMAC path (and its
+ * test suite) uses. Both are read, in that order, so the SAME route and the
+ * SAME idempotent state machine below serve a real Stripe endpoint and the
+ * provider-agnostic contract — there is deliberately no second webhook path
+ * beside this one. Whichever header is present is handed verbatim to the
+ * configured provider's `constructWebhookEvent`, which owns verification. */
+const STRIPE_SIGNATURE_HEADER = 'stripe-signature';
 const SIGNATURE_HEADER = 'x-billing-signature';
 
 // ── POST /api/webhooks/billing — signature-verified, routes to the state
@@ -20,12 +28,22 @@ const SIGNATURE_HEADER = 'x-billing-signature';
 // signature check IS the authentication for this endpoint (epic spec). ────
 billingWebhooksRoute.post('/', async (c) => {
   const rawBody = await c.req.text();
-  const signature = c.req.header(SIGNATURE_HEADER) ?? '';
+  const signature = c.req.header(STRIPE_SIGNATURE_HEADER) ?? c.req.header(SIGNATURE_HEADER) ?? '';
 
   let event;
   try {
     event = getPaymentProvider().constructWebhookEvent(rawBody, signature);
   } catch (err) {
+    // A WELL-SIGNED event this platform has no transition for (Stripe sends
+    // dozens of event types to an endpoint by default). Verification already
+    // SUCCEEDED, so this is not a security event and must not be audited as
+    // one — and it must be acknowledged with 200, or Stripe retries it for
+    // days. No `billing_webhook_events` row is written: nothing was applied,
+    // so there is no effect to dedupe against later.
+    if (err instanceof UnsupportedWebhookEventError) {
+      return c.json({ received: true, ignored: true, reason: 'unsupported_event_type' });
+    }
+
     // Rejected BEFORE any state change — logged as a security-relevant
     // event (epic spec's end-to-end flow step 6), not silently dropped.
     await writeAuditEvent({

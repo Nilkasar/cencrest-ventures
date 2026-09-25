@@ -16,9 +16,37 @@
  * Ollama"). `'extraction'` already routes to `['ollama']` there too — the
  * epic spec's explicit allowance ("Extraction... may use Ollama").
  */
-import { AIProviderRegistry, OllamaProvider, OpenAIProvider, AnthropicProvider, GoogleProvider, PerplexityProvider } from '@bebest/ai-provider';
+import {
+  AIProviderRegistry,
+  OllamaProvider,
+  OpenAIProvider,
+  AnthropicProvider,
+  GoogleProvider,
+  PerplexityProvider,
+  type AIProvider,
+  type KnownProviderName,
+} from '@bebest/ai-provider';
+import { wrapProvidersWithMetering } from '../ai-usage/metered-provider.js';
+import type { AiUsageAttribution } from '../ai-usage/attribution.js';
 
 let cached: AIProviderRegistry | undefined;
+let cachedProviders: Partial<Record<KnownProviderName, AIProvider>> | undefined;
+
+/** The real, UN-metered provider instances, built once per process from
+ * `process.env`. Private on purpose — the only sanctioned ways out of this
+ * module are the two accessors below. */
+function baseProviders(): Partial<Record<KnownProviderName, AIProvider>> {
+  if (!cachedProviders) {
+    cachedProviders = {
+      ollama: new OllamaProvider({ baseURL: process.env.OLLAMA_BASE_URL }),
+      openai: new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY }),
+      anthropic: new AnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY }),
+      google: new GoogleProvider({ apiKey: process.env.GOOGLE_API_KEY }),
+      perplexity: new PerplexityProvider({ apiKey: process.env.PERPLEXITY_API_KEY }),
+    };
+  }
+  return cachedProviders;
+}
 
 /**
  * Builds (and memoizes) the process-wide registry from `process.env`.
@@ -35,18 +63,36 @@ let cached: AIProviderRegistry | undefined;
  */
 export function getDefaultAiProviderRegistry(): AIProviderRegistry {
   if (!cached) {
-    cached = new AIProviderRegistry({
-      default: 'ollama',
-      providers: {
-        ollama: new OllamaProvider({ baseURL: process.env.OLLAMA_BASE_URL }),
-        openai: new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY }),
-        anthropic: new AnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY }),
-        google: new GoogleProvider({ apiKey: process.env.GOOGLE_API_KEY }),
-        perplexity: new PerplexityProvider({ apiKey: process.env.PERPLEXITY_API_KEY }),
-      },
-    });
+    cached = new AIProviderRegistry({ default: 'ollama', providers: baseProviders() });
   }
   return cached;
+}
+
+/**
+ * THE ACCESSOR ANY CODE THAT ACTUALLY CALLS A MODEL MUST USE.
+ *
+ * Returns a registry whose providers are wrapped in `MeteredAIProvider`, so
+ * every `complete()`/`extract()` writes an `ai_usage` row for
+ * `attribution.organizationId` (or, for the anonymous free-snapshot flow,
+ * for BeBest's internal org — see `lib/ai-usage/attribution.ts`). The
+ * returned object is an ordinary `AIProviderRegistry`: same routing table,
+ * same `resolveNames`/`resolve`/`resolveAvailable`, same `AIProvider`
+ * contract, so no caller signature changes.
+ *
+ * NOT memoized — the attribution differs per run/org, and the wrappers are
+ * thin objects around the shared, memoized provider instances.
+ *
+ * `getDefaultAiProviderRegistry()` above is retained ONLY for callers that
+ * need the ROUTING TABLE and make no model call (`resolveNames('geo.query')`
+ * to decide how many jobs a run will have). `lib/ai-usage/metered-provider.test.ts`
+ * enforces that allowlist, so adding an unmetered AI call fails a test
+ * instead of silently leaking spend.
+ */
+export function getMeteredAiProviderRegistry(attribution: AiUsageAttribution): AIProviderRegistry {
+  return new AIProviderRegistry({
+    default: 'ollama',
+    providers: wrapProvidersWithMetering(baseProviders(), attribution),
+  });
 }
 
 /** Test-only escape hatch — resets the memoized singleton so a test that
@@ -55,4 +101,5 @@ export function getDefaultAiProviderRegistry(): AIProviderRegistry {
  * application code. */
 export function __resetDefaultAiProviderRegistryForTesting(): void {
   cached = undefined;
+  cachedProviders = undefined;
 }

@@ -676,3 +676,52 @@ describe.skip('Epic 15 tenant isolation — reports / notifications (NEEDS LIVE 
       'never mark another org\'s notification read',
   );
 });
+
+/**
+ * AI COST METERING — `ai_usage`. The table and its `tenant_isolation`
+ * policy are PRE-EXISTING (0000_init's `rls.sql`, lines 173-178: ENABLE +
+ * FORCE + a `tenant_isolation` policy with both USING and WITH CHECK); what
+ * is new is that anything writes to it at all (`lib/ai-usage/record.ts`,
+ * driven by `lib/ai-usage/metered-provider.ts`). Mocked-Prisma coverage of
+ * the write path — that it goes through `withOrgContext` and that the row's
+ * `organization_id` equals the context org — is in
+ * `lib/ai-usage/record.test.ts`; this block is the real-RLS proof those unit
+ * tests cannot give.
+ *
+ * Writers are all BACKGROUND paths (the AI Visibility pipeline, agent runs,
+ * the free-snapshot orchestrator) with no HTTP request to inherit tenant
+ * context from, which is exactly scenario 4 at the top of this file.
+ */
+describe.skip('AI cost metering tenant isolation — ai_usage (NEEDS LIVE DB)', () => {
+  it.todo(
+    'an ai_usage row written by orgB\'s AI Visibility pipeline is invisible to a session with ' +
+      'app.current_org = orgA — cost and token counts are competitive information and must not leak',
+  );
+
+  it.todo(
+    'inserting an ai_usage row with organization_id set to a foreign org is rejected by WITH CHECK, ' +
+      'even from the background pipeline/agent code path that has no HTTP request behind it',
+  );
+
+  it.todo(
+    'a metered provider built for orgA (getMeteredAiProviderRegistry({ organizationId: orgA })) ' +
+      'writes ONLY orgA rows, even when the same process concurrently runs a metered provider for ' +
+      'orgB — set_config(..., true) is transaction-scoped, so two interleaved background runs on a ' +
+      'pooled connection can never write into each other\'s tenant',
+  );
+
+  it.todo(
+    'an orgA session cannot DELETE or UPDATE orgB\'s ai_usage rows (cost history must be tamper-proof ' +
+      'across tenants as well as unreadable)',
+  );
+
+  it.todo(
+    'the anonymous free-snapshot path writes its ai_usage row under CRM_INTERNAL_ORG_ID and that row ' +
+      'is invisible to every customer org — unattributed spend is visible in aggregate to BeBest only',
+  );
+
+  it.todo(
+    'cost_usd survives a round trip as an exact Decimal(10,6): writing the string "0.013113" reads ' +
+      'back as 0.013113, and SUM(cost_usd) over 17,000 rows equals the BigInt-computed total exactly',
+  );
+});

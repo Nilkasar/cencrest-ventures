@@ -32,8 +32,11 @@ vi.mock('../entitlements.js', () => ({
 const countAgentRunsThisMonth = vi.fn();
 vi.mock('./usage.js', () => ({ countAgentRunsThisMonth: (...args: unknown[]) => countAgentRunsThisMonth(...args) }));
 
-const getDefaultAiProviderRegistry = vi.fn(() => ({}));
-vi.mock('../ai-visibility/provider-registry.js', () => ({ getDefaultAiProviderRegistry: () => getDefaultAiProviderRegistry() }));
+const getMeteredAiProviderRegistry = vi.fn(() => ({}));
+vi.mock('../ai-visibility/provider-registry.js', () => ({
+  getDefaultAiProviderRegistry: () => ({}),
+  getMeteredAiProviderRegistry: (...args: unknown[]) => getMeteredAiProviderRegistry(...(args as [])),
+}));
 
 // Epic 15 — `executeAgentRun`'s real call site into the shared `notify()`
 // mechanism. Mocked here (`notify()`'s own internals are covered by

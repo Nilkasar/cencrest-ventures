@@ -13,8 +13,13 @@
  *
  * What IS reused, exactly, per the epic brief's "same all-4-providers rule"
  * instruction:
- *   - `getDefaultAiProviderRegistry()` — the SAME process-wide registry
- *     Epic 7/8 construct from `process.env`, never a second one.
+ *   - `getMeteredAiProviderRegistry()` — the SAME process-wide provider
+ *     instances Epic 7/8 construct from `process.env`, never a second set,
+ *     wrapped for cost metering. A free snapshot has NO organization (the
+ *     lead has not signed up), so its spend is attributed to BeBest's own
+ *     internal operations org rather than being dropped — see
+ *     `lib/ai-usage/attribution.ts`. This is real money: 20-50 queries x 4
+ *     cloud assistants x 2 calls each, per anonymous form submission.
  *   - `registry.resolveNames('geo.query')` — the SAME provider-resolution
  *     call `routes/ai-runs.ts` makes, so a free snapshot fans out to
  *     exactly the same 4 cloud providers a paid run does, never a
@@ -52,7 +57,7 @@ import {
   type AIProviderRegistry,
   type KnownProviderName,
 } from '@bebest/ai-provider';
-import { getDefaultAiProviderRegistry } from '../ai-visibility/provider-registry.js';
+import { getMeteredAiProviderRegistry } from '../ai-visibility/provider-registry.js';
 import { BRAND_OBSERVATION_SCHEMA, type BrandObservation } from '../ai-visibility/observation-schema.js';
 import { computeAiVisibilityScore, type ScoredObservation, type AiVisibilityScoreResult } from '../ai-visibility/scoring.js';
 import type { GeneratedQuery, QueryTemplateCategory } from '../query-generator.js';
@@ -63,7 +68,7 @@ const GEO_QUERY_TEMPERATURE = 0.7;
 export interface FreeSnapshotAiRunDeps {
   /** Injected for testing — a hand-rolled fake `AIProviderRegistry`, never
    * a real network call (task hard constraint). Defaults to
-   * `getDefaultAiProviderRegistry()` in production, same default
+   * `getMeteredAiProviderRegistry()` in production, same default
    * `pipeline.ts` uses. */
   registry?: AIProviderRegistry;
   promptsBaseDir?: string;
@@ -106,7 +111,8 @@ export async function runFreeSnapshotAiQueries(
   queries: readonly GeneratedQuery[],
   deps: FreeSnapshotAiRunDeps = {},
 ): Promise<FreeSnapshotAiRunResult> {
-  const registry = deps.registry ?? getDefaultAiProviderRegistry();
+  const registry =
+    deps.registry ?? getMeteredAiProviderRegistry({ organizationId: null, feature: 'free_snapshot' });
   const baseDir = deps.promptsBaseDir ?? defaultPromptsBaseDir();
 
   // docs/12-ai/AI_ARCHITECTURE.md's routing table, via the SAME registry

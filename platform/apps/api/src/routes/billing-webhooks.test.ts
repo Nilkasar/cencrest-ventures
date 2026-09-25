@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 
 const FREE_PLAN = { id: 'plan-free', slug: 'free', name: 'Free', limits: {}, features: {}, active: true };
@@ -170,5 +170,139 @@ describe('POST /webhooks/billing — unresolvable events', () => {
     expect(res.status).toBe(200);
     expect(((await res.json()) as { ignored?: boolean }).ignored).toBe(true);
     expect(db.subscriptions.update).not.toHaveBeenCalled();
+  });
+});
+
+// ── Real Stripe deliveries through this SAME route and state machine ──────
+// The point of these cases is that there is no second webhook path: a real
+// `Stripe-Signature` header, verified by `StripeProvider`, drives exactly the
+// idempotency + state-machine machinery the cases above exercise through
+// `NullPaymentProvider`'s HMAC.
+describe('POST /webhooks/billing — real Stripe deliveries', () => {
+  const WEBHOOK_SECRET = 'whsec_route_test';
+
+  beforeEach(async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_not_a_real_key';
+    process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    const { __setPaymentProviderForTesting } = await import('../lib/billing/payment-provider.js');
+    __setPaymentProviderForTesting(undefined);
+  });
+
+  afterEach(async () => {
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+    const { __setPaymentProviderForTesting } = await import('../lib/billing/payment-provider.js');
+    __setPaymentProviderForTesting(undefined);
+  });
+
+  function stripeSubscriptionEvent(eventId: string, status = 'past_due') {
+    return {
+      id: eventId,
+      object: 'event',
+      created: 1_700_000_000,
+      type: 'customer.subscription.updated',
+      data: {
+        object: {
+          id: 'sub_ext_1',
+          object: 'subscription',
+          customer: 'cus_1',
+          status,
+          items: {
+            data: [
+              {
+                id: 'si_1',
+                current_period_start: 1_700_000_000,
+                current_period_end: 1_702_592_000,
+                price: { id: 'price_growth', lookup_key: 'growth', metadata: {} },
+              },
+            ],
+          },
+        },
+      },
+    };
+  }
+
+  async function stripeRequest(app: Hono, body: object, secret = WEBHOOK_SECRET) {
+    const { default: Stripe } = await import('stripe');
+    const payload = JSON.stringify(body);
+    const signature = new Stripe('sk_test_not_a_real_key').webhooks.generateTestHeaderString({
+      payload,
+      secret,
+    });
+    return app.request('/webhooks/billing', {
+      method: 'POST',
+      headers: { 'stripe-signature': signature, 'content-type': 'application/json' },
+      body: payload,
+    });
+  }
+
+  it('accepts a real Stripe-Signature delivery and applies the mapped transition', async () => {
+    const app = await buildApp();
+    const res = await stripeRequest(app, stripeSubscriptionEvent('evt_stripe_1', 'past_due'));
+
+    expect(res.status).toBe(200);
+    // `customer.subscription.updated` + status past_due -> subscription.past_due,
+    // which the state machine says must NOT change the plan (day 0).
+    expect(db.subscriptions.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'past_due', plan: 'growth' }),
+      }),
+    );
+  });
+
+  it('rejects a Stripe delivery signed with the wrong endpoint secret, before any state change', async () => {
+    const app = await buildApp();
+    const res = await stripeRequest(app, stripeSubscriptionEvent('evt_stripe_bad'), 'whsec_wrong');
+
+    expect(res.status).toBe(400);
+    expect((await res.json() as { error?: string }).error).toBe('invalid_signature');
+    expect(db.subscriptions.update).not.toHaveBeenCalled();
+    expect(db.organizations.update).not.toHaveBeenCalled();
+    expect(db.billing_webhook_events.create).not.toHaveBeenCalled();
+    // Logged as a security-relevant event.
+    expect(db.audit_events.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ action: 'billing.webhook_rejected', result: 'failure' }),
+      }),
+    );
+  });
+
+  it('is idempotent across a Stripe retry of the same event id — the effect is applied exactly once', async () => {
+    const app = await buildApp();
+    const event = stripeSubscriptionEvent('evt_stripe_retry', 'past_due');
+
+    const first = await stripeRequest(app, event);
+    expect(first.status).toBe(200);
+    expect(db.subscriptions.update).toHaveBeenCalledTimes(1);
+
+    // Stripe redelivers the identical event; the row is now processed.
+    db.billing_webhook_events.findUnique.mockResolvedValue({
+      id: 'webhook-row-1',
+      external_event_id: 'evt_stripe_retry',
+      processed_at: new Date(),
+    });
+
+    const second = await stripeRequest(app, event);
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual({ received: true, duplicate: true });
+    // Still exactly one — no double-applied subscription change.
+    expect(db.subscriptions.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('200-acks a well-signed Stripe event type the platform has no transition for, without auditing it as a rejection', async () => {
+    const app = await buildApp();
+    const res = await stripeRequest(app, {
+      id: 'evt_charge_1',
+      object: 'event',
+      created: 1_700_000_000,
+      type: 'charge.succeeded',
+      data: { object: { id: 'ch_1', object: 'charge' } },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ received: true, ignored: true, reason: 'unsupported_event_type' });
+    expect(db.billing_webhook_events.create).not.toHaveBeenCalled();
+    expect(db.subscriptions.update).not.toHaveBeenCalled();
+    expect(db.audit_events.create).not.toHaveBeenCalled();
   });
 });

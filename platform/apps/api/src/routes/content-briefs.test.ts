@@ -170,7 +170,10 @@ vi.mock('@bebest/database', () => ({
 // run quality checks), not re-proving the AI-provider routing itself.
 const generateDraftContentMock = vi.fn();
 vi.mock('../lib/content/draft-generator.js', () => ({ generateDraftContent: (...args: unknown[]) => generateDraftContentMock(...args) }));
-vi.mock('../lib/ai-visibility/provider-registry.js', () => ({ getDefaultAiProviderRegistry: vi.fn().mockReturnValue({}) }));
+vi.mock('../lib/ai-visibility/provider-registry.js', () => ({
+  getDefaultAiProviderRegistry: vi.fn().mockReturnValue({}),
+  getMeteredAiProviderRegistry: vi.fn().mockReturnValue({}),
+}));
 
 async function buildApp() {
   const { default: contentBriefGenerate } = await import('./content-brief-generate.js');
