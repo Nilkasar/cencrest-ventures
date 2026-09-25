@@ -101,8 +101,9 @@ export class MeteredAIProvider extends BaseAIProvider {
    * with no usage metadata, so there is nothing truthful to record. Note that
    * `PerplexityProvider.healthCheck()` is a REAL billed request (it sends a
    * `max_tokens: 1` completion, and Perplexity charges a flat per-request
-   * search fee) — that spend is invisible to this table. See
-   * `TECHNICAL_DEBT.md`.
+   * search fee) — that spend is invisible to this table, and a frequently-polled
+   * status endpoint calling `healthCheckAll()` would bill for every poll. See
+   * `platform/GO_LIVE.md` §6.
    */
   healthCheck(): Promise<boolean> {
     return this.inner.healthCheck();

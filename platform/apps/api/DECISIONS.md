@@ -291,3 +291,73 @@ run) plus additional stress runs forcing worker reuse
 (`--pool=threads --maxWorkers=2 --minWorkers=2`, 3 runs) to confirm the
 fix holds even under configurations that maximize the chance of a
 process.env leak surfacing.
+
+---
+
+## AI cost metering — where `organization_id` is threaded in (2026-09-25)
+
+**Decision.** Metering lives in an app-side decorator, `MeteredAIProvider`
+(`src/lib/ai-usage/metered-provider.ts`), obtained through
+`getMeteredAiProviderRegistry(attribution)`. `@bebest/ai-provider` gained a
+price table (`pricing.ts`) and richer usage/finish-reason reporting, but no
+database access and no concept of a tenant.
+
+**The alternatives, and why they lost.**
+
+1. *Meter inside each provider in `packages/ai-provider`.* Rejected. That
+   package's stated contract is that it persists nothing ("this package does
+   not persist anything itself — no database access here", `types.ts`). Doing
+   the write there would put Prisma, `withOrgContext` and `organization_id`
+   inside the one package whose purpose (ADR-003) is to be the only thing
+   that knows how to talk to a vendor, and would make the pure package
+   depend on `@bebest/database`.
+2. *Add `organizationId` to `CompletionRequest`.* Rejected. It changes the
+   `AIProvider` interface that every route, pipeline and agent depends on,
+   and — worse — it makes tenancy a per-call argument that a call site can
+   forget or get wrong. A forgotten field is exactly the silent leak this
+   work exists to close.
+3. *Meter at call sites.* Rejected outright, per the task's own framing: the
+   next feature forgets, and the leak reopens with no test failing.
+
+**What the decorator buys.** The org travels with the *registry instance* a
+caller asks for, not with each request object, so `AIProvider` is
+byte-identical and no caller signature changed. Four call sites now ask for a
+metered registry (`lib/ai-visibility/pipeline.ts`, `lib/agents/runner.ts`,
+`lib/free-snapshot/ai-run.ts`, `routes/content-brief-details.ts`).
+`getDefaultAiProviderRegistry()` survives ONLY for the three callers that
+read the routing table (`resolveNames('geo.query')`) without making a model
+call; `lib/ai-usage/metered-provider.test.ts` enforces that allowlist by
+scanning `src/`, so adding an unmetered AI call fails a test.
+
+**Why it extends `BaseAIProvider` rather than delegating `extract()`.**
+`extract()` retries until the JSON validates and every attempt is separately
+billed. Delegating to `inner.extract()` would route those retries through the
+*inner* provider's `this.complete()`, bypassing the decorator, so only the
+final attempt would ever be metered — an under-count concentrated precisely
+on the badly-behaving, expensive calls. Extending `BaseAIProvider` reuses the
+same shared retry loop while each attempt goes through the metered
+`complete()`.
+
+**RLS and the awkward cases.** The write goes through `withOrgContext`, so it
+runs inside a transaction with `app.current_org` set and satisfies
+`ai_usage`'s `WITH CHECK` policy. Every writer is a background path (AI
+Visibility pipeline, agent runs, free-snapshot orchestrator) with no HTTP
+request to inherit context from; they get it from the attribution their
+registry was built with. Anonymous free-snapshot spend has no org at all, and
+`ai_usage.organization_id` is `NOT NULL` with RLS on read and write (a NULL
+row would be write-only data, invisible even to the role that wrote it), so it
+is attributed to `CRM_INTERNAL_ORG_ID` — an already-established concept here
+(Epic 1 CRM, `lib/internal-org.ts`) for BeBest's own tenant, which runs no
+customer pipelines. See `GO_LIVE.md` §6 for the consequence: that spend is
+visible in aggregate but not separable from internal CRM AI spend without a
+new `feature` column.
+
+**Non-negotiable.** A metering failure never fails the AI call or loses the
+response. `recordAiUsage` swallows its own errors AND the decorator wraps the
+recorder call in its own try/catch, so a future recorder that throws still
+cannot destroy a paid-for response. Both are tested.
+
+**Deliberately out of scope** (follow-up, and the reason `estimateCost()` is
+exported as a pure function): the response cache, dollar-based entitlement
+enforcement, and the pre-flight run cost estimator. This is the sensor, not
+the valve — nothing here blocks, throttles or refuses a call.

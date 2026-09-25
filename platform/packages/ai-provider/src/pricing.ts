@@ -29,9 +29,9 @@
  * They are realistic public list rates for each model family as understood
  * at the date in `PRICING_TABLE_VERSION`, committed so metering produces
  * usable dollars from day one instead of zeros. EVERY entry must be checked
- * against the provider's current public pricing page before launch — see
- * `TECHNICAL_DEBT.md`. Treat any cost figure in a customer-visible surface
- * as an estimate until that pass is done.
+ * against the provider's current public pricing page before launch — this is
+ * a tracked launch-blocking item in `platform/GO_LIVE.md` §7. Treat any cost
+ * figure in a customer-visible surface as an estimate until that pass is done.
  *
  * Deliberately NOT in scope here (a follow-up task owns these): the response
  * cache, dollar-based entitlement enforcement, and the pre-flight run cost
