@@ -33,7 +33,6 @@
  * `ai_run_responses` row is created for that job at all — it is counted
  * directly against `ai_runs.failed_jobs`.
  */
-import path from 'node:path';
 import { withOrgContext, type claim_confidence } from '@bebest/database';
 import {
   loadPromptTemplate,
@@ -46,6 +45,7 @@ import {
 import { getMeteredAiProviderRegistry } from './provider-registry.js';
 import { BRAND_OBSERVATION_SCHEMA, type BrandObservation } from './observation-schema.js';
 import { computeAiVisibilityScore, type ScoredObservation } from './scoring.js';
+import { resolvePromptsBaseDir } from '../prompts-dir.js';
 
 /** Fixed per docs/12-ai/AI_ARCHITECTURE.md's `CompletionRequest` default —
  * stored on `ai_run_responses.temperature` directly from what was
@@ -65,7 +65,7 @@ export interface AiVisibilityPipelineDeps {
 }
 
 function defaultPromptsBaseDir(): string {
-  return path.join(import.meta.dirname, '../../prompts');
+  return resolvePromptsBaseDir();
 }
 
 /** `parseAttempts` from `ExtractionResult` (`@bebest/ai-provider`) is a

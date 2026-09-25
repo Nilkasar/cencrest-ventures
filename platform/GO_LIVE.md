@@ -44,7 +44,10 @@ The failure this split exists to fix is silent, so prove it rather than assuming
    consuming** — check `JOB_QUEUE_DATABASE_URL` is set on the worker and points at the
    same database, and that the worker process is alive.
 5. Redeploy the worker mid-run on purpose once. The run should end `failed`, not stay
-   `running` — that is the shutdown release working (§5).
+   `running` — that is the shutdown release working (§5). Use a *directly triggered*
+   run for this check: `remeasurement` is the one job with no release path, so a
+   kill during one strands the `ai_runs` row its inner run created and will fail
+   this check legitimately (§6).
 
 ### Known gaps to expect on day one
 
@@ -60,8 +63,12 @@ None of these block launch, but you will hit them, so know them going in:
 - **AI cost figures are partly unverified.** Anthropic's rates were checked 2026-09-25;
   OpenAI, Google and Perplexity are still first-pass estimates (`PRICING_LAST_VERIFIED` is
   `null`). Fine for internal margin analysis, not for anything customer-facing. §6.
-- **Metering measures but does not yet enforce.** A customer can spend more on model calls
-  than their subscription is worth. §6.
+- **Spend ceilings are enforced at dispatch, not continuously.** A run that would breach
+  a per-run or monthly ceiling is now refused before it starts, but concurrent requests
+  price against the same month-to-date figure with no reservation, and spend is never
+  re-checked mid-run. A query set enlarged after the estimate was taken runs at its new
+  size against the old certificate. §6.
+- **Ollama is mandatory.** Without it every run completes reporting a score of 0. See §2.
 
 ---
 
@@ -150,7 +157,8 @@ Without this, every CRM route (`/api/leads`, `/api/deals`, `/api/activities`, `/
 | `APP_URL` | Recommended | Used to build magic-link/invite/snapshot-report URLs. Defaults to `http://localhost:3000` — **must** be set to the real domain in production or every email link is wrong. |
 | `PORT` | Optional | Defaults to `3001` |
 | `NODE_ENV=production` | **Required** | Unconditionally disables the dev auth bypass |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `PERPLEXITY_API_KEY`, `OLLAMA_BASE_URL` | At least one needed | Real AI provider keys — without any of these, AI Visibility/GEO features have nothing to call |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `PERPLEXITY_API_KEY` | At least one needed | The models a GEO query is actually asked. `geo.query` fans out across all four |
+| `OLLAMA_BASE_URL` | **Required, not interchangeable** | `packages/ai-provider/src/registry.ts:34` routes `extraction: ['ollama']` with NO fallback. Without a reachable Ollama, extraction throws on every job, zero `brand_observations` are written, and the run still reaches `completed` — reporting an AI Visibility Score of **0**. A fabricated-looking headline number, silently. Either provide Ollama or give `extraction` a cloud fallback first |
 | `RESEND_API_KEY` | **Required** (for email) | Switches `apps/api` from `ConsoleEmailSender` to the real `ResendEmailSender`. Without it NOBODY can log in to production — magic link is the only sign-in method. |
 | `EMAIL_FROM` | Recommended | Envelope `From` for every transactional email. Defaults to `BeBest <hello@bebestwithai.com>`. Its domain must be verified in Resend or every send fails. |
 | `STRIPE_SECRET_KEY` | **Required** (for billing) | Switches `apps/api` from `NullPaymentProvider` to the real `StripeProvider`. Unset = billing is non-functional but harmless. |
@@ -168,7 +176,8 @@ The worker is the same package deployed a second time as a persistent process
 |---|---|---|
 | `JOB_QUEUE_DATABASE_URL` | **Required** | Without it the worker refuses to start (exit 1) — it would have nothing to consume |
 | `DATABASE_URL` | **Required** | Same `bebest_app` role as the API. RLS is in force here too; every handler sets `app.current_org` via `withOrgContext` |
-| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `PERPLEXITY_API_KEY` / `OLLAMA_BASE_URL` | **Required** | This is the process that actually makes the AI calls. Keys set only on Vercel buy you nothing |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `PERPLEXITY_API_KEY` | **Required** | This is the process that actually makes the AI calls. Keys set only on Vercel buy you nothing |
+| `OLLAMA_BASE_URL` | **Required** | Not one of the interchangeable keys above — extraction routes to Ollama only. See the backend table for what a missing Ollama does to the score |
 | `RESEND_API_KEY`, `EMAIL_FROM` | **Required** (for email) | The free-snapshot "your report is ready" email is sent from the worker, not the API |
 | `APP_URL` | **Required** | The report link in that email is built from it |
 | `CRM_INTERNAL_ORG_ID` | **Required** | Free-snapshot AI spend is attributed to this org |
@@ -374,6 +383,7 @@ Real, honestly-documented, not oversights — worth setting expectations before 
 > that lives only in the build output is invisible to the whole test suite.
 
 - [ ] Built artifacts run: `node build.mjs`, then start `dist/app.cjs` and `dist/worker.cjs` and confirm each reaches its own startup checks
+- [ ] **One real job completes from `dist/worker.cjs`.** Booting is not enough and has already proved it twice: `load-env.ts`'s `import.meta.url` killed the bundle on its first line, and the prompt templates resolved to a non-existent directory in the bundle — that one let both artifacts boot cleanly while 100% of AI jobs died on their first template load, immediately after the run row had been marked `running`. Run an actual AI Visibility run against the built worker and watch it reach `completed`
 - [ ] Postgres provisioned, `DATABASE_URL` set
 - [ ] `pnpm --filter @bebest/database run db:apply` run (schema + all 20 folders' constraints, indexes and RLS — see §1.1; `prisma migrate deploy` does **not** do this)
 - [ ] `bebest_app` / `bebest_admin` Postgres roles created correctly (no `BYPASSRLS`, no ownership on `bebest_app`)
@@ -391,7 +401,7 @@ Real, honestly-documented, not oversights — worth setting expectations before 
 - [ ] Worker deployed to a persistent host (§5) — `pnpm --filter @bebest/api run start:worker`, with the worker env from §2, and a SIGTERM→SIGKILL window above 20s
 - [ ] Email: `RESEND_API_KEY` + `EMAIL_FROM` set and the sending domain verified in Resend (the sender itself is written and wired)
 - [ ] Error tracking: `SentryErrorTracker` wired and started, or accept console-only logging until it is
-- [ ] Durable job queue: `JOB_QUEUE_DATABASE_URL` set on **both** the Vercel `bebest-api` project and the worker host, pointing at the same database (the code itself is wired and started — see §5). Verify on the first deploy that `worker_started` appears in the worker's logs listing all 4 job types, and that a triggered AI Visibility run reaches `completed` rather than sitting in `running`
+- [ ] Durable job queue: `JOB_QUEUE_DATABASE_URL` set on **both** the Vercel `bebest-api` project and the worker host, pointing at the same database (the code itself is wired and started — see §5). Verify on the first deploy that `worker_started` appears in the worker's logs listing all **5** job types (`ai_visibility_run`, `crawl_job`, `agent_run`, `free_snapshot_pipeline`, `remeasurement`), and that a triggered AI Visibility run reaches `completed` rather than sitting in `running`
 - [ ] Alerting on the worker's `worker_released_in_flight_jobs`, `pgboss_job_queue_handler_failed` and `pgboss_job_queue_undeclared_job_type` log lines
 - [ ] Accept (or schedule work for) the 4-week re-measurement trigger not firing — it is still an in-process `setTimeout`, not a queued job (§5)
 - [ ] Billing: `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` set, one Stripe Price per paid tier created with `lookup_key` = plan slug, webhook endpoint pointed at `POST /api/webhooks/billing` (the provider itself is written and wired)

@@ -89,11 +89,19 @@ export const JOB_POLICIES: Record<JobType, JobPolicy> = {
   [JOB_TYPES.AGENT_RUN]: { expireInSeconds: 2 * HOURS, retryLimit: 0 },
   // 20-50 queries x 4 models plus a small crawl — minutes, not hours.
   [JOB_TYPES.FREE_SNAPSHOT]: { expireInSeconds: 1 * HOURS, retryLimit: 1 },
-  // Re-runs the brand's active query set and compares against the snapshot
-  // taken at approval, so it is a scaled-down AI visibility run. The 4-week
-  // wait is `delayMs` and is NOT counted here — `expireInSeconds` starts when
-  // the job becomes active, not when it was enqueued. One retry: it writes a
-  // measurement rather than mutating a customer's site, and a lost
-  // re-measurement silently breaks the before/after story the product sells.
-  [JOB_TYPES.REMEASUREMENT]: { expireInSeconds: 2 * HOURS, retryLimit: 1 },
+  // Runs a FULL AI visibility run inline (`lib/agents/run-ai-visibility-step.ts`
+  // creates its own `ai_runs` row and awaits the whole pipeline), so its ceiling
+  // must be at least AI_VISIBILITY_RUN's. It was briefly 2h, which would have
+  // re-created the 15-minute defect at a larger scale: past the ceiling pg-boss
+  // presumes the worker dead and re-dispatches, giving two concurrent inline
+  // runs, two `ai_runs` rows, double the AI spend and a duplicate measurement.
+  //
+  // retryLimit 0 for the same reason as the other expensive jobs: a retry
+  // re-runs thousands of billed AI calls from scratch. It was briefly 1, which
+  // was worse than useless — the handler catches its own errors and resolves, so
+  // pg-boss never sees a real failure to retry; the retry could ONLY fire on
+  // expiry or a kill, i.e. exactly the case where re-running is most expensive.
+  // The 4-week wait is `delayMs` and is not counted here: `expireInSeconds`
+  // starts when the job becomes active, not when it was enqueued.
+  [JOB_TYPES.REMEASUREMENT]: { expireInSeconds: 6 * HOURS, retryLimit: 0 },
 };

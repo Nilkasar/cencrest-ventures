@@ -66,30 +66,51 @@ describe('registerAllJobHandlers — the worker consumes every job type the API 
   // the row stays in whatever in-progress state it reached when the worker was
   // killed, which is the exact bug the worker split exists to fix.
   //
-  // A job may omit it only if it owns no in-progress row AND the queue will
-  // re-run it. `remeasurement` is that case: `run-measurement.ts` only
-  // `create`s its `measurements`/`outcome_records` rows once the work has
-  // succeeded, so a killed worker leaves nothing partial behind, and
-  // `JOB_POLICIES` gives it `retryLimit: 1` so the attempt is not lost. This is
-  // an allowlist rather than a blanket rule so that a NEW job cannot quietly
-  // opt out — adding one without a release fails here until someone justifies
-  // it the same way.
-  const MAY_OMIT_RELEASE: readonly string[] = [JOB_TYPES.REMEASUREMENT];
+  // `remeasurement` is a KNOWN, UNRESOLVED exception, not a justified one. An
+  // earlier version of this comment claimed it owns no in-progress row because
+  // `run-measurement.ts` writes its `measurements`/`outcome_records` rows only
+  // on success. That was wrong: `run-measurement.ts` calls
+  // `lib/agents/run-ai-visibility-step.ts`, which creates an `ai_runs` row at
+  // `status: 'queued'` and awaits the full pipeline (which sets `running`). A
+  // worker killed mid-remeasurement strands exactly that row.
+  //
+  // It is still exempt only because a correct release is not expressible today:
+  // `releaseOnShutdown` receives the job payload, the payload is
+  // `{ actionId, organizationId }`, and nothing links the action to the inner
+  // run's id — there is no `after_ai_run_id` on `measurements`. Releasing "any
+  // running run for this brand" would risk failing an unrelated concurrent run,
+  // which is worse than the leak. Fixing it properly means threading the inner
+  // run's id into the payload or persisting the link, and that is a real change
+  // rather than a comment.
+  const KNOWN_UNRELEASABLE: readonly string[] = [JOB_TYPES.REMEASUREMENT];
 
   it('every job definition can release an in-flight instance of itself on shutdown', () => {
     for (const definition of buildJobDefinitions({ emailSender })) {
-      if (MAY_OMIT_RELEASE.includes(definition.jobType)) continue;
+      if (KNOWN_UNRELEASABLE.includes(definition.jobType)) continue;
       expect(definition.releaseOnShutdown, `${definition.jobType} has no releaseOnShutdown`).toBeTypeOf('function');
     }
   });
 
-  it('a job allowed to omit releaseOnShutdown is retryable, so the attempt is not simply lost', () => {
-    for (const jobType of MAY_OMIT_RELEASE) {
+  it('a job with no release path is at least never auto-retried, so a kill does not re-spend', () => {
+    // The previous version of this test asserted `retryLimit > 0` as the safety
+    // argument, which was backwards. The handler catches its own errors and
+    // resolves, so pg-boss never observes a real failure to retry; a retry could
+    // only fire after expiry or a kill — precisely when re-running thousands of
+    // billed AI calls is most expensive.
+    for (const jobType of KNOWN_UNRELEASABLE) {
       expect(
         JOB_POLICIES[jobType as keyof typeof JOB_POLICIES].retryLimit,
-        `${jobType} omits releaseOnShutdown but is not retryable`,
-      ).toBeGreaterThan(0);
+        `${jobType} has no release path, so it must not be auto-retried`,
+      ).toBe(0);
     }
+  });
+
+  it('a job that runs another job inline has at least that job\'s expiry ceiling', () => {
+    // remeasurement awaits a full AI visibility run. A shorter ceiling means
+    // pg-boss re-dispatches while the first attempt is still running.
+    expect(JOB_POLICIES[JOB_TYPES.REMEASUREMENT].expireInSeconds).toBeGreaterThanOrEqual(
+      JOB_POLICIES[JOB_TYPES.AI_VISIBILITY_RUN].expireInSeconds,
+    );
   });
 });
 

@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { mkdir } from 'fs/promises';
+import { cp, mkdir, readdir } from 'fs/promises';
 
 await mkdir('dist', { recursive: true });
 
@@ -36,4 +36,17 @@ const shared = {
 await build({ ...shared, entryPoints: ['src/app.ts'], outfile: 'dist/app.cjs' });
 await build({ ...shared, entryPoints: ['src/worker.ts'], outfile: 'dist/worker.cjs' });
 
-console.log('Build complete: dist/app.cjs, dist/worker.cjs');
+// The prompt templates are DATA, not modules — esbuild does not bundle them, so
+// without this copy `loadPromptTemplate` throws on the first real AI job while
+// the bundles themselves boot perfectly. `lib/prompts-dir.ts` looks for them
+// here; see its header for why the source and bundled layouts disagree.
+await cp('src/prompts', 'dist/prompts', { recursive: true });
+
+// Fail the build rather than ship bundles whose first job would die. An empty
+// or missing directory here is the whole defect this guard exists for.
+const promptDirs = await readdir('dist/prompts');
+if (promptDirs.length === 0) {
+  throw new Error('dist/prompts is empty — the prompt templates were not copied.');
+}
+
+console.log(`Build complete: dist/app.cjs, dist/worker.cjs, dist/prompts (${promptDirs.join(', ')})`);

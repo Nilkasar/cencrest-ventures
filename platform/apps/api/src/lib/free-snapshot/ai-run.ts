@@ -49,7 +49,6 @@
  *     (`extraction_status`/`extraction_error` on a persisted row). There is
  *     nothing to distinguish them for here, since neither is persisted.
  */
-import path from 'node:path';
 import {
   loadPromptTemplate,
   renderPrompt,
@@ -61,6 +60,7 @@ import { getMeteredAiProviderRegistry } from '../ai-visibility/provider-registry
 import { BRAND_OBSERVATION_SCHEMA, type BrandObservation } from '../ai-visibility/observation-schema.js';
 import { computeAiVisibilityScore, type ScoredObservation, type AiVisibilityScoreResult } from '../ai-visibility/scoring.js';
 import type { GeneratedQuery, QueryTemplateCategory } from '../query-generator.js';
+import { resolvePromptsBaseDir } from '../prompts-dir.js';
 
 /** Same fixed value `pipeline.ts` requests for every GEO query call. */
 const GEO_QUERY_TEMPERATURE = 0.7;
@@ -93,7 +93,7 @@ export interface FreeSnapshotAiRunResult {
 }
 
 function defaultPromptsBaseDir(): string {
-  return path.join(import.meta.dirname, '../../prompts');
+  return resolvePromptsBaseDir();
 }
 
 /**
