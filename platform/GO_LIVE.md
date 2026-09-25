@@ -92,7 +92,10 @@ Without this, every CRM route (`/api/leads`, `/api/deals`, `/api/activities`, `/
 | `PORT` | Optional | Defaults to `3001` |
 | `NODE_ENV=production` | **Required** | Unconditionally disables the dev auth bypass |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `PERPLEXITY_API_KEY`, `OLLAMA_BASE_URL` | At least one needed | Real AI provider keys — without any of these, AI Visibility/GEO features have nothing to call |
-| `RESEND_API_KEY` | Not usable yet | Reserved, but no `ResendEmailSender` class exists — see §3 |
+| `RESEND_API_KEY` | **Required** (for email) | Switches `apps/api` from `ConsoleEmailSender` to the real `ResendEmailSender`. Without it NOBODY can log in to production — magic link is the only sign-in method. |
+| `EMAIL_FROM` | Recommended | Envelope `From` for every transactional email. Defaults to `BeBest <hello@bebestwithai.com>`. Its domain must be verified in Resend or every send fails. |
+| `STRIPE_SECRET_KEY` | **Required** (for billing) | Switches `apps/api` from `NullPaymentProvider` to the real `StripeProvider`. Unset = billing is non-functional but harmless. |
+| `STRIPE_WEBHOOK_SECRET` | **Required** (for billing) | The endpoint signing secret (`whsec_…`) from Stripe → Developers → Webhooks. `BILLING_WEBHOOK_SECRET` is honoured as a fallback. |
 | `SENTRY_DSN` | Not usable yet | Reserved, but never `.init()`-ed — see §3 |
 | `JOB_QUEUE_DATABASE_URL` | Not usable yet | Reserved, `PgBossJobQueue` is never started — see §3 |
 | `ALLOW_DEV_AUTH_BYPASS` | Never in prod | Dev/test only; requires both this AND `NODE_ENV !== 'production'` |
@@ -111,12 +114,35 @@ Every one of these follows the same pattern: a single factory/singleton construc
 
 | Capability | Default today | Real class exists? | Swap site | What's needed |
 |---|---|---|---|---|
-| **Email** | `ConsoleEmailSender` (logs, sends nothing) | No — needs writing | `apps/api/src/app.ts:64` | Write a `ResendEmailSender implements EmailSender`, set `RESEND_API_KEY` |
+| **Email** | `ConsoleEmailSender` (logs, sends nothing) | **Yes** — `ResendEmailSender` written and wired | `apps/api/src/app.ts:64` | Set `RESEND_API_KEY` (and `EMAIL_FROM`), verify the sending domain in Resend. Nothing left to write. |
 | **Error tracking** | `ConsoleErrorTracker` | **Yes** — `SentryErrorTracker` fully written, just never started | `lib/observability/default-error-tracker.ts` | Construct `new SentryErrorTracker(process.env.SENTRY_DSN!)`, call `.init()` once at boot |
 | **Durable job queue** | `InMemoryJobQueue` (a process restart loses pending jobs) | **Yes** — `PgBossJobQueue` fully written, just never started | `lib/queue/default-job-queue.ts` | Construct `new PgBossJobQueue(connectionString)`, call `.start()` once at boot — **needs §5's deployment decision first** |
-| **Billing** | `NullPaymentProvider` | No — needs writing | `lib/billing/payment-provider.ts:293` | Write a real Stripe-backed class, real Stripe keys |
+| **Billing** | `NullPaymentProvider` | **Yes** — `StripeProvider` written and wired | `lib/billing/payment-provider.ts` (`createPaymentProviderFromEnv`) | Set `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET`, and create one recurring Stripe Price per paid tier with `lookup_key` = the plan slug (`starter`/`growth`/`pro`/`agency`/`managed`/`enterprise`). See the caveat below. |
 | **SEO data** | `NullSEODataProvider` | No — needs writing | `lib/seo/seo-data-provider.ts:176` | Write a real class against Search Console / DataForSEO / Semrush / Ahrefs / Serper (the file's own comment names these as the original candidates) |
 | **CMS publishing** | `NullPublishTarget` | Intentionally out of scope — no real external CMS integration was ever meant to exist in this build | — | Not a go-live blocker, a future epic |
+
+> **Stripe caveat — the one thing still genuinely missing for "a customer can pay."**
+> `StripeProvider` creates real customers, subscriptions, plan changes,
+> cancellations and verifies real webhook signatures. But the
+> `PaymentProvider` interface has no method that can hand a card-collection
+> secret (a Stripe Checkout URL or a PaymentIntent client secret) back to the
+> frontend, and no UI asks for card details. So
+> `POST /api/orgs/me/subscription/upgrade` creates the Stripe subscription
+> with `payment_behavior: 'default_incomplete'` — it exists, and it is
+> `incomplete` until its first invoice is paid out of band (e.g. an invoice
+> Stripe emails, or a Checkout session created manually). Turning that into
+> self-serve checkout means ADDING a method to the interface plus a frontend
+> payment page — a deliberate, separate decision, not an oversight in this
+> adapter.
+>
+> **Billing dunning emails still do not send.** `routes/billing-webhooks.ts`
+> handles the state machine's `send_email` side effects (payment failed
+> 1st/2nd/final, downgrade notice, cancellation notice) with a `console.log`,
+> not the `EmailSender`. Wiring it needs a product decision this build
+> deliberately declined to guess at — which member of an org receives a
+> billing email (see `lib/notifications/notify.ts`'s header on why "just
+> email the owner" was not invented). A customer whose card fails currently
+> gets no email.
 
 ---
 
@@ -175,9 +201,10 @@ Real, honestly-documented, not oversights — worth setting expectations before 
 - [ ] At least one real AI provider key set
 - [ ] `NODE_ENV=production` set
 - [ ] Deployment target for `apps/api` decided (§5) — persistent process, not serverless, if the durable queue matters at launch
-- [ ] Email: `ResendEmailSender` written and wired, or accept console-only email until it is
+- [ ] Email: `RESEND_API_KEY` + `EMAIL_FROM` set and the sending domain verified in Resend (the sender itself is written and wired)
 - [ ] Error tracking: `SentryErrorTracker` wired and started, or accept console-only logging until it is
 - [ ] Durable job queue: `PgBossJobQueue` wired and started, or accept the in-memory limitation until it is
-- [ ] Billing: real Stripe provider written and wired, or accept billing as non-functional until it is
+- [ ] Billing: `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` set, one Stripe Price per paid tier created with `lookup_key` = plan slug, webhook endpoint pointed at `POST /api/webhooks/billing` (the provider itself is written and wired)
+- [ ] Billing: decide how a card actually gets collected — see §3's Stripe caveat; a new paid subscription is created `incomplete` and nothing in the product collects payment details yet
 - [ ] `NEXT_PUBLIC_API_URL` (frontend) pointed at the real deployed API
 - [ ] Decide on `data/fixtures.ts`'s 15 remaining `currentUser`/`currentOrganization` call sites (§4) — accept the single-org-user interim pattern, or replace with a real session-backed hook before launch (especially before onboarding any multi-org user)
