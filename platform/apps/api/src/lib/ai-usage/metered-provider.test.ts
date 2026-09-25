@@ -214,6 +214,11 @@ describe('unmetered-registry allowlist', () => {
   const ALLOWED = new Set([
     // Reads the routing table to count planned jobs; makes no model call.
     'lib/agents/run-ai-visibility-step.ts',
+    // Reads the routing table + each provider's model NAME to PRICE a run
+    // before dispatch. Makes no model call, and deliberately never calls
+    // healthCheck()/resolveAvailable() either (on Perplexity that is itself a
+    // billed request) — see lib/ai-usage/run-cost-estimator.ts.
+    'lib/ai-usage/run-preflight.ts',
     'routes/ai-runs.ts',
     'routes/competitor-ai-runs.ts',
     // The definition itself.

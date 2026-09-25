@@ -12,6 +12,8 @@ const db = {
   queries: { findMany: vi.fn() },
   subscriptions: { findUnique: vi.fn() },
   ai_runs: { create: vi.fn(), findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn(), update: vi.fn() },
+  // The dollar valve reads month-to-date spend from `ai_usage`.
+  ai_usage: { aggregate: vi.fn() },
   audit_events: { create: vi.fn().mockResolvedValue({}) },
   organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
 };
@@ -29,6 +31,7 @@ const tx = {
   queries: db.queries,
   subscriptions: db.subscriptions,
   ai_runs: db.ai_runs,
+  ai_usage: db.ai_usage,
 };
 
 vi.mock('@bebest/database', () => ({
@@ -73,7 +76,8 @@ beforeEach(async () => {
   db.competitors.findFirst.mockResolvedValue(COMPETITOR);
   db.query_sets.findFirst.mockResolvedValue(ACTIVE_QUERY_SET);
   db.queries.findMany.mockResolvedValue(QUERIES);
-  db.subscriptions.findUnique.mockResolvedValue({ plan: 'free' }); // competitors_tracked: 2, ai_queries_per_month: 50
+  db.subscriptions.findUnique.mockResolvedValue({ plan: 'free' }); // competitors_tracked: 2, prompt_model_executions_per_month: 200
+  db.ai_usage.aggregate.mockResolvedValue({ _sum: { cost_usd: null } });
   db.ai_runs.count.mockResolvedValue(0); // not yet tracked -> first-time entitlement check applies
   db.ai_runs.findMany.mockResolvedValue([]); // no competitors actively tracked yet (countTrackedCompetitors)
   db.ai_runs.aggregate.mockResolvedValue({ _sum: { total_jobs: 0 } });

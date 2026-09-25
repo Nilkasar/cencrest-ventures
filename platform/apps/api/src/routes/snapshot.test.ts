@@ -70,6 +70,67 @@ describe('POST /snapshot', () => {
     expect(runFreeSnapshotPipeline).not.toHaveBeenCalled();
   });
 
+  // ── Spend caps (lib/free-snapshot/abuse-caps.ts). The per-IP limiter above
+  // is defeated by a proxy pool; these are keyed on the DOMAIN the money is
+  // spent on, and on the platform as a whole. ────────────────────────────
+  it('429s without creating anything when this DOMAIN already had a free snapshot inside the window', async () => {
+    // Bucket 1 is the per-IP middleware (allowed), bucket 2 is the per-domain
+    // cap (max 1) — returning count 2 there means "already used".
+    db.organization_rate_limits.upsert
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 2 });
+    const { app } = await buildApp();
+
+    const res = await app.request('/snapshot', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '9.9.9.9' },
+      body: JSON.stringify(VALID_BODY),
+    });
+
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe('snapshot_already_requested_for_domain');
+    expect(db.leads.create).not.toHaveBeenCalled();
+    expect(db.snapshot_requests.create).not.toHaveBeenCalled();
+    expect(runFreeSnapshotPipeline).not.toHaveBeenCalled();
+
+    // The domain bucket is keyed on the normalized hostname, never the IP or
+    // the email — both of which an attacker changes for free.
+    const domainCall = db.organization_rate_limits.upsert.mock.calls[1]?.[0] as {
+      create: { bucket_key: string; window_seconds: number };
+    };
+    expect(domainCall.create.bucket_key).toBe('free_snapshot_domain:acme.example');
+    expect(domainCall.create.window_seconds).toBe(7 * 24 * 60 * 60);
+  });
+
+  it("429s without creating anything once the platform's GLOBAL daily free-snapshot ceiling is reached", async () => {
+    // IP ok, domain ok, global over.
+    db.organization_rate_limits.upsert
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 100_000 });
+    const { app } = await buildApp();
+
+    const res = await app.request('/snapshot', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '9.9.9.10' },
+      body: JSON.stringify(VALID_BODY),
+    });
+
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe('free_snapshot_capacity_reached');
+    expect(db.leads.create).not.toHaveBeenCalled();
+    expect(runFreeSnapshotPipeline).not.toHaveBeenCalled();
+
+    const globalCall = db.organization_rate_limits.upsert.mock.calls[2]?.[0] as {
+      create: { bucket_key: string; window_seconds: number };
+    };
+    // ONE counter for the whole platform — not per IP, not per domain.
+    expect(globalCall.create.bucket_key).toBe('free_snapshot_global:all');
+    expect(globalCall.create.window_seconds).toBe(24 * 60 * 60);
+  });
+
   it('rejects a non-public-http(s) website (SSRF guard reused exactly like routes/leads.ts) BEFORE creating a lead', async () => {
     const { app } = await buildApp();
     const res = await app.request('/snapshot', {

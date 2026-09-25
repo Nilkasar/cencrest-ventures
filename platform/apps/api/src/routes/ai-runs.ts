@@ -7,7 +7,9 @@ import { requirePermission } from '../middleware/rbac.js';
 import { writeManualAuditEvent } from '../middleware/audit-log.js';
 import { getBrandForOrg, NO_BRAND_ERROR } from '../lib/brand-context.js';
 import { checkUsageLimit, EntitlementLimitError } from '../lib/entitlements.js';
-import { countAiQueriesThisMonth } from '../lib/ai-visibility/usage.js';
+import { countPromptModelExecutionsThisMonth } from '../lib/ai-visibility/usage.js';
+import { preflightAiVisibilityRunCost } from '../lib/ai-usage/run-preflight.js';
+import { CostBudgetExceededError, costRefusalBody } from '../lib/ai-usage/cost-entitlements.js';
 import { getDefaultAiProviderRegistry } from '../lib/ai-visibility/provider-registry.js';
 import { scheduleAiVisibilityRun } from '../lib/ai-visibility/schedule-run.js';
 import { serializeAiRun } from '../lib/ai-visibility/serialize.js';
@@ -88,14 +90,29 @@ aiRunsRoute.post('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('
   // Entitlement check BEFORE any provider is called and BEFORE the
   // ai_runs row is even created — the epic's end-to-end flow step 1's
   // literal invariant.
+  //
+  // TWO checks now, and they answer different questions. The COUNT cap
+  // (`prompt_model_executions_per_month` — the renamed, corrected
+  // `ai_queries_per_month`; see `lib/billing/plan-catalog.ts`) bounds fan-out
+  // volume. The DOLLAR check below bounds actual spend, because a count
+  // cannot tell a $0.0002 Flash call from a $0.04 Opus call and a customer
+  // could otherwise burn more in model calls than their subscription is
+  // worth. Neither subsumes the other, so both run.
   try {
-    await checkUsageLimit(org.organizationId, 'ai_queries_per_month', () => countAiQueriesThisMonth(org.organizationId), totalJobs);
+    await checkUsageLimit(
+      org.organizationId,
+      'prompt_model_executions_per_month',
+      () => countPromptModelExecutionsThisMonth(org.organizationId),
+      totalJobs,
+    );
   } catch (err) {
     if (err instanceof EntitlementLimitError) {
       return c.json(
         {
+          // Wire-compatible error code — the web app already branches on this
+          // string; only the `metric` field reports the corrected unit name.
           error: 'ai_query_limit_reached',
-          message: `Your ${err.plan} plan allows up to ${err.limit.toLocaleString()} AI queries per month (this run would use ${totalJobs.toLocaleString()}, and you've already used ${err.current.toLocaleString()} this month).${
+          message: `Your ${err.plan} plan allows up to ${err.limit.toLocaleString()} prompt-model executions per month (this run would use ${totalJobs.toLocaleString()}, and you've already used ${err.current.toLocaleString()} this month).${
             err.upgradeTo ? ` Upgrade to ${err.upgradeTo} for a higher limit.` : ''
           }`,
           metric: err.metric,
@@ -108,6 +125,20 @@ aiRunsRoute.post('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('
         402,
       );
     }
+    throw err;
+  }
+
+  // The dollar valve. Returns the certificate `scheduleAiVisibilityRun`
+  // requires; throws before anything is created if the projected spend
+  // breaches the per-run or monthly ceiling.
+  let costPreflight;
+  try {
+    costPreflight = await preflightAiVisibilityRunCost({
+      organizationId: org.organizationId,
+      queryCount: queries.length,
+    });
+  } catch (err) {
+    if (err instanceof CostBudgetExceededError) return c.json(costRefusalBody(err), 402);
     throw err;
   }
 
@@ -128,7 +159,7 @@ aiRunsRoute.post('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('
 
   await writeManualAuditEvent(c, { action: 'ai_run.created', entityType: 'ai_run', entityId: run.id });
 
-  await scheduleAiVisibilityRun(run.id, org.organizationId, brand.id);
+  await scheduleAiVisibilityRun(run.id, org.organizationId, brand.id, costPreflight);
 
   return c.json(serializeAiRun(run), 202);
 });

@@ -23,8 +23,19 @@
  *   own error path does, so a worker that is SIGTERM'd mid-run leaves a
  *   `failed` row a user can retry instead of a `running` row nothing will
  *   ever finish.
+ *
+ * COST GATE (added with dollar-based entitlement enforcement):
+ * `scheduleAiVisibilityRun` REQUIRES a `RunCostPreflight` — the certificate
+ * `lib/ai-usage/cost-entitlements.ts` returns only for a run whose projected
+ * model spend fits the org's plan ceilings. It is a required parameter, not a
+ * convention, so a future dispatcher physically cannot enqueue an
+ * unpriced run: the compiler stops it, and `assertPreflightMatchesOrg` below
+ * stops a certificate computed for one org from authorizing another org's
+ * run. The money is committed the instant the worker picks the job up, so
+ * this is the last point at which refusing is free.
  */
 import { withOrgContext } from '@bebest/database';
+import type { RunCostPreflight } from '../ai-usage/cost-entitlements.js';
 import { getDefaultJobQueue } from '../queue/default-job-queue.js';
 import { registerInProcessJobHandler } from '../queue/register-in-process.js';
 import { JOB_TYPES } from '../queue/job-types.js';
@@ -71,7 +82,29 @@ export const aiVisibilityRunJob: JobDefinition<AiVisibilityRunJobPayload> = {
 
 registerInProcessJobHandler(aiVisibilityRunJob);
 
-export async function scheduleAiVisibilityRun(runId: string, organizationId: string, brandId: string): Promise<void> {
+/** A preflight certificate is per-org. Queueing org B's run on org A's
+ * budget check would be a tenant-isolation failure expressed in dollars, so
+ * it is asserted rather than trusted — cheap, and it turns a wiring mistake
+ * into a loud throw instead of unmetered spend. */
+export class PreflightOrgMismatchError extends Error {
+  constructor(preflightOrgId: string, organizationId: string) {
+    super(
+      `Cost preflight was computed for organization ${preflightOrgId} but the run belongs to ${organizationId}; refusing to enqueue.`,
+    );
+    this.name = 'PreflightOrgMismatchError';
+  }
+}
+
+export async function scheduleAiVisibilityRun(
+  runId: string,
+  organizationId: string,
+  brandId: string,
+  costPreflight: RunCostPreflight,
+): Promise<void> {
+  if (costPreflight.organizationId !== organizationId) {
+    throw new PreflightOrgMismatchError(costPreflight.organizationId, organizationId);
+  }
+
   await getDefaultJobQueue().enqueue<AiVisibilityRunJobPayload>(JOB_TYPES.AI_VISIBILITY_RUN, {
     runId,
     organizationId,

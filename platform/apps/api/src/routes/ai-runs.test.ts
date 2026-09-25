@@ -11,6 +11,10 @@ const db = {
   queries: { findMany: vi.fn() },
   subscriptions: { findUnique: vi.fn() },
   ai_runs: { create: vi.fn(), findMany: vi.fn(), aggregate: vi.fn(), update: vi.fn() },
+  // The dollar valve (lib/ai-usage/cost-entitlements.ts) reads month-to-date
+  // spend out of `ai_usage` — the only place real cost lives — before the
+  // ai_runs row is created.
+  ai_usage: { aggregate: vi.fn() },
   audit_events: { create: vi.fn().mockResolvedValue({}) },
   organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
 };
@@ -27,6 +31,7 @@ const tx = {
   queries: db.queries,
   subscriptions: db.subscriptions,
   ai_runs: db.ai_runs,
+  ai_usage: db.ai_usage,
 };
 
 vi.mock('@bebest/database', () => ({
@@ -73,8 +78,9 @@ beforeEach(async () => {
   db.brands.findFirst.mockResolvedValue(BRAND);
   db.query_sets.findFirst.mockResolvedValue(ACTIVE_QUERY_SET);
   db.queries.findMany.mockResolvedValue(QUERIES);
-  db.subscriptions.findUnique.mockResolvedValue({ plan: 'free' }); // ai_queries_per_month: 50
+  db.subscriptions.findUnique.mockResolvedValue({ plan: 'free' }); // prompt_model_executions_per_month: 200
   db.ai_runs.aggregate.mockResolvedValue({ _sum: { total_jobs: 0 } });
+  db.ai_usage.aggregate.mockResolvedValue({ _sum: { cost_usd: null } });
 });
 
 describe('POST /brands/me/ai-runs', () => {
@@ -112,9 +118,11 @@ describe('POST /brands/me/ai-runs', () => {
     '402s with a specific entitlement error when the run would exceed the plan\'s monthly AI-query limit — ' +
       'BEFORE the ai_runs row is created or any provider is called',
     async () => {
-      // free plan: ai_queries_per_month = 50. 3 queries x 4 providers = 12
-      // requested; 45 already used this month -> 45 + 12 > 50, rejected.
-      db.ai_runs.aggregate.mockResolvedValue({ _sum: { total_jobs: 45 } });
+      // free plan: prompt_model_executions_per_month = 200 (the renamed,
+      // corrected `ai_queries_per_month`, whose unit was always
+      // queries x providers). 3 queries x 4 providers = 12 requested; 190
+      // already used this month -> 190 + 12 > 200, rejected.
+      db.ai_runs.aggregate.mockResolvedValue({ _sum: { total_jobs: 190 } });
 
       const app = await buildApp();
       const res = await app.request('/ai-runs', { method: 'POST', headers: await authHeader('user-1', 'org-1') });
@@ -122,14 +130,56 @@ describe('POST /brands/me/ai-runs', () => {
       expect(res.status).toBe(402);
       const body = (await res.json()) as Record<string, unknown>;
       expect(body.error).toBe('ai_query_limit_reached');
-      expect(body.limit).toBe(50);
-      expect(body.current).toBe(45);
+      expect(body.limit).toBe(200);
+      expect(body.current).toBe(190);
       expect(body.requested).toBe(12);
 
       expect(db.ai_runs.create).not.toHaveBeenCalled();
       expect(runAiVisibilityRun).not.toHaveBeenCalled();
     },
   );
+
+  // ── The DOLLAR valve (lib/ai-usage/cost-entitlements.ts). The count cap
+  // above bounds fan-out volume; these bound money. A free-tier run of
+  // 3 queries x 4 cloud models projects a few cents, so the monthly ceiling
+  // ($5 on free) is the one these exercise. ──────────────────────────────
+  it(
+    "402s and does NOT enqueue the run when the projected model spend would breach the plan's MONTHLY " +
+      'cost ceiling — refused before the ai_runs row exists, i.e. before any money is committed',
+    async () => {
+      // free: ai_cost_budget_usd_per_month = $15. $14.99 already spent, and
+      // any real 12-call run projects more than $0.01.
+      db.ai_usage.aggregate.mockResolvedValue({ _sum: { cost_usd: '14.990000' } });
+
+      const app = await buildApp();
+      const res = await app.request('/ai-runs', { method: 'POST', headers: await authHeader('user-1', 'org-1') });
+
+      expect(res.status).toBe(402);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body.error).toBe('ai_cost_budget_exceeded');
+      expect(body.metric).toBe('ai_cost_budget_usd_per_month');
+      // The refusal names the projected number AND the remaining budget —
+      // a 402 that says neither is a support ticket.
+      expect(body.projected_usd).toMatch(/^\d+\.\d{6}$/);
+      expect(body.remaining_usd).toBe('0.010000');
+      expect(body.limit_usd).toBe('15.000000');
+
+      // Nothing was created and nothing was queued.
+      expect(db.ai_runs.create).not.toHaveBeenCalled();
+      expect(runAiVisibilityRun).not.toHaveBeenCalled();
+    },
+  );
+
+  it('allows a run whose projected spend fits the remaining monthly budget', async () => {
+    db.ai_usage.aggregate.mockResolvedValue({ _sum: { cost_usd: '1.000000' } });
+    db.ai_runs.create.mockResolvedValue({ id: 'run-1', organization_id: 'org-1', brand_id: 'brand-1', status: 'queued' });
+
+    const app = await buildApp();
+    const res = await app.request('/ai-runs', { method: 'POST', headers: await authHeader('user-1', 'org-1') });
+
+    expect(res.status).toBe(202);
+    expect(db.ai_runs.create).toHaveBeenCalledOnce();
+  });
 
   it(
     'creates a queued ai_runs row fanned out to all 4 cloud providers (never Ollama) BEFORE scheduling the ' +

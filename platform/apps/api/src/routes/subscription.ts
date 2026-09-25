@@ -9,7 +9,8 @@ import { requirePermission } from '../middleware/rbac.js';
 import { auditLog } from '../middleware/audit-log.js';
 import { getBrandForOrg } from '../lib/brand-context.js';
 import { resolvePlanLimits } from '../lib/entitlements.js';
-import { countAiQueriesThisMonth } from '../lib/ai-visibility/usage.js';
+import { countPromptModelExecutionsThisMonth } from '../lib/ai-visibility/usage.js';
+import { sumOrgAiSpendThisMonth, formatSpendUsd } from '../lib/ai-usage/spend.js';
 import { PLAN_TIERS, type PlanTier } from '../lib/billing/plan-catalog.js';
 import { getPaymentProvider } from '../lib/billing/payment-provider.js';
 import {
@@ -50,7 +51,7 @@ async function buildUsageSummary(organizationId: string) {
   const { limits } = await resolvePlanLimits(organizationId);
   const brand = await getBrandForOrg(organizationId);
 
-  const [competitorsUsed, activeQuerySet, aiQueriesUsed, teamMembersUsed] = await Promise.all([
+  const [competitorsUsed, activeQuerySet, executionsUsed, teamMembersUsed, aiSpendMicros] = await Promise.all([
     brand
       ? withOrgContext(organizationId, (tx) =>
           tx.competitors.count({ where: { organization_id: organizationId, brand_id: brand.id, deleted_at: null } }),
@@ -64,14 +65,20 @@ async function buildUsageSummary(organizationId: string) {
           }),
         )
       : Promise.resolve(null),
-    countAiQueriesThisMonth(organizationId),
+    countPromptModelExecutionsThisMonth(organizationId),
     withOrgContext(organizationId, (tx) => tx.memberships.count({ where: { organization_id: organizationId } })),
+    // REAL dollars from `ai_usage` — the only place cost exists. This is what
+    // makes the dollar ceilings visible to the customer instead of only being
+    // discoverable by hitting a 402.
+    sumOrgAiSpendThisMonth(organizationId),
   ]);
 
   return {
     competitors_tracked: { used: competitorsUsed, limit: limits.competitors_tracked },
     queries_per_query_set: { used: activeQuerySet?.query_count ?? null, limit: limits.queries_per_query_set },
-    ai_queries_per_month: { used: aiQueriesUsed, limit: limits.ai_queries_per_month },
+    prompt_model_executions_per_month: { used: executionsUsed, limit: limits.prompt_model_executions_per_month },
+    ai_cost_budget_usd_per_month: { used: formatSpendUsd(aiSpendMicros), limit: limits.ai_cost_budget_usd_per_month },
+    max_cost_per_run_usd: { used: null, limit: limits.max_cost_per_run_usd },
     team_members: { used: teamMembersUsed, limit: limits.team_members },
     // Not tracked by any prior epic yet — see this function's doc comment.
     pages_analyzed: { used: null, limit: limits.pages_analyzed },

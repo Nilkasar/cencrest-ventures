@@ -9,6 +9,7 @@ import { writeManualAuditEvent } from '../middleware/audit-log.js';
 import { clientIp } from '../lib/client-ip.js';
 import type { FreeSnapshotInput } from '../lib/free-snapshot/orchestrator.js';
 import { registerFreeSnapshotJobInProcess, scheduleFreeSnapshot } from '../lib/free-snapshot/snapshot-job.js';
+import { checkFreeSnapshotAbuseCaps } from '../lib/free-snapshot/abuse-caps.js';
 import type { EmailSender } from '../lib/email.js';
 import type { AppEnv } from '../types/context.js';
 
@@ -72,6 +73,20 @@ export function createSnapshotRoutes(emailSender: EmailSender) {
     }
 
     const { name, email, company, website, category, biggestCompetitor, marketingConsent } = parsed.data;
+
+    // Step 1b — SPEND caps, still part of "rate limit first, before anything
+    // else runs." `freeSnapshotRateLimit` above is per-IP and cannot see the
+    // body; these two are keyed on the DOMAIN (the thing the money is spent
+    // on) and on the platform as a whole. Both must clear before the `leads`
+    // row is created, because from that row onward the pipeline is scheduled
+    // and real vendor money is committed. See lib/free-snapshot/abuse-caps.ts
+    // for why domain-then-global, and for the fixed-window caveat.
+    const caps = await checkFreeSnapshotAbuseCaps(domainOf(website));
+    if (!caps.allowed) {
+      c.header('Retry-After', String(caps.retryAfter));
+      return c.json({ error: caps.error, message: caps.message, retryAfter: caps.retryAfter }, 429);
+    }
+
     const internalOrgId = getInternalOrgId();
 
     // Step 2a — the `leads` row, created FIRST. A failure in every step
