@@ -46,6 +46,7 @@ import { getMeteredAiProviderRegistry } from './provider-registry.js';
 import { BRAND_OBSERVATION_SCHEMA, type BrandObservation } from './observation-schema.js';
 import { computeAiVisibilityScore, type ScoredObservation } from './scoring.js';
 import { resolvePromptsBaseDir } from '../prompts-dir.js';
+import { assertRunWithinPricedSize } from '../ai-usage/priced-run.js';
 
 /** Fixed per docs/12-ai/AI_ARCHITECTURE.md's `CompletionRequest` default —
  * stored on `ai_run_responses.temperature` directly from what was
@@ -255,6 +256,31 @@ export async function runAiVisibilityRun(
   const queries = await withOrgContext(organizationId, (tx) =>
     tx.queries.findMany({ where: { query_set_id: run.query_set_id, deleted_at: null }, orderBy: { created_at: 'asc' } }),
   );
+
+  // THE COST VALVE, AT THE TILL. The query set above is read LIVE, which is
+  // the only correct thing to do (a run must measure the set as it stands) —
+  // but it means the set the dispatcher PRICED and the set this worker is
+  // about to EXECUTE are two different reads, separated by however long the
+  // job sat in the queue. `ai_runs.priced_query_count` is the size the plan's
+  // dollar ceiling approved; anything larger has never been cost-checked, and
+  // the run is refused here, before a single provider call is billed.
+  //
+  // The refusal is written to the run row (not just thrown) so it is visible
+  // to `GET /ai-runs` and to the customer, whichever dispatcher started the
+  // run: the queue handler's own `.catch()` would cover the worker path, but
+  // `lib/agents/run-ai-visibility-step.ts` calls this function directly.
+  try {
+    assertRunWithinPricedSize(run, queries.length);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await withOrgContext(organizationId, (tx) =>
+      tx.ai_runs.update({
+        where: { id: runId },
+        data: { status: 'failed', error: message.slice(0, 2000), completed_at: new Date() },
+      }),
+    );
+    throw err;
+  }
 
   // Epic 8 (Competitive Intelligence): the ONLY branch point this epic adds
   // to Epic 7's pipeline. `run.competitor_id` (read from the row itself, not

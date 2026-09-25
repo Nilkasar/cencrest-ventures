@@ -33,6 +33,12 @@
  * stops a certificate computed for one org from authorizing another org's
  * run. The money is committed the instant the worker picks the job up, so
  * this is the last point at which refusing is free.
+ *
+ * The certificate also states the SIZE it priced, and this function checks
+ * that the `ai_runs` row records the same one (`PreflightRunSizeMismatchError`)
+ * — the enqueue-side half of `lib/ai-usage/priced-run.ts`. The execution-side
+ * half lives in `pipeline.ts`, which re-reads the query set live and refuses a
+ * set that grew while the job waited in the queue.
  */
 import { withOrgContext } from '@bebest/database';
 import type { RunCostPreflight } from '../ai-usage/cost-entitlements.js';
@@ -86,6 +92,25 @@ registerInProcessJobHandler(aiVisibilityRunJob);
  * budget check would be a tenant-isolation failure expressed in dollars, so
  * it is asserted rather than trusted — cheap, and it turns a wiring mistake
  * into a loud throw instead of unmetered spend. */
+/**
+ * The run row does not carry the size this certificate priced — either it was
+ * never stamped (`pricedRunColumns()` forgotten by a dispatcher) or it was
+ * stamped from a DIFFERENT certificate than the one handed to this function.
+ * Both mean the approved figure and the queued work have come apart, which is
+ * the whole hole the persisted price exists to close, so it is refused here —
+ * at dispatch, loudly — rather than hours later in the worker.
+ */
+export class PreflightRunSizeMismatchError extends Error {
+  constructor(runId: string, certificateQueryCount: number, rowPricedQueryCount: number | null) {
+    super(
+      `Cost preflight priced ${certificateQueryCount.toLocaleString()} queries but ai_runs ${runId} records ` +
+        `${rowPricedQueryCount === null ? 'no priced size at all' : `${rowPricedQueryCount.toLocaleString()}`}; ` +
+        'refusing to enqueue. Every dispatcher must stamp pricedRunColumns(<the same certificate>) onto the row it creates.',
+    );
+    this.name = 'PreflightRunSizeMismatchError';
+  }
+}
+
 export class PreflightOrgMismatchError extends Error {
   constructor(preflightOrgId: string, organizationId: string) {
     super(
@@ -103,6 +128,19 @@ export async function scheduleAiVisibilityRun(
 ): Promise<void> {
   if (costPreflight.organizationId !== organizationId) {
     throw new PreflightOrgMismatchError(costPreflight.organizationId, organizationId);
+  }
+
+  // The certificate said an ORG and a DOLLAR FIGURE; it now also says a SIZE,
+  // and the row has to agree with it before the job goes on the queue. The
+  // worker re-checks the size against the LIVE query set (pipeline.ts) — this
+  // check is about the row and the certificate matching each other in the
+  // first place, so a dispatcher that stamps one price and passes another
+  // fails here instead of producing a run nobody priced.
+  const row = await withOrgContext(organizationId, (tx) =>
+    tx.ai_runs.findUniqueOrThrow({ where: { id: runId }, select: { priced_query_count: true } }),
+  );
+  if (row.priced_query_count !== costPreflight.pricedQueryCount) {
+    throw new PreflightRunSizeMismatchError(runId, costPreflight.pricedQueryCount, row.priced_query_count);
   }
 
   await getDefaultJobQueue().enqueue<AiVisibilityRunJobPayload>(JOB_TYPES.AI_VISIBILITY_RUN, {

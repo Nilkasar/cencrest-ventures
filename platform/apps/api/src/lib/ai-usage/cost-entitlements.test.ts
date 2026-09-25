@@ -90,11 +90,16 @@ describe('checkAiRunCostBudget', () => {
     const preflight = await checkAiRunCostBudget({
       organizationId: 'org-1',
       estimate: estimate(80_000_000n),
+      pricedQueryCount: 1400,
       sumSpend: async () => 120_000_000n,
     });
 
     expect(preflight.checked).toBe(true);
     expect(preflight.organizationId).toBe('org-1');
+    // The certificate states the SIZE it priced, not just the dollars — the
+    // run row carries it (`lib/ai-usage/priced-run.ts`) so execution can
+    // refuse a query set that grew after this approval.
+    expect(preflight.pricedQueryCount).toBe(1400);
     expect(preflight.plan).toBe('pro');
     expect(preflight.projectedUsd).toBe('80.000000');
     expect(preflight.monthlyBudgetMicros).toBe(1_200_000_000n);
@@ -109,6 +114,7 @@ describe('checkAiRunCostBudget', () => {
     const promise = checkAiRunCostBudget({
       organizationId: 'org-1',
       estimate: estimate(80_000_000n),
+      pricedQueryCount: 1400,
       sumSpend: async () => 1_160_000_000n,
     });
 
@@ -131,7 +137,8 @@ describe('checkAiRunCostBudget', () => {
 
     const promise = checkAiRunCostBudget({
       organizationId: 'org-1',
-      estimate: estimate(301_000_000n), // $301 > Pro's $300 per-run ceiling
+      estimate: estimate(301_000_000n),
+      pricedQueryCount: 1400, // $301 > Pro's $300 per-run ceiling
       sumSpend: async () => 0n,
     });
 
@@ -150,6 +157,7 @@ describe('checkAiRunCostBudget', () => {
     const err = await catchRefusal(checkAiRunCostBudget({
       organizationId: 'org-1',
       estimate: estimate(400_000_000n),
+      pricedQueryCount: 1400,
       sumSpend: async () => 1_100_000_000n,
     }));
 
@@ -164,6 +172,7 @@ describe('checkAiRunCostBudget', () => {
       checkAiRunCostBudget({
         organizationId: 'org-1',
         estimate: estimate(100_000_000n),
+        pricedQueryCount: 1400,
         sumSpend: async () => 1_100_000_000n,
       }),
     ).resolves.toMatchObject({ remainingMicros: 100_000_000n });
@@ -172,6 +181,7 @@ describe('checkAiRunCostBudget', () => {
       checkAiRunCostBudget({
         organizationId: 'org-1',
         estimate: estimate(100_000_001n),
+        pricedQueryCount: 1400,
         sumSpend: async () => 1_100_000_000n,
       }),
     ).rejects.toThrow(/ai_cost_budget_usd_per_month/);
@@ -184,6 +194,7 @@ describe('checkAiRunCostBudget', () => {
     const err = await catchRefusal(checkAiRunCostBudget({
       organizationId: 'org-1',
       estimate: estimate(1_000_000n),
+      pricedQueryCount: 1400,
       sumSpend: async () => 1_400_000_000n,
     }));
 
@@ -199,6 +210,7 @@ describe('checkAiRunCostBudget', () => {
       checkAiRunCostBudget({
         organizationId: 'org-1',
         estimate: estimate(0n, ['some-unreleased-model-9']),
+        pricedQueryCount: 1400,
         sumSpend: async () => 0n,
       }),
     );
@@ -214,6 +226,7 @@ describe('checkAiRunCostBudget', () => {
     const preflight = await checkAiRunCostBudget({
       organizationId: 'org-1',
       estimate: estimate(50_000_000_000n),
+      pricedQueryCount: 1400,
       sumSpend,
     });
 
@@ -230,6 +243,7 @@ describe('checkAiRunCostBudget', () => {
     const err = await catchRefusal(checkAiRunCostBudget({
       organizationId: 'org-1',
       estimate: estimate(7_000_000n),
+      pricedQueryCount: 1400,
       sumSpend: async () => 0n,
     }));
 

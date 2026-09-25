@@ -27,6 +27,7 @@ import { getBrandForOrg, NO_BRAND_ERROR } from '../lib/brand-context.js';
 import { checkUsageLimit, EntitlementLimitError } from '../lib/entitlements.js';
 import { countPromptModelExecutionsThisMonth } from '../lib/ai-visibility/usage.js';
 import { preflightAiVisibilityRunCost } from '../lib/ai-usage/run-preflight.js';
+import { pricedRunColumns } from '../lib/ai-usage/priced-run.js';
 import { CostBudgetExceededError, costRefusalBody } from '../lib/ai-usage/cost-entitlements.js';
 import { countTrackedCompetitors } from '../lib/ai-visibility/competitor-usage.js';
 import { getDefaultAiProviderRegistry } from '../lib/ai-visibility/provider-registry.js';
@@ -221,6 +222,11 @@ competitorAiRunsRoute.post(
           providers,
           status: 'queued',
           total_jobs: totalJobs,
+          // Same approved-size stamp as the brand route — see
+          // lib/ai-usage/priced-run.ts. A competitor run re-runs the whole
+          // query universe, so this is the dispatcher where a set that grew
+          // in the queue costs the most.
+          ...pricedRunColumns(costPreflight),
           created_by: user.id,
         },
       }),

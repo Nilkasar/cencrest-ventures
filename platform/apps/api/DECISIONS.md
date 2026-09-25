@@ -415,3 +415,81 @@ the valve — nothing here blocks, throttles or refuses a call.
   `lib/queue/job-tenancy.test.ts` asserts it, including that the unscoped `db`
   client is used for exactly one table (`snapshot_requests`, which has no
   `organization_id` and is therefore not a tenant table).
+
+## The priced run vs. the executed run (2026-09-25)
+
+The dollar valve (`lib/ai-usage/run-preflight.ts`) prices a run at DISPATCH
+time; `lib/ai-visibility/pipeline.ts` re-reads the query set LIVE at EXECUTION
+time, which is correct (a run must measure the set as it stands) but means the
+two are different reads separated by the queue. The certificate named an org and
+a dollar figure and nothing else, so nothing connected them.
+
+- **The certificate now states its SIZE** (`RunCostPreflight.pricedQueryCount`),
+  and `ai_runs` persists it alongside the projected micro-dollars and the
+  pricing-table version (migration 0023). Persisting the projection is what
+  makes an overspend detectable afterwards at all — it can be set against the
+  org's real `ai_usage` rows; previously the approved number existed only for
+  the length of one HTTP request.
+- **Execution refuses a set that grew** (`assertRunWithinPricedSize`, called
+  before the run is marked `running` and before any provider call). A set that
+  SHRANK proceeds — the work is then strictly cheaper than what was approved.
+- **A run carrying no price cannot execute.** Fail closed: "never
+  cost-approved" must not be readable as "unlimited". The three dispatchers
+  (`routes/ai-runs.ts`, `routes/competitor-ai-runs.ts`,
+  `lib/agents/run-ai-visibility-step.ts`) all stamp the same
+  `pricedRunColumns()` fragment, and `scheduleAiVisibilityRun` refuses to queue
+  a row whose stamp disagrees with the certificate it was handed.
+- **Not continuous enforcement.** Once an approved run starts it runs to
+  completion; there is still no per-call budget check mid-run. This closes the
+  gap between the price and the START of execution, which is where the size
+  could change behind the valve's back.
+
+Deploy note: runs already queued when 0023 ships carry no price and will fail
+with `RunNotPricedError`. Drain the AI-visibility queue first, or re-dispatch
+them.
+
+## Billing webhooks: atomicity and ordering (2026-09-25)
+
+`routes/billing-webhooks.ts` dedupes on `billing_webhook_events.processed_at`,
+but `processed_at` used to be the last of four sequential writes. That made a
+replay idempotent for the subscription's STATE and not for its EFFECTS: a crash
+between the effects and the marker left the event looking unprocessed with its
+transition, its `organizations.update` and its audit rows already committed, so
+the provider's retry re-ran all of them — possibly over a state a later event
+had since set. Separately, `occurredAt` was handed to the state machine and
+compared against nothing, so events applied in ARRIVAL order, and Stripe
+guarantees no order (its own retries reorder aggressively).
+
+- **One transaction.** The fresh read, the ordering check, the state write, the
+  org status, the audit rows and `processed_at` all happen inside a single
+  `withOrgContext` transaction. `setSubscriptionPlanWithin` and
+  `writeAuditEventWithin` exist for that reason — the plan_id/plan sync rule and
+  the audit row shape each stay in exactly one place rather than being copied
+  for the transactional path.
+- **`writeAuditEventWithin` THROWS**, inverting `writeAuditEvent`'s
+  never-throw contract on purpose: inside a transaction a failed INSERT has
+  already aborted everything after it, and for this caller the right outcome is
+  that the billing change rolls back and the provider retries, not that it lands
+  unaudited.
+- **Ordering is decided on provider time.** `subscriptions.last_billing_event_at`
+  is the `occurredAt` of the newest event already applied; strictly older events
+  are acknowledged (200 — otherwise Stripe retries for days) and recorded with
+  `skipped_reason = 'superseded_by_newer_event'` plus a
+  `billing.webhook_superseded` audit row. Equal timestamps still apply: Stripe's
+  `event.created` is second-resolution and inventing an order for same-second
+  events would be a guess.
+- **A `SELECT ... FOR UPDATE` on the subscription row** serializes concurrent
+  deliveries for one customer; without it two events read the same "current"
+  state and the ordering guard loses to a race rather than to a stale delivery.
+- **Emails are sent AFTER the commit and are therefore at-most-once.** Sending
+  is an external call with no rollback. After the commit, a crash drops one
+  notification; before it, a rolled-back transition could have told a customer
+  their payment failed. Exactly-once dunning mail needs an outbox table, which
+  is separate work.
+- Unchanged, deliberately: HMAC verification before any parsing, and the
+  200-ack with no row for `UnsupportedWebhookEventError`.
+
+Still not covered: a user-initiated plan change (`routes/subscription.ts`) does
+not advance `last_billing_event_at`, so a stale provider event can still land on
+top of one. Stripe emits its own event for that change with a newer timestamp,
+which then becomes the watermark, but the window exists.

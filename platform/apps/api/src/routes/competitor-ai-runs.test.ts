@@ -11,7 +11,7 @@ const db = {
   query_sets: { findFirst: vi.fn() },
   queries: { findMany: vi.fn() },
   subscriptions: { findUnique: vi.fn() },
-  ai_runs: { create: vi.fn(), findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn(), update: vi.fn() },
+  ai_runs: { create: vi.fn(), findMany: vi.fn(), count: vi.fn(), findUniqueOrThrow: vi.fn(), aggregate: vi.fn(), update: vi.fn() },
   // The dollar valve reads month-to-date spend from `ai_usage`.
   ai_usage: { aggregate: vi.fn() },
   audit_events: { create: vi.fn().mockResolvedValue({}) },
@@ -81,6 +81,10 @@ beforeEach(async () => {
   db.ai_runs.count.mockResolvedValue(0); // not yet tracked -> first-time entitlement check applies
   db.ai_runs.findMany.mockResolvedValue([]); // no competitors actively tracked yet (countTrackedCompetitors)
   db.ai_runs.aggregate.mockResolvedValue({ _sum: { total_jobs: 0 } });
+  // `scheduleAiVisibilityRun` re-reads the row it is about to queue and
+  // refuses if the size stamped on it disagrees with the certificate it was
+  // handed (lib/ai-visibility/schedule-run.ts).
+  db.ai_runs.findUniqueOrThrow.mockResolvedValue({ priced_query_count: QUERIES.length });
 });
 
 describe('POST /competitors/:competitorId/ai-runs', () => {

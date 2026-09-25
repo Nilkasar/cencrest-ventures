@@ -71,6 +71,9 @@ export async function preflightAiVisibilityRunCost(input: PreflightAiVisibilityR
   return checkAiRunCostBudget({
     organizationId: input.organizationId,
     estimate,
+    // The certificate records the size it priced, so execution can compare
+    // the live query set against it — see `lib/ai-usage/priced-run.ts`.
+    pricedQueryCount: Math.max(0, Math.trunc(input.queryCount)),
     sumSpend: input.sumSpend,
     now: input.now,
   });

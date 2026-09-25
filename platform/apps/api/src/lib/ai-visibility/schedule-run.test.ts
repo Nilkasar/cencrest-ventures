@@ -12,19 +12,25 @@ vi.mock('../queue/default-job-queue.js', () => ({
   jobsRunInSeparateWorker: () => true,
 }));
 vi.mock('../queue/register-in-process.js', () => ({ registerInProcessJobHandler: vi.fn() }));
+const aiRunsFindUniqueOrThrow = vi.fn();
 vi.mock('@bebest/database', () => ({
-  withOrgContext: vi.fn(async (_organizationId: string, fn: (tx: unknown) => unknown) => fn({ ai_runs: { update: vi.fn() } })),
+  withOrgContext: vi.fn(async (_organizationId: string, fn: (tx: unknown) => unknown) =>
+    fn({ ai_runs: { update: vi.fn(), findUniqueOrThrow: aiRunsFindUniqueOrThrow } }),
+  ),
 }));
 vi.mock('./pipeline.js', () => ({ runAiVisibilityRun: vi.fn() }));
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The row the dispatcher just created, stamped with the certificate's size.
+  aiRunsFindUniqueOrThrow.mockResolvedValue({ priced_query_count: 1400 });
 });
 
 function preflightFor(organizationId: string): RunCostPreflight {
   return {
     checked: true,
     organizationId,
+    pricedQueryCount: 1400,
     plan: 'pro',
     projectedMicros: 80_000_000n,
     projectedUsd: '80.000000',
@@ -65,6 +71,29 @@ describe('scheduleAiVisibilityRun', () => {
 
     await expect(scheduleAiVisibilityRun('run-1', 'org-B', 'brand-1', preflightFor('org-A'))).rejects.toBeInstanceOf(
       PreflightOrgMismatchError,
+    );
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES to enqueue when the run row does not record the size the certificate priced', async () => {
+    const { scheduleAiVisibilityRun, PreflightRunSizeMismatchError } = await import('./schedule-run.js');
+
+    // The row says 1,400 queries were approved; the certificate handed in
+    // priced 10. Whichever is right, the approval and the queued work have
+    // come apart — nothing goes on the queue.
+    const cheapCertificate = { ...preflightFor('org-1'), pricedQueryCount: 10 };
+    await expect(scheduleAiVisibilityRun('run-1', 'org-1', 'brand-1', cheapCertificate)).rejects.toBeInstanceOf(
+      PreflightRunSizeMismatchError,
+    );
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES to enqueue a run row carrying no price at all', async () => {
+    aiRunsFindUniqueOrThrow.mockResolvedValue({ priced_query_count: null });
+    const { scheduleAiVisibilityRun, PreflightRunSizeMismatchError } = await import('./schedule-run.js');
+
+    await expect(scheduleAiVisibilityRun('run-1', 'org-1', 'brand-1', preflightFor('org-1'))).rejects.toBeInstanceOf(
+      PreflightRunSizeMismatchError,
     );
     expect(enqueue).not.toHaveBeenCalled();
   });

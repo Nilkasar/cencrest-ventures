@@ -135,6 +135,19 @@ export class CostBudgetExceededError extends Error {
 export interface RunCostPreflight {
   readonly checked: true;
   readonly organizationId: string;
+  /**
+   * THE RUN SIZE THIS PRICE WAS COMPUTED FOR — the number of queries in the
+   * set at the moment the estimate was made.
+   *
+   * It is on the certificate, not just in a local variable, because the
+   * projection is meaningless without it: a `$12.40 approved` with no stated
+   * size authorizes any size. `lib/ai-usage/priced-run.ts` persists this onto
+   * the `ai_runs` row so the worker can refuse a set that grew between
+   * pricing and execution (`pipeline.ts` re-reads the query set live), and so
+   * the approved figure is auditable after the fact rather than existing only
+   * for the length of one HTTP request.
+   */
+  readonly pricedQueryCount: number;
   readonly plan: PlanTier;
   readonly projectedMicros: MicroUsd;
   readonly projectedUsd: string;
@@ -149,6 +162,10 @@ export interface RunCostPreflight {
 export interface CheckAiRunCostBudgetInput {
   organizationId: string;
   estimate: RunCostEstimate;
+  /** The query count `estimate` was built from. Required, not optional: a
+   * certificate that does not state the size it priced cannot be checked
+   * against the size that is later executed. */
+  pricedQueryCount: number;
   /** Injected in tests; production reads `ai_usage` through RLS. */
   sumSpend?: (organizationId: string) => Promise<MicroUsd>;
   now?: Date;
@@ -191,6 +208,7 @@ export async function checkAiRunCostBudget(input: CheckAiRunCostBudgetInput): Pr
     return {
       checked: true,
       organizationId: input.organizationId,
+      pricedQueryCount: input.pricedQueryCount,
       plan,
       projectedMicros: projected,
       projectedUsd: formatMicroUsd(projected),
@@ -247,6 +265,7 @@ export async function checkAiRunCostBudget(input: CheckAiRunCostBudgetInput): Pr
   return {
     checked: true,
     organizationId: input.organizationId,
+    pricedQueryCount: input.pricedQueryCount,
     plan,
     projectedMicros: projected,
     projectedUsd: formatMicroUsd(projected),

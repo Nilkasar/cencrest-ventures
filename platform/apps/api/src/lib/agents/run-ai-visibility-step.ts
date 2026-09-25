@@ -16,6 +16,7 @@ import { withOrgContext } from '@bebest/database';
 import { checkUsageLimit, EntitlementLimitError } from '../entitlements.js';
 import { countPromptModelExecutionsThisMonth } from '../ai-visibility/usage.js';
 import { preflightAiVisibilityRunCost } from '../ai-usage/run-preflight.js';
+import { pricedRunColumns } from '../ai-usage/priced-run.js';
 import { CostBudgetExceededError } from '../ai-usage/cost-entitlements.js';
 import { getDefaultAiProviderRegistry } from '../ai-visibility/provider-registry.js';
 import { runAiVisibilityRun } from '../ai-visibility/pipeline.js';
@@ -66,10 +67,13 @@ export async function runAiVisibilityStep(
   // human watching the 402, so it matters more here, not less: without this,
   // an autonomous GEO/Growth agent on a schedule is an unbounded spender.
   // This step calls `runAiVisibilityRun` directly instead of going through
-  // `scheduleAiVisibilityRun`, so the certificate is not consumed by anything
-  // — the check itself is the gate.
+  // `scheduleAiVisibilityRun`, so the certificate is never checked by the
+  // enqueue path — the check here, plus the approved size stamped onto the row
+  // below, is the gate. The pipeline refuses any run whose row carries no
+  // price, so this step cannot skip the stamp and still execute.
+  let costPreflight;
   try {
-    await preflightAiVisibilityRunCost({ organizationId, queryCount: queries.length });
+    costPreflight = await preflightAiVisibilityRunCost({ organizationId, queryCount: queries.length });
   } catch (err) {
     if (err instanceof CostBudgetExceededError) {
       return { error: 'entitlement', message: err.message };
@@ -87,6 +91,7 @@ export async function runAiVisibilityStep(
         providers,
         status: 'queued',
         total_jobs: totalJobs,
+        ...pricedRunColumns(costPreflight),
         created_by: triggeredById,
       },
     }),

@@ -10,7 +10,7 @@ const db = {
   query_sets: { findFirst: vi.fn() },
   queries: { findMany: vi.fn() },
   subscriptions: { findUnique: vi.fn() },
-  ai_runs: { create: vi.fn(), findMany: vi.fn(), aggregate: vi.fn(), update: vi.fn() },
+  ai_runs: { create: vi.fn(), findMany: vi.fn(), findUniqueOrThrow: vi.fn(), aggregate: vi.fn(), update: vi.fn() },
   // The dollar valve (lib/ai-usage/cost-entitlements.ts) reads month-to-date
   // spend out of `ai_usage` — the only place real cost lives — before the
   // ai_runs row is created.
@@ -81,6 +81,10 @@ beforeEach(async () => {
   db.subscriptions.findUnique.mockResolvedValue({ plan: 'free' }); // prompt_model_executions_per_month: 200
   db.ai_runs.aggregate.mockResolvedValue({ _sum: { total_jobs: 0 } });
   db.ai_usage.aggregate.mockResolvedValue({ _sum: { cost_usd: null } });
+  // `scheduleAiVisibilityRun` re-reads the row it is about to queue and
+  // refuses if the size stamped on it disagrees with the certificate it was
+  // handed (lib/ai-visibility/schedule-run.ts).
+  db.ai_runs.findUniqueOrThrow.mockResolvedValue({ priced_query_count: QUERIES.length });
 });
 
 describe('POST /brands/me/ai-runs', () => {

@@ -4,32 +4,128 @@ import { Hono } from 'hono';
 const FREE_PLAN = { id: 'plan-free', slug: 'free', name: 'Free', limits: {}, features: {}, active: true };
 const GROWTH_PLAN = { id: 'plan-growth', slug: 'growth', name: 'Growth', limits: {}, features: {}, active: true };
 
-const subscriptionRow = {
-  id: 'sub-1',
-  organization_id: 'org-1',
-  plan_id: GROWTH_PLAN.id,
-  plan: 'growth',
-  status: 'active',
-  current_period_start: null,
-  current_period_end: null,
-  trial_ends_at: null,
-  cancelled_at: null,
-  external_customer_id: 'cus_1',
-  external_id: 'sub_ext_1',
-  plans: GROWTH_PLAN,
-};
+function freshSubscriptionRow(): Record<string, unknown> {
+  return {
+    id: 'sub-1',
+    organization_id: 'org-1',
+    plan_id: GROWTH_PLAN.id,
+    plan: 'growth',
+    status: 'active',
+    current_period_start: null,
+    current_period_end: null,
+    trial_ends_at: null,
+    cancelled_at: null,
+    external_customer_id: 'cus_1',
+    external_id: 'sub_ext_1',
+    last_billing_event_at: null,
+    last_billing_event_id: null,
+    plans: GROWTH_PLAN,
+  };
+}
+
+// ── A STATEFUL, TRANSACTIONAL fake `@bebest/database`. ────────────────────
+//
+// The spy-only version this file used could not express the defect that
+// matters here: "a crash between the side effects and the `processed_at`
+// write must not leave half an event applied" is a statement about ROLLBACK,
+// and a `vi.fn()` that records calls has nothing to roll back. So the mocks
+// are still `vi.fn()` (every existing `toHaveBeenCalledWith` assertion keeps
+// working) but they now read and write a real store, and `withOrgContext`
+// snapshots that store and RESTORES it if its callback throws — which is what
+// the single interactive transaction in the route does in Postgres.
+interface Store {
+  subscription: Record<string, unknown>;
+  org: { id: string; status: string };
+  eventRows: Record<string, Record<string, unknown>>;
+  auditRows: Array<Record<string, unknown>>;
+}
+
+let store: Store;
+let eventRowSeq = 0;
+
+function resetStore(): void {
+  store = {
+    subscription: freshSubscriptionRow(),
+    org: { id: 'org-1', status: 'active' },
+    eventRows: {},
+    auditRows: [],
+  };
+  eventRowSeq = 0;
+}
+resetStore();
+
+function eventRowById(id: string): Record<string, unknown> | undefined {
+  return Object.values(store.eventRows).find((row) => row.id === id);
+}
 
 const db = {
   organizations: { update: vi.fn() },
-  subscriptions: { findFirst: vi.fn(), update: vi.fn() },
+  subscriptions: { findFirst: vi.fn(), findUniqueOrThrow: vi.fn(), update: vi.fn() },
   plans: { findUnique: vi.fn() },
   billing_webhook_events: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
-  audit_events: { create: vi.fn().mockResolvedValue({}) },
+  audit_events: { create: vi.fn() },
+  // The `SELECT ... FOR UPDATE` that serializes concurrent deliveries for one
+  // subscription. Nothing to simulate in-process; asserted as "was locked".
+  $queryRaw: vi.fn(),
 };
+
+function installStoreBackedMocks(): void {
+  db.subscriptions.findFirst.mockImplementation(async () => store.subscription);
+  db.subscriptions.findUniqueOrThrow.mockImplementation(async () => store.subscription);
+  db.subscriptions.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+    Object.assign(store.subscription, data);
+    if (typeof data.plan === 'string') {
+      store.subscription.plans = data.plan === 'free' ? FREE_PLAN : GROWTH_PLAN;
+    }
+    return store.subscription;
+  });
+  db.organizations.update.mockImplementation(async ({ data }: { data: { status: string } }) => {
+    store.org.status = data.status;
+    return store.org;
+  });
+  db.plans.findUnique.mockImplementation(async ({ where: { slug } }: { where: { slug: string } }) =>
+    slug === 'free' ? FREE_PLAN : slug === 'growth' ? GROWTH_PLAN : null,
+  );
+  db.billing_webhook_events.findUnique.mockImplementation(
+    async ({ where: { external_event_id } }: { where: { external_event_id: string } }) =>
+      store.eventRows[external_event_id] ?? null,
+  );
+  db.billing_webhook_events.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+    const key = String(data.external_event_id);
+    // Models the real UNIQUE constraint on `external_event_id` — the route
+    // relies on the insert failing to resolve a concurrent double delivery.
+    if (store.eventRows[key]) throw new Error('duplicate key value violates unique constraint');
+    const row = { id: `webhook-row-${++eventRowSeq}`, organization_id: null, processed_at: null, skipped_reason: null, ...data };
+    store.eventRows[key] = row;
+    return row;
+  });
+  db.billing_webhook_events.update.mockImplementation(
+    async ({ where: { id }, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+      const row = eventRowById(id);
+      if (!row) throw new Error(`billing_webhook_events ${id} not found`);
+      Object.assign(row, data);
+      return row;
+    },
+  );
+  db.audit_events.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+    store.auditRows.push(data);
+    return data;
+  });
+  db.$queryRaw.mockResolvedValue([{ id: 'sub-1' }]);
+}
 
 vi.mock('@bebest/database', () => ({
   db,
-  withOrgContext: vi.fn(async (_organizationId: string, fn: (tx: unknown) => unknown) => fn(db)),
+  // A real transaction: the callback's writes are discarded if it throws.
+  withOrgContext: vi.fn(async (_organizationId: string, fn: (tx: unknown) => unknown) => {
+    const snapshot = structuredClone(store);
+    try {
+      return await fn(db);
+    } catch (err) {
+      store = snapshot;
+      throw err;
+    }
+  }),
 }));
 
 async function buildApp() {
@@ -53,20 +149,8 @@ async function signedRequest(app: Hono, body: object, secret = 'test-secret') {
 beforeEach(async () => {
   vi.clearAllMocks();
   process.env.BILLING_WEBHOOK_SECRET = 'test-secret';
-  db.audit_events.create.mockResolvedValue({});
-  db.billing_webhook_events.findUnique.mockResolvedValue(null);
-  db.billing_webhook_events.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
-    id: 'webhook-row-1',
-    processed_at: null,
-    ...data,
-  }));
-  db.billing_webhook_events.update.mockResolvedValue({});
-  db.subscriptions.findFirst.mockResolvedValue(subscriptionRow);
-  db.subscriptions.update.mockResolvedValue({ ...subscriptionRow });
-  db.organizations.update.mockResolvedValue({ id: 'org-1', status: 'active' });
-  db.plans.findUnique.mockImplementation(async ({ where: { slug } }: { where: { slug: string } }) =>
-    slug === 'free' ? FREE_PLAN : slug === 'growth' ? GROWTH_PLAN : null,
-  );
+  resetStore();
+  installStoreBackedMocks();
 });
 
 describe('POST /webhooks/billing — signature verification', () => {
@@ -118,6 +202,150 @@ describe('POST /webhooks/billing — idempotency (dedupe by event id)', () => {
     expect(((await res.json()) as { duplicate?: boolean }).duplicate).toBe(true);
     // Still only the one call from the first delivery.
     expect(db.subscriptions.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── ATOMICITY: replay must be idempotent for EFFECTS, not just for state ──
+//
+// The dedupe guard keys off `processed_at`. When `processed_at` was the last of
+// four sequential writes, a crash anywhere before it left the event looking
+// unprocessed with its effects already applied — so the provider's retry
+// re-ran the transition, the org update and every audit write, potentially over
+// a state a LATER event had since set. These two cases pin the fix: either the
+// whole event lands or none of it does.
+describe('POST /webhooks/billing — crash between the side effects and processed_at', () => {
+  const CANCEL_EVENT = { id: 'evt_crash', type: 'subscription.cancelled', data: { externalCustomerId: 'cus_1' } };
+
+  it('rolls the whole event back, then applies it EXACTLY ONCE on the retry', async () => {
+    const app = await buildApp();
+
+    // Crash precisely in the reported window: the state change and the audit
+    // rows have been written, the `processed_at` marker has not.
+    db.billing_webhook_events.update.mockRejectedValueOnce(new Error('connection reset'));
+
+    const first = await signedRequest(app, CANCEL_EVENT);
+    expect(first.status).toBe(500);
+
+    // NOTHING survived the crash — not the plan, not the org status, not the
+    // audit row. (Before the fix, all three had already been committed.)
+    expect(store.subscription.plan).toBe('growth');
+    expect(store.subscription.status).toBe('active');
+    expect(store.org.status).toBe('active');
+    expect(store.auditRows.filter((row) => row.action === 'billing.changed')).toHaveLength(0);
+    // The event row itself is the one thing that must persist (it is inserted
+    // outside the transaction, so the retry can still dedupe on it) — and it
+    // is correctly still unprocessed.
+    expect(store.eventRows.evt_crash?.processed_at).toBeNull();
+
+    // The provider retries. The guard lets it through, which is correct now:
+    // the first attempt left nothing behind.
+    const second = await signedRequest(app, CANCEL_EVENT);
+    expect(second.status).toBe(200);
+
+    expect(store.subscription.plan).toBe('free');
+    expect(store.subscription.status).toBe('canceled');
+    expect(store.org.status).toBe('cancelled');
+    // EXACTLY ONE of each effect across both deliveries.
+    expect(store.auditRows.filter((row) => row.action === 'billing.changed')).toHaveLength(1);
+    expect(store.eventRows.evt_crash?.processed_at).not.toBeNull();
+  });
+
+  it('a third delivery after a successful apply changes nothing at all', async () => {
+    const app = await buildApp();
+    await signedRequest(app, CANCEL_EVENT);
+    const applied = { ...store.subscription };
+
+    const replay = await signedRequest(app, CANCEL_EVENT);
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toEqual({ received: true, duplicate: true });
+    expect(store.subscription).toEqual(applied);
+    expect(store.auditRows.filter((row) => row.action === 'billing.changed')).toHaveLength(1);
+  });
+});
+
+// ── ORDERING: provider time, not arrival time ─────────────────────────────
+//
+// Stripe does not guarantee delivery order, and its retries actively reorder
+// events. `occurredAt` used to be handed to the state machine and compared
+// against nothing at all.
+describe('POST /webhooks/billing — out-of-order deliveries', () => {
+  const T_EARLY = '2026-03-01T10:00:00.000Z';
+  const T_LATE = '2026-03-01T10:05:00.000Z';
+
+  it('an OLDER payment_failed arriving after a NEWER healthy event does not downgrade the subscription', async () => {
+    const app = await buildApp();
+
+    // 10:05 — payment succeeded; the subscription is healthy.
+    const healthy = await signedRequest(app, {
+      id: 'evt_succeeded',
+      type: 'invoice.payment_succeeded',
+      occurredAt: T_LATE,
+      data: { externalCustomerId: 'cus_1' },
+    });
+    expect(healthy.status).toBe(200);
+    expect(store.subscription.status).toBe('active');
+
+    // 10:00 — the failure Stripe could not deliver earlier, arriving now.
+    const stale = await signedRequest(app, {
+      id: 'evt_failed_stale',
+      type: 'invoice.payment_failed',
+      occurredAt: T_EARLY,
+      data: { externalCustomerId: 'cus_1', attempt: 3 },
+    });
+
+    // Acknowledged (or Stripe retries it for days) but NOT applied.
+    expect(stale.status).toBe(200);
+    expect(await stale.json()).toEqual({ received: true, ignored: true, reason: 'superseded_by_newer_event' });
+    expect(store.subscription.status).toBe('active');
+    expect(store.subscription.last_billing_event_id).toBe('evt_succeeded');
+
+    // The skip is recorded on the event row and audited — a billing event that
+    // deliberately changed nothing still has to be explainable.
+    expect(store.eventRows.evt_failed_stale?.skipped_reason).toBe('superseded_by_newer_event');
+    expect(store.eventRows.evt_failed_stale?.processed_at).not.toBeNull();
+    expect(store.auditRows.some((row) => row.action === 'billing.webhook_superseded')).toBe(true);
+  });
+
+  it('still applies events that arrive in order, and same-second events (Stripe resolution) are not blocked', async () => {
+    const app = await buildApp();
+
+    await signedRequest(app, {
+      id: 'evt_pastdue',
+      type: 'subscription.past_due',
+      occurredAt: T_EARLY,
+      data: { externalCustomerId: 'cus_1' },
+    });
+    expect(store.subscription.status).toBe('past_due');
+
+    // Same `occurredAt` — Stripe's `event.created` has one-second resolution,
+    // so a tie is resolved by arrival order rather than refused.
+    const sameSecond = await signedRequest(app, {
+      id: 'evt_succeeded_same_second',
+      type: 'invoice.payment_succeeded',
+      occurredAt: T_EARLY,
+      data: { externalCustomerId: 'cus_1' },
+    });
+    expect(sameSecond.status).toBe(200);
+    expect(store.subscription.status).toBe('active');
+
+    // And a genuinely later event applies normally.
+    const later = await signedRequest(app, {
+      id: 'evt_unpaid_later',
+      type: 'subscription.unpaid',
+      occurredAt: T_LATE,
+      data: { externalCustomerId: 'cus_1' },
+    });
+    expect(later.status).toBe(200);
+    expect(store.subscription.plan).toBe('free');
+  });
+
+  it('takes the per-subscription row lock before reading the state it decides against', async () => {
+    const app = await buildApp();
+    await signedRequest(app, { id: 'evt_lock', type: 'subscription.past_due', data: { externalCustomerId: 'cus_1' } });
+    // Concurrent deliveries for one customer are real; without the lock two
+    // would read the same "current" state and the ordering guard would be
+    // defeated by a race rather than by a stale delivery.
+    expect(db.$queryRaw).toHaveBeenCalled();
   });
 });
 

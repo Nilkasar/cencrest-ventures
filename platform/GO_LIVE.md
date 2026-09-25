@@ -385,7 +385,9 @@ Real, honestly-documented, not oversights — worth setting expectations before 
 - [ ] Built artifacts run: `node build.mjs`, then start `dist/app.cjs` and `dist/worker.cjs` and confirm each reaches its own startup checks
 - [ ] **One real job completes from `dist/worker.cjs`.** Booting is not enough and has already proved it twice: `load-env.ts`'s `import.meta.url` killed the bundle on its first line, and the prompt templates resolved to a non-existent directory in the bundle — that one let both artifacts boot cleanly while 100% of AI jobs died on their first template load, immediately after the run row had been marked `running`. Run an actual AI Visibility run against the built worker and watch it reach `completed`
 - [ ] Postgres provisioned, `DATABASE_URL` set
-- [ ] `pnpm --filter @bebest/database run db:apply` run (schema + all 20 folders' constraints, indexes and RLS — see §1.1; `prisma migrate deploy` does **not** do this)
+- [ ] `pnpm --filter @bebest/database run db:apply` run (schema + every folder's constraints, indexes and RLS — see §1.1; `prisma migrate deploy` does **not** do this)
+- [ ] **Drain the AI-visibility queue before applying `0023_ai_run_cost_preflight`.** Runs already queued carry no price, and the new guard fails closed — they will fail with `RunNotPricedError` rather than execute unpriced. Let the queue empty, apply, then re-dispatch anything outstanding. This only bites on the one deploy that crosses 0023
+- [ ] After `0024_billing_webhook_ordering`: confirm `bebest_app` can `SELECT … FOR UPDATE` on `subscriptions` under RLS — the webhook handler now serializes concurrent Stripe deliveries with a row lock, so a role that cannot take it breaks billing rather than degrading it
 - [ ] `bebest_app` / `bebest_admin` Postgres roles created correctly (no `BYPASSRLS`, no ownership on `bebest_app`)
 - [ ] `pnpm --filter @bebest/api run seed:plans` run
 - [ ] Internal CRM org bootstrapped (`pnpm --filter @bebest/api run seed:dev`), `CRM_INTERNAL_ORG_ID` set

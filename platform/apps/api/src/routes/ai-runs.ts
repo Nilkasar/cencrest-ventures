@@ -9,6 +9,7 @@ import { getBrandForOrg, NO_BRAND_ERROR } from '../lib/brand-context.js';
 import { checkUsageLimit, EntitlementLimitError } from '../lib/entitlements.js';
 import { countPromptModelExecutionsThisMonth } from '../lib/ai-visibility/usage.js';
 import { preflightAiVisibilityRunCost } from '../lib/ai-usage/run-preflight.js';
+import { pricedRunColumns } from '../lib/ai-usage/priced-run.js';
 import { CostBudgetExceededError, costRefusalBody } from '../lib/ai-usage/cost-entitlements.js';
 import { getDefaultAiProviderRegistry } from '../lib/ai-visibility/provider-registry.js';
 import { scheduleAiVisibilityRun } from '../lib/ai-visibility/schedule-run.js';
@@ -152,6 +153,12 @@ aiRunsRoute.post('/', requireAuth, authenticatedRateLimit, requireOrgFromToken('
         providers,
         status: 'queued',
         total_jobs: totalJobs,
+        // The approved size and dollar figure travel WITH the run. The worker
+        // re-reads the query set live (pipeline.ts), so without this the set
+        // could grow between this price check and execution and the enlarged
+        // run would execute on a certificate that priced something smaller.
+        // See lib/ai-usage/priced-run.ts.
+        ...pricedRunColumns(costPreflight),
         created_by: user.id,
       },
     }),
