@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "dev:worker": "tsx watch src/worker.ts",
     "build": "pnpm --filter @bebest/database run generate && node build.mjs",
     "start": "node dist/server.js",
+    "start:worker": "node dist/worker.cjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "test": "vitest run",
