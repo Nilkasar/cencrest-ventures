@@ -36,7 +36,18 @@ export async function resolveSEODataProviderForOrg(organizationId: string): Prom
     }),
   );
 
-  if (connection && connection.status === 'connected' && connection.deleted_at === null) {
+  // `MockSearchConsoleProvider` fabricates volumes from a hash of the keyword
+  // and labels them `confidence: 'high'`. Serving that to a paying customer who
+  // connected their real Search Console account would present invented numbers
+  // as measured data, so it is hard-blocked outside dev/test. Until a real
+  // Search Console adapter exists, a connected integration falls through to the
+  // honest `confidence: 'estimate'` default rather than upgrading to fiction.
+  if (
+    connection &&
+    connection.status === 'connected' &&
+    connection.deleted_at === null &&
+    process.env.NODE_ENV !== 'production'
+  ) {
     return new MockSearchConsoleProvider();
   }
 

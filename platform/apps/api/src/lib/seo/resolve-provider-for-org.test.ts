@@ -43,6 +43,19 @@ describe('resolveSEODataProviderForOrg', () => {
     expect(provider.name).toBe('search_console');
   });
 
+  it('NEVER serves the fabricated-volume mock in production, even with a connected integration', async () => {
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      integrationsFindUnique.mockResolvedValue({ status: 'connected', deleted_at: null });
+      const { resolveSEODataProviderForOrg } = await import('./resolve-provider-for-org.js');
+      const provider = await resolveSEODataProviderForOrg('org-1');
+      expect(provider.name).toBe('null_provider');
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  });
+
   it('queries the gsc integration_type specifically, scoped to the given org', async () => {
     integrationsFindUnique.mockResolvedValue(null);
     const { resolveSEODataProviderForOrg } = await import('./resolve-provider-for-org.js');
