@@ -49,7 +49,7 @@ describe('PgBossJobQueue — start()', () => {
     await queue.start();
 
     expect(mockBoss.start).toHaveBeenCalledTimes(1);
-    expect(mockBoss.createQueue).toHaveBeenCalledWith('crawl_job');
+    expect(mockBoss.createQueue).toHaveBeenCalledWith('crawl_job', undefined);
     expect(mockBoss.work).toHaveBeenCalledWith('crawl_job', expect.any(Function));
   });
 
@@ -133,7 +133,7 @@ describe('PgBossJobQueue — the serverless enqueue path', () => {
     await queue.enqueue('crawl_job', { jobId: 'a' });
 
     expect(mockBoss.start).toHaveBeenCalledTimes(1);
-    expect(mockBoss.createQueue).toHaveBeenCalledWith('crawl_job');
+    expect(mockBoss.createQueue).toHaveBeenCalledWith('crawl_job', undefined);
     expect(mockBoss.send).toHaveBeenCalledWith('crawl_job', { jobId: 'a' }, undefined);
   });
 
@@ -153,8 +153,8 @@ describe('PgBossJobQueue — the serverless enqueue path', () => {
 
     await queue.start();
 
-    expect(mockBoss.createQueue).toHaveBeenCalledWith('crawl_job');
-    expect(mockBoss.createQueue).toHaveBeenCalledWith('agent_run');
+    expect(mockBoss.createQueue).toHaveBeenCalledWith('crawl_job', undefined);
+    expect(mockBoss.createQueue).toHaveBeenCalledWith('agent_run', undefined);
     expect(mockBoss.work).not.toHaveBeenCalled();
   });
 
@@ -198,5 +198,42 @@ describe('PgBossJobQueue — the serverless enqueue path', () => {
     await queue.stop();
 
     expect(mockBoss.stop).toHaveBeenCalledWith({ graceful: true, timeout: 7000 });
+  });
+});
+
+describe('PgBossJobQueue — per-job-type run-time policy', () => {
+  const jobPolicies = { ai_visibility_run: { expireInSeconds: 21_600, retryLimit: 0 } };
+
+  it('applies the policy to the queue AND to every job, because pg-boss\'s 15-minute default would re-dispatch an hours-long run', async () => {
+    const queue = new PgBossJobQueue('postgres://example/db', {
+      ensureQueues: ['ai_visibility_run'],
+      jobPolicies,
+    });
+
+    await queue.enqueue('ai_visibility_run', { runId: 'run-1' });
+
+    expect(mockBoss.createQueue).toHaveBeenCalledWith('ai_visibility_run', {
+      expireInSeconds: 21_600,
+      retryLimit: 0,
+    });
+    expect(mockBoss.send).toHaveBeenCalledWith('ai_visibility_run', { runId: 'run-1' }, {
+      expireInSeconds: 21_600,
+      retryLimit: 0,
+    });
+  });
+
+  it('keeps the policy alongside a delay', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const queue = new PgBossJobQueue('postgres://example/db', { ensureQueues: ['ai_visibility_run'], jobPolicies });
+
+    await queue.enqueue('ai_visibility_run', { runId: 'run-1' }, { delayMs: 60_000 });
+
+    expect(mockBoss.send).toHaveBeenCalledWith('ai_visibility_run', { runId: 'run-1' }, {
+      expireInSeconds: 21_600,
+      retryLimit: 0,
+      startAfter: new Date('2026-01-01T00:01:00.000Z'),
+    });
+    vi.useRealTimers();
   });
 });

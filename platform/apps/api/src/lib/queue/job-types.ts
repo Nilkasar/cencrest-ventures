@@ -43,3 +43,45 @@ export const ALL_JOB_TYPES: readonly JobType[] = Object.freeze(Object.values(JOB
 export function isKnownJobType(value: string): value is JobType {
   return (ALL_JOB_TYPES as readonly string[]).includes(value);
 }
+
+/**
+ * How long a job of each type may run, and whether the queue may retry it on
+ * its own.
+ *
+ * `expireInSeconds` matters enormously here and pg-boss's default (15 minutes)
+ * is catastrophically wrong for this workload: a job still `active` past it is
+ * considered dead and handed to another worker. An AI Visibility baseline run
+ * is ~1,400 prompts x 4 models and takes HOURS, so on the default it would be
+ * re-dispatched every 15 minutes while the first attempt was still running —
+ * several concurrent pipelines writing the same run, at several times the AI
+ * spend. Every long job therefore declares a realistic ceiling.
+ *
+ * `retryLimit: 0` on the three expensive jobs is deliberate, not timidity.
+ * Nothing in this build can resume a partially-completed run, so an automatic
+ * retry means re-running thousands of billed AI calls from scratch, and for an
+ * agent run it could re-execute actions already taken against a customer's
+ * site. A failed run is marked `failed` by its own handler (and by
+ * `releaseOnShutdown` if the worker was killed), which is a state the product
+ * can show and a human can knowingly retry. The free snapshot is the
+ * exception: it is small, cheap, lead-facing, and worth one automatic retry.
+ */
+export interface JobPolicy {
+  /** Seconds a job may stay `active` before pg-boss treats the worker as dead
+   * and re-dispatches or fails it. */
+  expireInSeconds: number;
+  /** Automatic retries AFTER the first attempt. */
+  retryLimit: number;
+}
+
+const HOURS = 3600;
+
+export const JOB_POLICIES: Record<JobType, JobPolicy> = {
+  // ~1,400 prompts x 4 models x (brand + competitors), rate-limited per
+  // provider. Six hours is a ceiling, not an expectation.
+  [JOB_TYPES.AI_VISIBILITY_RUN]: { expireInSeconds: 6 * HOURS, retryLimit: 0 },
+  // Max 500 pages at max 2 req/sec, plus per-page parsing (docs/08-security).
+  [JOB_TYPES.CRAWL]: { expireInSeconds: 2 * HOURS, retryLimit: 0 },
+  [JOB_TYPES.AGENT_RUN]: { expireInSeconds: 2 * HOURS, retryLimit: 0 },
+  // 20-50 queries x 4 models plus a small crawl — minutes, not hours.
+  [JOB_TYPES.FREE_SNAPSHOT]: { expireInSeconds: 1 * HOURS, retryLimit: 1 },
+};

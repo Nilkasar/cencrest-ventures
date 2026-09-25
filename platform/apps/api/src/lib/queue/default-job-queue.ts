@@ -23,7 +23,7 @@
 import type { JobQueue } from './job-queue.js';
 import { InMemoryJobQueue } from './in-memory-job-queue.js';
 import { PgBossJobQueue } from './pgboss-job-queue.js';
-import { ALL_JOB_TYPES } from './job-types.js';
+import { ALL_JOB_TYPES, JOB_POLICIES } from './job-types.js';
 
 let instance: JobQueue | undefined;
 
@@ -56,7 +56,10 @@ export function createJobQueueFromEnv(env: NodeJS.ProcessEnv = process.env): Job
   // enqueue side as well as the worker side: pg-boss refuses to `send()` to
   // a queue that does not exist yet, and on Vercel the HTTP process may well
   // enqueue the very first job before the worker has ever booted.
-  return new PgBossJobQueue(url, { ensureQueues: ALL_JOB_TYPES });
+  // `jobPolicies` is not optional in practice: pg-boss's default
+  // `expireInSeconds` is 15 minutes, and an AI Visibility baseline run takes
+  // hours — see JOB_POLICIES' comment for what that default would do.
+  return new PgBossJobQueue(url, { ensureQueues: ALL_JOB_TYPES, jobPolicies: JOB_POLICIES });
 }
 
 export function getDefaultJobQueue(): JobQueue {

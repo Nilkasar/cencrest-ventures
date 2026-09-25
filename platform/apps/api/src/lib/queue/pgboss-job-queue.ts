@@ -32,6 +32,13 @@ export interface PgBossJobQueueOptions {
    * no declared consumer is a bug, not something to swallow) and its queue
    * created anyway, so the job is recorded rather than lost. */
   ensureQueues?: readonly string[];
+  /** Per-job-type run-time limits (`lib/queue/job-types.ts`'s `JOB_POLICIES`).
+   * Applied to the queue on creation AND to every individual job on `send()`,
+   * because a queue created by an earlier deploy keeps its old defaults while a
+   * job's own options always win. pg-boss's default 15-minute
+   * `expireInSeconds` would re-dispatch an hours-long AI Visibility run every
+   * 15 minutes; passing this is what stops that. */
+  jobPolicies?: Record<string, { expireInSeconds?: number; retryLimit?: number }>;
   /** Seconds pg-boss waits for in-flight handlers during a graceful
    * `stop()`. The worker's own shutdown path bounds this too — see
    * `worker-runtime.ts`. */
@@ -45,6 +52,7 @@ function logQueueEvent(msg: string, fields: Record<string, unknown>): void {
 export class PgBossJobQueue implements JobQueue {
   private readonly boss: PgBoss;
   private readonly ensureQueues: readonly string[];
+  private readonly jobPolicies: Record<string, { expireInSeconds?: number; retryLimit?: number }>;
   private readonly gracefulStopSeconds: number;
   private started = false;
   private startPromise: Promise<void> | undefined;
@@ -61,6 +69,7 @@ export class PgBossJobQueue implements JobQueue {
   constructor(connectionString: string, options?: PgBossJobQueueOptions) {
     this.boss = new PgBoss({ connectionString });
     this.ensureQueues = options?.ensureQueues ?? [];
+    this.jobPolicies = options?.jobPolicies ?? {};
     this.gracefulStopSeconds = options?.gracefulStopSeconds ?? 30;
   }
 
@@ -107,7 +116,7 @@ export class PgBossJobQueue implements JobQueue {
   private async ensureQueue(jobType: string): Promise<void> {
     if (this.createdQueues.has(jobType)) return;
     try {
-      await this.boss.createQueue(jobType);
+      await this.boss.createQueue(jobType, this.jobPolicies[jobType]);
     } catch (err) {
       logQueueEvent('pgboss_job_queue_create_queue_failed', {
         jobType,
@@ -131,11 +140,12 @@ export class PgBossJobQueue implements JobQueue {
     }
     await this.ensureStarted();
     await this.ensureQueue(jobType);
-    await this.boss.send(
-      jobType,
-      payload as object,
-      options?.delayMs ? { startAfter: new Date(Date.now() + options.delayMs) } : undefined,
-    );
+    const policy = this.jobPolicies[jobType];
+    const sendOptions = {
+      ...policy,
+      ...(options?.delayMs ? { startAfter: new Date(Date.now() + options.delayMs) } : {}),
+    };
+    await this.boss.send(jobType, payload as object, Object.keys(sendOptions).length > 0 ? sendOptions : undefined);
   }
 
   private async ensureStarted(): Promise<void> {
