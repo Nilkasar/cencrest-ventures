@@ -40,4 +40,9 @@ export const SUPPORTED_PROVIDERS: ProviderInfo[] = [
     label: "Google Search Console",
     description: "Connects real-shaped keyword rankings and impressions into SEO Intelligence, preferred over the built-in estimate once connected.",
   },
+  {
+    slug: "google_analytics_4",
+    label: "Google Analytics 4",
+    description: "Traffic intelligence: sessions, users, and engagement from GA4.",
+  },
 ];

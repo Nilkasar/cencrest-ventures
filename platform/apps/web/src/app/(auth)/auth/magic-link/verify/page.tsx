@@ -98,10 +98,14 @@ type Status = { kind: "verifying" } | { kind: "success" } | { kind: "error"; mes
 function messageFor(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 404) return "This link isn't valid — it may have been copied incorrectly.";
-    if (err.status === 400) return "This link isn't valid — it may have been copied incorrectly.";
     if (err.status === 410) return "This link has expired. Magic links are valid for 15 minutes.";
-    if (err.status === 409 || (err.body && typeof err.body === "object" && "error" in err.body)) {
-      return "This link was already used. Request a new one to sign in.";
+    if (err.status === 409) return "This link was already used. Request a new one to sign in.";
+    if (err.status === 400) {
+      const body = err.body as Record<string, unknown> | null;
+      if (body && typeof body.error === "string" && body.error.toLowerCase().includes("already used")) {
+        return "This link was already used. Request a new one to sign in.";
+      }
+      return "This link isn't valid — it may have been copied incorrectly.";
     }
   }
   return "Something went wrong verifying that link. Please try again.";

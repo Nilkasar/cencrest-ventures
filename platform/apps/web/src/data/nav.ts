@@ -17,6 +17,7 @@ import {
   Network,
   Sparkles,
   Bot,
+  Cable,
 } from "lucide-react";
 
 export interface NavItem {
@@ -47,6 +48,10 @@ export const navGroups: NavGroup[] = [
       { href: "/competitors", label: "Competitors", icon: Users },
       { href: "/opportunities", label: "Opportunities", icon: Target },
     ],
+  },
+  {
+    label: "Data",
+    items: [{ href: "/connectors", label: "Connectors", icon: Cable }],
   },
   {
     label: "Execution",

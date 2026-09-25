@@ -14,6 +14,7 @@
 import { withOrgContext } from '@bebest/database';
 import { getSEODataProvider, type SEODataProvider } from './seo-data-provider.js';
 import { MockSearchConsoleProvider } from './mock-search-console-provider.js';
+import { GoogleSearchConsoleProvider } from './google-search-console-provider.js';
 
 /**
  * Resolves which `SEODataProvider` `organizationId` should get: a
@@ -36,18 +37,24 @@ export async function resolveSEODataProviderForOrg(organizationId: string): Prom
     }),
   );
 
-  // `MockSearchConsoleProvider` fabricates volumes from a hash of the keyword
-  // and labels them `confidence: 'high'`. Serving that to a paying customer who
-  // connected their real Search Console account would present invented numbers
-  // as measured data, so it is hard-blocked outside dev/test. Until a real
-  // Search Console adapter exists, a connected integration falls through to the
-  // honest `confidence: 'estimate'` default rather than upgrading to fiction.
-  if (
-    connection &&
-    connection.status === 'connected' &&
-    connection.deleted_at === null &&
-    process.env.NODE_ENV !== 'production'
-  ) {
+  if (connection && connection.status === 'connected' && connection.deleted_at === null) {
+    // A real access token means real Search Console data — always preferred.
+    const config = connection.config_enc as { accessToken?: string; siteUrl?: string } | null;
+    if (config?.accessToken && !config.accessToken.startsWith('mock:')) {
+      return new GoogleSearchConsoleProvider(config.accessToken, config.siteUrl);
+    }
+
+    // No real token (absent, or a `mock:` placeholder). The fallback below,
+    // `MockSearchConsoleProvider`, derives `monthlyVolume` from a hash of the
+    // keyword and labels it `confidence: 'high'` — so in production it would
+    // present invented numbers to a customer who had connected their own
+    // account, which is worse than admitting we have no data. Outside dev/test
+    // such a connection therefore falls through to `NullSEODataProvider`, whose
+    // volumes are at least honestly marked `confidence: 'estimate'`.
+    if (process.env.NODE_ENV === 'production') {
+      return getSEODataProvider();
+    }
+
     return new MockSearchConsoleProvider();
   }
 
