@@ -101,29 +101,61 @@ describe('resolvePlanLimits', () => {
   // Epic 7 (AI Visibility Engine) — docs/16-billing/BILLING_ARCHITECTURE.md's
   // "Plan Limits" JSON example, transcribed verbatim.
   it.each([
-    ['free', 50],
-    ['starter', 500],
-    ['growth', 2000],
-    ['pro', 10000],
-    ['agency', 50000],
-  ])('resolves %s to an ai_queries_per_month limit of %d', async (plan, limit) => {
+    ['free', 200],
+    ['starter', 3200],
+    ['growth', 12000],
+    ['pro', 60000],
+    ['agency', 300000],
+  ])('resolves %s to a prompt_model_executions_per_month limit of %d', async (plan, limit) => {
     db.subscriptions.findUnique.mockResolvedValue({ plan });
     const { resolvePlanLimits } = await import('./entitlements.js');
 
     const result = await resolvePlanLimits('org-1');
-    expect(result.limits.ai_queries_per_month).toBe(limit);
+    expect(result.limits.prompt_model_executions_per_month).toBe(limit);
   });
 
   it.each(['managed', 'enterprise'])(
-    '%s tier is unlimited (null) for ai_queries_per_month — no documented number',
+    '%s tier is unlimited (null) for prompt_model_executions_per_month — no documented number',
     async (plan) => {
       db.subscriptions.findUnique.mockResolvedValue({ plan });
       const { resolvePlanLimits } = await import('./entitlements.js');
 
       const result = await resolvePlanLimits('org-1');
-      expect(result.limits.ai_queries_per_month).toBeNull();
+      expect(result.limits.prompt_model_executions_per_month).toBeNull();
     },
   );
+
+  // The cost-metering follow-up RENAMED `ai_queries_per_month` to
+  // `prompt_model_executions_per_month` and corrected its numbers (Pro's old
+  // 10,000 was breached by its own first baseline run: 1,400 prompts x 4
+  // models = 5,600 for the brand alone). A `plans` row seeded BEFORE that
+  // rename must keep enforcing something rather than resolving to
+  // "unlimited" — failing open on a spend cap is worse than a stale cap.
+  it('normalizes a legacy plans.limits row that carries only ai_queries_per_month', async () => {
+    db.subscriptions.findUnique.mockResolvedValue({
+      plan: 'pro',
+      plans: { slug: 'pro', active: true, limits: { competitors_tracked: 20, ai_queries_per_month: 10000 } },
+    });
+    const { resolvePlanLimits } = await import('./entitlements.js');
+
+    const result = await resolvePlanLimits('org-1');
+    expect(result.limits.prompt_model_executions_per_month).toBe(10000);
+  });
+
+  it('never lets a stale legacy key override a deliberately-unlimited new key', async () => {
+    db.subscriptions.findUnique.mockResolvedValue({
+      plan: 'enterprise',
+      plans: {
+        slug: 'enterprise',
+        active: true,
+        limits: { prompt_model_executions_per_month: null, ai_queries_per_month: 50 },
+      },
+    });
+    const { resolvePlanLimits } = await import('./entitlements.js');
+
+    const result = await resolvePlanLimits('org-1');
+    expect(result.limits.prompt_model_executions_per_month).toBeNull();
+  });
 });
 
 describe('checkUsageLimit', () => {

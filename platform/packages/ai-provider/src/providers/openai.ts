@@ -15,8 +15,15 @@ export interface OpenAIProviderOptions {
 
 interface OpenAIChatResponse {
   model?: string;
-  choices: Array<{ message: { content: string } }>;
-  usage?: { prompt_tokens: number; completion_tokens: number };
+  choices: Array<{ message: { content: string }; finish_reason?: string | null }>;
+  /** Real field names from the Chat Completions response. `*_details` are
+   * only present on models/accounts that report them, hence optional. */
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+    completion_tokens_details?: { reasoning_tokens?: number };
+  };
 }
 
 export class OpenAIProvider extends BaseAIProvider {
@@ -64,6 +71,8 @@ export class OpenAIProvider extends BaseAIProvider {
 
     const data = (await res.json()) as OpenAIChatResponse;
     const usage = data.usage ?? { prompt_tokens: 0, completion_tokens: 0 };
+    const cachedPromptTokens = usage.prompt_tokens_details?.cached_tokens;
+    const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens;
 
     return {
       provider: this.name,
@@ -74,7 +83,10 @@ export class OpenAIProvider extends BaseAIProvider {
         promptTokens: usage.prompt_tokens,
         completionTokens: usage.completion_tokens,
         totalTokens: usage.prompt_tokens + usage.completion_tokens,
+        ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
+        ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
       },
+      finishReason: data.choices[0]?.finish_reason ?? null,
       latencyMs,
       ...buildRequestMeta(),
     };

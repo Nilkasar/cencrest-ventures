@@ -232,6 +232,10 @@ describe('runAiVisibilityRun', () => {
         total_jobs: 4,
         completed_jobs: 0,
         failed_jobs: 0,
+        // The cost preflight that approved this run (migration 0023): 2
+        // queries, which is exactly what the live set holds.
+        priced_query_count: QUERIES.length,
+        projected_cost_micro_usd: 12_400_000n,
       };
 
       const { runAiVisibilityRun } = await import('./pipeline.js');
@@ -339,6 +343,8 @@ describe('runAiVisibilityRun', () => {
       total_jobs: 2,
       completed_jobs: 0,
       failed_jobs: 0,
+      priced_query_count: QUERIES.length,
+      projected_cost_micro_usd: 6_200_000n,
     };
 
     const { runAiVisibilityRun } = await import('./pipeline.js');
@@ -364,5 +370,133 @@ describe('runAiVisibilityRun', () => {
 
     expect(state.ai_runs['run-competitor-1'].status).toBe('completed');
     expect(state.ai_runs['run-competitor-1'].ai_visibility_score).not.toBeNull();
+  });
+
+  // ── The cost valve at the till. The dispatcher prices the query set as it
+  // stands, then the run sits in the queue; this pipeline re-reads the set
+  // LIVE. A set that grew in between has never been cost-approved at its new
+  // size, and must not be executed on the old approval. ──────────────────
+  it('REFUSES to execute a run whose live query set is LARGER than the size its cost preflight priced — no provider call, run marked failed with why', async () => {
+    const openai = fakeProvider('openai', 'gpt-4o');
+    const ollama = fakeProvider('ollama', 'qwen3:8b');
+    const registry = new AIProviderRegistry({ default: 'ollama', providers: { openai, ollama } });
+
+    // Priced for ONE query ($0.01); the live set (QUERIES) holds two.
+    state.ai_runs['run-grown'] = {
+      id: 'run-grown',
+      organization_id: 'org-1',
+      brand_id: BRAND.id,
+      query_set_id: 'qs-1',
+      providers: ['openai'],
+      status: 'queued',
+      total_jobs: 1,
+      completed_jobs: 0,
+      failed_jobs: 0,
+      priced_query_count: 1,
+      projected_cost_micro_usd: 10_000n,
+    };
+
+    const { runAiVisibilityRun } = await import('./pipeline.js');
+    const { RunSizeExceedsPricedError } = await import('../ai-usage/priced-run.js');
+
+    await expect(
+      runAiVisibilityRun('run-grown', 'org-1', BRAND.id, {
+        registry,
+        promptsBaseDir: path.join(import.meta.dirname, '../../prompts'),
+      }),
+    ).rejects.toBeInstanceOf(RunSizeExceedsPricedError);
+
+    // Not one billed call was made, and nothing was written.
+    expect(openai.complete).not.toHaveBeenCalled();
+    expect(ollama.extract).not.toHaveBeenCalled();
+    expect(state.ai_run_responses).toHaveLength(0);
+    expect(state.brand_observations).toHaveLength(0);
+
+    // The refusal is in the RUN ROW, not only in a log — this is what the
+    // customer and `GET /ai-runs` see.
+    const row = state.ai_runs['run-grown'];
+    expect(row.status).toBe('failed');
+    expect(row.started_at).toBeUndefined();
+    expect(String(row.error)).toContain('priced for 1 queries');
+    expect(String(row.error)).toContain('now holds 2');
+  });
+
+  it('REFUSES to execute a run row that carries no cost preflight at all (fail closed, never "unlimited")', async () => {
+    const openai = fakeProvider('openai', 'gpt-4o');
+    const ollama = fakeProvider('ollama', 'qwen3:8b');
+    const registry = new AIProviderRegistry({ default: 'ollama', providers: { openai, ollama } });
+
+    state.ai_runs['run-unpriced'] = {
+      id: 'run-unpriced',
+      organization_id: 'org-1',
+      brand_id: BRAND.id,
+      query_set_id: 'qs-1',
+      providers: ['openai'],
+      status: 'queued',
+      total_jobs: 2,
+      completed_jobs: 0,
+      failed_jobs: 0,
+      priced_query_count: null,
+      projected_cost_micro_usd: null,
+    };
+
+    const { runAiVisibilityRun } = await import('./pipeline.js');
+    const { RunNotPricedError } = await import('../ai-usage/priced-run.js');
+
+    await expect(
+      runAiVisibilityRun('run-unpriced', 'org-1', BRAND.id, {
+        registry,
+        promptsBaseDir: path.join(import.meta.dirname, '../../prompts'),
+      }),
+    ).rejects.toBeInstanceOf(RunNotPricedError);
+
+    expect(openai.complete).not.toHaveBeenCalled();
+    expect(state.ai_runs['run-unpriced'].status).toBe('failed');
+  });
+
+  it('ALLOWS a run whose live query set SHRANK below the priced size — the work is strictly cheaper than what was approved', async () => {
+    const openai = fakeProvider('openai', 'gpt-4o');
+    openai.complete.mockResolvedValue(completionResult('Acme is recommended here.', 'openai', 'gpt-4o'));
+    const ollama = fakeProvider('ollama', 'qwen3:8b');
+    ollama.extract.mockResolvedValue(
+      extractionResult({
+        brandMentioned: true,
+        brandFirstPosition: 0.0,
+        brandMentionCount: 1,
+        brandSentiment: 'positive',
+        brandContext: 'Acme is recommended',
+        brandRecommended: true,
+        brandRecommendationStrength: 'strong',
+        competitorsMentioned: [],
+        citedUrls: [],
+        citedDomains: [],
+        responseLanguage: 'en',
+        responseWordCount: 4,
+      }),
+    );
+    const registry = new AIProviderRegistry({ default: 'ollama', providers: { openai, ollama } });
+
+    state.ai_runs['run-shrunk'] = {
+      id: 'run-shrunk',
+      organization_id: 'org-1',
+      brand_id: BRAND.id,
+      query_set_id: 'qs-1',
+      providers: ['openai'],
+      status: 'queued',
+      total_jobs: 1400,
+      completed_jobs: 0,
+      failed_jobs: 0,
+      priced_query_count: 1400,
+      projected_cost_micro_usd: 84_000_000n,
+    };
+
+    const { runAiVisibilityRun } = await import('./pipeline.js');
+    await runAiVisibilityRun('run-shrunk', 'org-1', BRAND.id, {
+      registry,
+      promptsBaseDir: path.join(import.meta.dirname, '../../prompts'),
+    });
+
+    expect(state.ai_runs['run-shrunk'].status).toBe('completed');
+    expect(openai.complete).toHaveBeenCalledTimes(QUERIES.length);
   });
 });

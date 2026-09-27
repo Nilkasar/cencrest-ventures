@@ -84,3 +84,59 @@ describe('AnthropicProvider', () => {
     await expect(provider.healthCheck()).resolves.toBe(false);
   });
 });
+
+describe('AnthropicProvider usage + finish-reason mapping (cost metering input)', () => {
+  it("adds Anthropic's cache token counters into promptTokens — they are billable input that input_tokens excludes", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({
+        model: 'claude-sonnet-4-6',
+        content: [{ type: 'text', text: 'hello' }],
+        stop_reason: 'end_turn',
+        usage: {
+          input_tokens: 200,
+          output_tokens: 500,
+          cache_read_input_tokens: 1000,
+          cache_creation_input_tokens: 50,
+        },
+      }),
+    );
+    const provider = new AnthropicProvider({ apiKey: 'sk-ant', fetchImpl });
+
+    const result = await provider.complete({ userPrompt: 'hi', promptVersion: 'test.v1' });
+
+    expect(result.tokensUsed).toEqual({
+      promptTokens: 1250,
+      completionTokens: 500,
+      totalTokens: 1750,
+      cachedPromptTokens: 1000,
+    });
+    expect(result.finishReason).toBe('end_turn');
+  });
+
+  it('omits cachedPromptTokens when Anthropic reports no cache counters at all', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({ content: [{ type: 'text', text: 'x' }], usage: { input_tokens: 4, output_tokens: 2 } }),
+    );
+    const provider = new AnthropicProvider({ apiKey: 'sk-ant', fetchImpl });
+
+    const result = await provider.complete({ userPrompt: 'hi', promptVersion: 'test.v1' });
+
+    expect(result.tokensUsed).toEqual({ promptTokens: 4, completionTokens: 2, totalTokens: 6 });
+    expect(result.finishReason).toBeNull();
+  });
+
+  it('surfaces stop_reason "max_tokens" for a truncated-but-billed response', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({
+        content: [{ type: 'text', text: 'trunc' }],
+        stop_reason: 'max_tokens',
+        usage: { input_tokens: 4, output_tokens: 1024 },
+      }),
+    );
+    const provider = new AnthropicProvider({ apiKey: 'sk-ant', fetchImpl });
+
+    await expect(provider.complete({ userPrompt: 'hi', promptVersion: 'test.v1' })).resolves.toMatchObject({
+      finishReason: 'max_tokens',
+    });
+  });
+});

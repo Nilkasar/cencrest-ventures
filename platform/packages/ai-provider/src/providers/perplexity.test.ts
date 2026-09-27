@@ -75,3 +75,39 @@ describe('PerplexityProvider', () => {
     await expect(provider.healthCheck()).resolves.toBe(false);
   });
 });
+
+describe('PerplexityProvider usage + finish-reason mapping (cost metering input)', () => {
+  it("maps Perplexity's OpenAI-compatible usage block, including reasoning tokens", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({
+        model: 'sonar-pro',
+        choices: [{ message: { content: 'hello' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 80, completion_tokens: 620, reasoning_tokens: 40 },
+      }),
+    );
+    const provider = new PerplexityProvider({ apiKey: 'pplx', fetchImpl });
+
+    const result = await provider.complete({ userPrompt: 'hi', promptVersion: 'test.v1' });
+
+    expect(result.tokensUsed).toEqual({
+      promptTokens: 80,
+      completionTokens: 620,
+      totalTokens: 700,
+      reasoningTokens: 40,
+    });
+    expect(result.finishReason).toBe('stop');
+    expect(result.model).toBe('sonar-pro');
+  });
+
+  it('omits reasoningTokens when Perplexity does not report it', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({ choices: [{ message: { content: 'x' } }], usage: { prompt_tokens: 6, completion_tokens: 2 } }),
+    );
+    const provider = new PerplexityProvider({ apiKey: 'pplx', fetchImpl });
+
+    const result = await provider.complete({ userPrompt: 'hi', promptVersion: 'test.v1' });
+
+    expect(result.tokensUsed).toEqual({ promptTokens: 6, completionTokens: 2, totalTokens: 8 });
+    expect(result.finishReason).toBeNull();
+  });
+});

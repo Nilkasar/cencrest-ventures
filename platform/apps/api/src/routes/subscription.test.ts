@@ -9,6 +9,10 @@ const FREE_PLAN = {
   description: 'd',
   price_monthly: null,
   price_yearly: null,
+  // Deliberately still the LEGACY key: this fixture doubles as the
+  // regression for `resolvePlanLimits`' normalization of a `plans` row
+  // seeded before the `ai_queries_per_month` ->
+  // `prompt_model_executions_per_month` rename.
   limits: { competitors_tracked: 2, queries_per_query_set: 50, ai_queries_per_month: 50, team_members: 1 },
   features: {},
   active: true,
@@ -30,6 +34,8 @@ const db = {
   competitors: { count: vi.fn() },
   query_sets: { findFirst: vi.fn() },
   ai_runs: { aggregate: vi.fn() },
+  // The usage summary now reports REAL month-to-date AI spend from `ai_usage`.
+  ai_usage: { aggregate: vi.fn() },
   subscriptions: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
   plans: { findUnique: vi.fn() },
   audit_events: { create: vi.fn().mockResolvedValue({}) },
@@ -47,6 +53,7 @@ const tx = {
   competitors: db.competitors,
   query_sets: db.query_sets,
   ai_runs: db.ai_runs,
+  ai_usage: db.ai_usage,
   subscriptions: db.subscriptions,
 };
 
@@ -85,6 +92,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   db.audit_events.create.mockResolvedValue({});
   db.organization_rate_limits.upsert.mockResolvedValue({ count: 1 });
+  db.ai_usage.aggregate.mockResolvedValue({ _sum: { cost_usd: null } });
   const { __setKeysForTesting } = await import('../lib/jwt.js');
   const { privateKey, publicKey } = await generateKeyPair('RS256');
   __setKeysForTesting(privateKey, publicKey);

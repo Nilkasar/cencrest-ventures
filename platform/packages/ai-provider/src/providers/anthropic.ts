@@ -15,7 +15,16 @@ const ANTHROPIC_VERSION = '2023-06-01';
 interface AnthropicMessagesResponse {
   model?: string;
   content: Array<{ type: string; text?: string }>;
-  usage?: { input_tokens: number; output_tokens: number };
+  stop_reason?: string | null;
+  /** Real field names from the Messages response. `input_tokens` EXCLUDES
+   * cache reads/writes, which Anthropic reports as their own counters — so
+   * the billable input total is the sum of all three. */
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
 }
 
 export class AnthropicProvider extends BaseAIProvider {
@@ -64,6 +73,12 @@ export class AnthropicProvider extends BaseAIProvider {
     const data = (await res.json()) as AnthropicMessagesResponse;
     const textBlock = data.content.find((block) => block.type === 'text');
     const usage = data.usage ?? { input_tokens: 0, output_tokens: 0 };
+    const cacheRead = usage.cache_read_input_tokens ?? 0;
+    const cacheWrite = usage.cache_creation_input_tokens ?? 0;
+    // Cache reads/writes are billable input tokens that `input_tokens` does
+    // not include; omitting them would under-count spend on any cached call.
+    const promptTokens = usage.input_tokens + cacheRead + cacheWrite;
+    const reportsCache = usage.cache_read_input_tokens !== undefined || usage.cache_creation_input_tokens !== undefined;
 
     return {
       provider: this.name,
@@ -71,10 +86,12 @@ export class AnthropicProvider extends BaseAIProvider {
       promptVersion: request.promptVersion,
       rawResponse: textBlock?.text ?? '',
       tokensUsed: {
-        promptTokens: usage.input_tokens,
+        promptTokens,
         completionTokens: usage.output_tokens,
-        totalTokens: usage.input_tokens + usage.output_tokens,
+        totalTokens: promptTokens + usage.output_tokens,
+        ...(reportsCache ? { cachedPromptTokens: cacheRead } : {}),
       },
+      finishReason: data.stop_reason ?? null,
       latencyMs,
       ...buildRequestMeta(),
     };

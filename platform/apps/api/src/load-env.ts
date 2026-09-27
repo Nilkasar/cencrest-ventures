@@ -22,10 +22,16 @@
  * (the normal case in production) is not an error.
  */
 import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
+// `import.meta.dirname`, NOT `import.meta.url`. Both resolve correctly under
+// tsx, but `build.mjs` bundles to CJS and only defines `import.meta.dirname`
+// (as `__dirname`). `import.meta.url` compiles to an undefined property there,
+// so `fileURLToPath` received undefined and the built entrypoint threw
+// ERR_INVALID_ARG_TYPE before any of its own code ran. Nothing caught it
+// because typecheck, lint and the test suite all exercise the TypeScript
+// source, never the bundle.
+const here = import.meta.dirname;
 
 // `src/` when run through tsx, `dist/` when run from a build — the file
 // lives one level up from either.

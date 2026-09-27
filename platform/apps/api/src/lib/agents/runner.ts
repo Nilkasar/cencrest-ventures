@@ -27,9 +27,12 @@
  */
 import { withOrgContext, type agent_runs, type Prisma } from '@bebest/database';
 import { checkUsageLimit, resolvePlanLimits } from '../entitlements.js';
-import { getDefaultAiProviderRegistry } from '../ai-visibility/provider-registry.js';
+import { getMeteredAiProviderRegistry } from '../ai-visibility/provider-registry.js';
 import { notify } from '../notifications/notify.js';
 import { getDefaultJobQueue } from '../queue/default-job-queue.js';
+import { registerInProcessJobHandler } from '../queue/register-in-process.js';
+import { JOB_TYPES } from '../queue/job-types.js';
+import type { JobDefinition } from '../queue/job-queue.js';
 import { countAgentRunsThisMonth } from './usage.js';
 import { resolveRequestedAutonomyLevel } from './autonomy.js';
 import { createAgent } from './registry.js';
@@ -97,36 +100,54 @@ export async function triggerAgentRun(params: TriggerAgentRunParams): Promise<Tr
     }),
   );
 
-  scheduleAgentRun(run.id, params, autonomyLevel);
+  await scheduleAgentRun(run.id, params, autonomyLevel);
 
   return { run };
 }
 
-interface AgentRunJobPayload {
+export interface AgentRunJobPayload {
   runId: string;
   params: TriggerAgentRunParams;
   autonomyLevel: AutonomyLevel;
 }
 
-const AGENT_RUN_JOB_TYPE = 'agent_run';
-
-// Registered once at module load — see `lib/queue/job-queue.ts`'s header
-// comment for the full design.
-getDefaultJobQueue().register<AgentRunJobPayload>(AGENT_RUN_JOB_TYPE, async ({ runId, params, autonomyLevel }) => {
-  await executeAgentRun(runId, params, autonomyLevel).catch(async (err) => {
-    await withOrgContext(params.organizationId, (tx) =>
-      tx.agent_runs.update({
-        where: { id: runId },
-        data: { status: 'failed', error: String((err as Error)?.message ?? err), completed_at: new Date() },
-      }),
-    ).catch(() => {
-      // Best-effort — same convention as crawl.ts/schedule-run.ts.
-    });
+/** Best-effort — same convention as `lib/crawler/crawl-job.ts` and
+ * `lib/ai-visibility/schedule-run.ts`. Inside `withOrgContext` because
+ * `agent_runs` is a tenant table under RLS and the worker process connects as
+ * `bebest_app` with no BYPASSRLS, exactly like the API. */
+async function markAgentRunFailed(runId: string, organizationId: string, error: string): Promise<void> {
+  await withOrgContext(organizationId, (tx) =>
+    tx.agent_runs.update({
+      where: { id: runId },
+      data: { status: 'failed', error, completed_at: new Date() },
+    }),
+  ).catch(() => {
+    // Intentionally swallowed — see above.
   });
-});
+}
 
-function scheduleAgentRun(runId: string, params: TriggerAgentRunParams, autonomyLevel: AutonomyLevel): void {
-  void getDefaultJobQueue().enqueue<AgentRunJobPayload>(AGENT_RUN_JOB_TYPE, { runId, params, autonomyLevel });
+/** Registered by the worker via `lib/queue/job-registry.ts`, and in-process
+ * only when no separate worker is configured (dev/test). */
+export const agentRunJob: JobDefinition<AgentRunJobPayload> = {
+  jobType: JOB_TYPES.AGENT_RUN,
+  handler: async ({ runId, params, autonomyLevel }) => {
+    await executeAgentRun(runId, params, autonomyLevel).catch(async (err) => {
+      await markAgentRunFailed(runId, params.organizationId, String((err as Error)?.message ?? err));
+    });
+  },
+  releaseOnShutdown: async ({ runId, params }) => {
+    await markAgentRunFailed(
+      runId,
+      params.organizationId,
+      'Worker shut down while this agent run was in progress; the run did not complete. Retry it.',
+    );
+  },
+};
+
+registerInProcessJobHandler(agentRunJob);
+
+async function scheduleAgentRun(runId: string, params: TriggerAgentRunParams, autonomyLevel: AutonomyLevel): Promise<void> {
+  await getDefaultJobQueue().enqueue<AgentRunJobPayload>(JOB_TYPES.AGENT_RUN, { runId, params, autonomyLevel });
 }
 
 function decomposeEvent(event: AgentEvent): {
@@ -197,7 +218,10 @@ async function executeAgentRun(runId: string, params: TriggerAgentRunParams, aut
     triggeredById: params.triggeredById,
     parameters: params.parameters ?? {},
     autonomyLevel,
-    registry: getDefaultAiProviderRegistry(),
+    // Agents run as the `system` role but still spend a TENANT's money, so
+    // the registry is metered against this run's org — an autonomous agent
+    // is exactly the caller most likely to burn budget unnoticed.
+    registry: getMeteredAiProviderRegistry({ organizationId, feature: `agent:${agentName}` }),
     logger: console,
   };
 

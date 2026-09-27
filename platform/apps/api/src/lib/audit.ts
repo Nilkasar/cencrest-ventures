@@ -36,6 +36,49 @@ export interface AuditEventInput {
  * privileged action it was trying to record. Logs to stderr instead so the
  * failure is at least observable.
  */
+/** The exact `audit_events` row shape both writers below insert. One place, so
+ * a transactional write and a best-effort write can never record different
+ * things for the same event. */
+function auditEventData(input: AuditEventInput) {
+  return {
+    user_id: input.userId,
+    organization_id: input.organizationId,
+    actor_type: input.actorType,
+    actor_role: input.actorRole ?? null,
+    action: input.action,
+    entity_type: input.entityType,
+    entity_id: input.entityId,
+    ip_address: input.ipAddress ?? null,
+    user_agent: input.userAgent ?? null,
+    result: input.result,
+    old_value: input.oldValue as Prisma.InputJsonValue | undefined,
+    new_value: input.newValue as Prisma.InputJsonValue | undefined,
+    details: (input.details ?? {}) as Prisma.InputJsonValue,
+  };
+}
+
+/**
+ * Writes the audit row inside a transaction the CALLER owns — and, unlike
+ * `writeAuditEvent` below, THROWS if it cannot.
+ *
+ * That inversion is deliberate and narrow. `writeAuditEvent` swallows failures
+ * because an audit write must not break the action it records; but inside a
+ * transaction a failed INSERT has already aborted the transaction, so
+ * swallowing it would only hide the fact that everything after it is doomed.
+ * Worse, the one caller that needs this — `routes/billing-webhooks.ts` — is
+ * atomic precisely so that a partially-applied event cannot exist: if the audit
+ * row cannot be written, the right outcome is that the billing change rolls
+ * back and the provider retries the whole event, not that the change lands
+ * unaudited.
+ *
+ * `organizationId` must be the org whose context `tx` was opened with —
+ * `audit_events`'s append policy (migration 0021) accepts only a row whose
+ * `organization_id` is null or equal to `app.current_org`.
+ */
+export async function writeAuditEventWithin(tx: Prisma.TransactionClient, input: AuditEventInput): Promise<void> {
+  await tx.audit_events.create({ data: auditEventData(input) });
+}
+
 export async function writeAuditEvent(input: AuditEventInput): Promise<void> {
   try {
     // An org-attributed row is written INSIDE that org's context.
@@ -51,24 +94,10 @@ export async function writeAuditEvent(input: AuditEventInput): Promise<void> {
     // Platform-level events (no organization: login, logout, webhook
     // receipt) keep using the un-scoped client — they have no context to
     // set, and the policy explicitly allows a null organization.
-    const data = {
-      user_id: input.userId,
-      organization_id: input.organizationId,
-      actor_type: input.actorType,
-      actor_role: input.actorRole ?? null,
-      action: input.action,
-      entity_type: input.entityType,
-      entity_id: input.entityId,
-      ip_address: input.ipAddress ?? null,
-      user_agent: input.userAgent ?? null,
-      result: input.result,
-      old_value: input.oldValue as Prisma.InputJsonValue | undefined,
-      new_value: input.newValue as Prisma.InputJsonValue | undefined,
-      details: (input.details ?? {}) as Prisma.InputJsonValue,
-    };
+    const data = auditEventData(input);
 
     if (input.organizationId) {
-      await withOrgContext(input.organizationId, (tx) => tx.audit_events.create({ data }));
+      await withOrgContext(input.organizationId, (tx) => writeAuditEventWithin(tx, input));
     } else {
       await db.audit_events.create({ data });
     }
@@ -115,6 +144,12 @@ export const ALWAYS_AUDITED_ACTIONS = [
   // requirement exists for, distinct from `billing.changed` (a legitimate,
   // successfully-applied billing change) — see routes/billing-webhooks.ts.
   'billing.webhook_rejected',
+  // A well-signed billing event that was deliberately NOT applied because a
+  // newer one had already been (see routes/billing-webhooks.ts's ordering
+  // guard). Recorded for the same reason as the rejection above: an event that
+  // changed nothing still has to be explainable when someone reconciles an
+  // account's billing history.
+  'billing.webhook_superseded',
   // Epic 18 (Agency / White Label / Integrations) additions — every step of
   // the cross-org consent lifecycle this epic's DoD requires ("requires the
   // documented consent/invitation step... and is audit-logged", "revoking a

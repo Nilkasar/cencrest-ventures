@@ -13,8 +13,11 @@ export const metadata: Metadata = {
  * all interactivity lives in `SnapshotIntakeView`.
  */
 export default function SnapshotIntakePage() {
+  // `max-w-5xl` matches the header and footer in `(marketing)/layout.tsx`. It
+  // was `max-w-2xl`, which left the page's one column visibly narrower than
+  // the chrome above and below it — a large part of why the page read as empty.
   return (
-    <div className="mx-auto max-w-2xl px-6 py-16 sm:py-24">
+    <div className="mx-auto max-w-5xl px-6 py-14 sm:py-20">
       <SnapshotIntakeView />
     </div>
   );

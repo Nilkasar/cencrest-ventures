@@ -788,6 +788,18 @@ model subscriptions {
   current_period_end    DateTime?           @db.Timestamptz(6)
   trial_ends_at         DateTime?           @db.Timestamptz(6)
   cancelled_at          DateTime?           @db.Timestamptz(6)
+  // WEBHOOK ORDERING (migration 0024). Stripe does not guarantee delivery
+  // order, so arrival order cannot be trusted: a retried `payment_failed`
+  // landing after a later `payment_succeeded` would otherwise downgrade a
+  // healthy subscription. This is the `occurredAt` (Stripe's `event.created`)
+  // of the newest event ALREADY APPLIED to this row; `routes/billing-webhooks.ts`
+  // refuses to apply anything strictly older. Equal timestamps still apply —
+  // Stripe's `created` is second-granularity, so same-second events are
+  // resolved by arrival order, as they were before this column existed.
+  last_billing_event_at DateTime?           @db.Timestamptz(6)
+  // The external event id that last moved this row, so an applied state can be
+  // traced back to the exact `billing_webhook_events` row that caused it.
+  last_billing_event_id String?             @db.VarChar(255)
   created_at            DateTime            @default(now()) @db.Timestamptz(6)
   updated_at            DateTime            @default(now()) @db.Timestamptz(6)
   organizations         organizations       @relation(fields: [organization_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
@@ -814,7 +826,19 @@ model billing_webhook_events {
   event_type         String    @db.VarChar(100)
   organization_id    String?   @db.Uuid
   payload            Json
+  // When the PROVIDER says the event happened (Stripe's `event.created`), as
+  // opposed to `created_at` below, which is when we received it. Persisted
+  // (migration 0024) because ordering decisions are made against it — see
+  // `subscriptions.last_billing_event_at` — and a decision whose input is not
+  // recorded cannot be reviewed afterwards.
+  occurred_at        DateTime? @db.Timestamptz(6)
   processed_at       DateTime? @db.Timestamptz(6)
+  // Why this event was acknowledged WITHOUT being applied. NULL means it was
+  // applied normally. `processed_at` alone could not distinguish "applied" from
+  // "deliberately skipped", which made an out-of-order or unmatched event
+  // invisible after the fact. Closed vocabulary — see migration 0024's
+  // checks.sql.
+  skipped_reason     String?   @db.VarChar(50)
   created_at         DateTime  @default(now()) @db.Timestamptz(6)
   organizations      organizations? @relation(fields: [organization_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
@@ -2390,6 +2414,28 @@ model ai_runs {
   total_jobs     Int    @default(0)
   completed_jobs Int    @default(0)
   failed_jobs    Int    @default(0)
+  // COST PREFLIGHT, PERSISTED (migration 0023). The dispatcher prices the
+  // run against the plan's dollar ceilings before this row exists
+  // (`lib/ai-usage/run-preflight.ts`), but the worker re-reads the query set
+  // LIVE when it executes — so the approved SIZE has to travel with the run,
+  // or a set that grew in the queue executes against a price computed for a
+  // smaller one. `priced_query_count` is that approved size;
+  // `lib/ai-usage/priced-run.ts` writes these and
+  // `lib/ai-visibility/pipeline.ts` refuses to execute a run whose live set
+  // exceeds it (or that carries no price at all).
+  //
+  // Nullable only because rows created before 0023 exist; a NULL is treated
+  // as "never cost-approved" and REFUSED at execution, never as unlimited.
+  priced_query_count Int? @db.Integer
+  // Exact micro-dollars (BIGINT), the same `MicroUsd` unit the valve compared
+  // against the ceiling — not a Decimal/float re-encoding of it. This is the
+  // figure that was APPROVED, not the spend that occurred: real spend is
+  // `ai_usage.cost_usd`. Keeping it here is what makes an overspend detectable
+  // after the fact (projected vs. the org's `ai_usage` rows for the run window).
+  projected_cost_micro_usd BigInt? @db.BigInt
+  // Which `packages/ai-provider/src/pricing.ts` table produced the projection,
+  // so a historical approval can still be explained after prices change.
+  cost_pricing_table_version String? @db.VarChar(20)
   // The four formula v1.0 components, stored individually (not just the
   // composite) so `GET /ai-runs/:id/score` can return a breakdown that
   // provably sums to `ai_visibility_score` under the stated weights — the

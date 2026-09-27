@@ -11,10 +11,35 @@
  * authoring library. */
 export type JSONSchema = Record<string, unknown>;
 
+/**
+ * Token counts as REPORTED BY THE PROVIDER — never estimated from string
+ * length. Every provider in this package returns usage metadata (OpenAI and
+ * Perplexity: `usage.prompt_tokens`/`completion_tokens`; Anthropic:
+ * `usage.input_tokens`/`output_tokens`; Google:
+ * `usageMetadata.promptTokenCount`/`candidatesTokenCount`; Ollama:
+ * `prompt_eval_count`/`eval_count`), so these numbers are what the vendor
+ * will actually bill for. This is the input to cost metering — see
+ * `pricing.ts` and `@bebest/api`'s `lib/ai-usage/`.
+ */
 export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  /**
+   * Prompt tokens served from the provider's prompt cache, when it reports
+   * them (OpenAI `usage.prompt_tokens_details.cached_tokens`, Anthropic
+   * `usage.cache_read_input_tokens`, Google
+   * `usageMetadata.cachedContentTokenCount`). Recorded for observability;
+   * `pricing.ts` deliberately does NOT yet discount them (erring high is
+   * the safe direction for a margin sensor).
+   */
+  cachedPromptTokens?: number;
+  /** Reasoning tokens, when reported (OpenAI
+   * `usage.completion_tokens_details.reasoning_tokens`, Google
+   * `usageMetadata.thoughtsTokenCount`). Already INCLUDED in
+   * `completionTokens` — surfaced separately only so an unexpectedly
+   * expensive run can be explained. */
+  reasoningTokens?: number;
 }
 
 export interface CompletionRequest {
@@ -38,6 +63,15 @@ export interface CompletionResult {
   promptVersion: string;
   rawResponse: string;
   tokensUsed: TokenUsage;
+  /**
+   * The provider's own stop/finish reason, verbatim and un-normalized
+   * (OpenAI/Perplexity `choices[0].finish_reason`, Anthropic `stop_reason`,
+   * Google `candidates[0].finishReason`, Ollama `done_reason`). Stored on
+   * `ai_usage.finish_reason`: a `length`/`MAX_TOKENS` value is how a
+   * truncated-but-fully-billed response becomes visible instead of just
+   * looking like a bad answer.
+   */
+  finishReason?: string | null;
   latencyMs: number;
   /** ISO8601 */
   timestamp: string;
