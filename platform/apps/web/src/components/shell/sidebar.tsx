@@ -10,9 +10,9 @@ const SIDEBAR_WIDTH = 264;
 
 function Wordmark() {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2.5">
+      <img src="/logo-mark.png" alt="BeBest" className="size-7 object-contain" />
       <span className="font-display text-[19px] font-semibold text-ink-0 tracking-[-0.02em]">BeBest</span>
-      <span className="size-1.5 rounded-full bg-verdant-400" aria-hidden="true" />
     </div>
   );
 }

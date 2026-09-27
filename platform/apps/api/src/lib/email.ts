@@ -96,10 +96,11 @@ export class ConsoleEmailSender implements EmailSender {
 
 /**
  * The envelope `From`. Never hardcoded to one address: `EMAIL_FROM` wins,
- * and the default below is the address root `CLAUDE.md` documents for the
- * brand (`hello@bebestwithai.com`). Read fresh from `process.env` per
- * construction rather than at module load, matching the
- * `BILLING_WEBHOOK_SECRET`/`getWebhookSecret()` convention in
+ * and the default below is the contact address the site now uses
+ * everywhere (`nilesh.kasar@bebestwithai.com`, per `83a7661` on main, which
+ * replaced the older `hello@` address across the marketing pages). Read
+ * fresh from `process.env` per construction rather than at module load,
+ * matching the `BILLING_WEBHOOK_SECRET`/`getWebhookSecret()` convention in
  * `lib/billing/payment-provider.ts`.
  *
  * Whatever this resolves to, the domain must be verified in Resend (ADR-010)
@@ -107,7 +108,7 @@ export class ConsoleEmailSender implements EmailSender {
  * would surface immediately as a failed magic-link request rather than as
  * silence.
  */
-export const DEFAULT_EMAIL_FROM = 'BeBest <hello@bebestwithai.com>';
+export const DEFAULT_EMAIL_FROM = 'BeBest <nilesh.kasar@bebestwithai.com>';
 
 /** Escapes the five HTML-significant characters before any caller-supplied
  * value is interpolated into an email body. `organizationName` (an org's own
