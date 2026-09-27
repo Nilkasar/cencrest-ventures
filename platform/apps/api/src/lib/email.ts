@@ -77,7 +77,7 @@ export class ConsoleEmailSender implements EmailSender {
   }
 }
 
-const FROM = 'BeBest <hello@bebestwithai.com>';
+const FROM = 'BeBest <nilesh.kasar@bebestwithai.com>';
 
 export class ResendEmailSender implements EmailSender {
   private readonly resend: Resend;
