@@ -443,7 +443,7 @@ a, [data-cta] {
   width: 44px;
   height: 44px;
   flex-shrink: 0;
-  background: url('./assets/logo-mark-light.png') no-repeat center / contain;
+  object-fit: contain;
   transition: transform .3s var(--eo), filter .3s var(--eo);
 }
 .nav-logo:hover .nav-logo-mark {
@@ -2496,10 +2496,9 @@ footer {
   display: inline-block;
   width: 60px;
   height: 60px;
-  background: url('./assets/logo-mark-light.png') no-repeat center / contain;
   opacity: 0.9;
 }
-.footer-logo-mark img { display: none; }
+.footer-logo-mark img { display: block; width: 60px; height: 60px; object-fit: contain; }
 .footer-logo-word {
   display: inline-flex;
   flex-direction: column;
