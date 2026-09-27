@@ -490,8 +490,23 @@ a, [data-cta] {
   border-bottom-color: var(--ember);
 }
 
-.nav-apply {
+.nav-signin {
   margin-left: auto;
+  color: var(--pebble);
+  font-family: var(--fm);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 10px 4px;
+  border-bottom: 1px solid transparent;
+  transition: color .2s, border-color .2s;
+}
+.nav-signin:hover {
+  color: var(--paper);
+  border-bottom-color: var(--smoke);
+}
+
+.nav-apply {
   border: 1px solid var(--ember);
   color: var(--ember);
   border-radius: 8px;
@@ -506,6 +521,7 @@ a, [data-cta] {
 
 @media (max-width: 640px) {
   .nav-links { display: none; }
+  .nav-signin { display: none; }
 }
 
 /* ── RAIL ───────────────────────────────────────────────────── */
