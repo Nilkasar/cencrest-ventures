@@ -14,7 +14,7 @@ export const metadata: Metadata = {
  */
 export default function SnapshotIntakePage() {
   return (
-    <div className="mx-auto max-w-2xl px-6 py-16 sm:py-24">
+    <div className="mx-auto max-w-2xl px-6 py-12 sm:py-20">
       <SnapshotIntakeView />
     </div>
   );

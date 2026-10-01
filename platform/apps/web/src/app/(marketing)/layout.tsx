@@ -21,9 +21,9 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
     <div className="min-h-dvh flex flex-col bg-background">
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
-          <Link href="/snapshot" className="flex items-center gap-2">
+          <Link href="/snapshot" className="flex items-center gap-2.5">
+            <img src="/logo-mark.png" alt="BeBest" className="size-7 object-contain" />
             <span className="font-display text-[19px] font-semibold text-foreground tracking-[-0.02em]">BeBest</span>
-            <span className="size-1.5 rounded-full bg-accent" aria-hidden="true" />
           </Link>
           <Link
             href="/login"

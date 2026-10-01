@@ -91,77 +91,86 @@ export function SnapshotIntakeForm({ onSubmitted }: { onSubmitted: (response: Sn
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Input
-          label="Name"
-          name="name"
-          autoComplete="name"
-          placeholder="Jane Rivera"
-          value={values.name}
-          onChange={(e) => setField("name", e.target.value)}
-          error={fieldErrors.name}
-        />
-        <Input
-          label="Work email"
-          type="email"
-          name="email"
-          autoComplete="email"
-          placeholder="jane@company.com"
-          value={values.email}
-          onChange={(e) => setField("email", e.target.value)}
-          error={fieldErrors.email}
-        />
-        <Input
-          label="Company name"
-          name="company"
-          autoComplete="organization"
-          placeholder="Acme Inc."
-          value={values.company}
-          onChange={(e) => setField("company", e.target.value)}
-          error={fieldErrors.company}
-        />
-        <Input
-          label="Website URL"
-          name="website"
-          autoComplete="url"
-          placeholder="acme.com"
-          value={values.website}
-          onChange={(e) => setField("website", e.target.value)}
-          error={fieldErrors.website}
-        />
-        <Input
-          label="Industry / category"
-          description="Optional"
-          name="category"
-          placeholder="e.g. Project management software"
-          value={values.category}
-          onChange={(e) => setField("category", e.target.value)}
-        />
-        <Input
-          label="Biggest competitor"
-          description="Optional"
-          name="biggestCompetitor"
-          placeholder="e.g. Asana"
-          value={values.biggestCompetitor}
-          onChange={(e) => setField("biggestCompetitor", e.target.value)}
-        />
+    <form onSubmit={handleSubmit} className="flex flex-col gap-6" noValidate>
+      <div className="flex flex-col gap-1.5">
+        <p className="text-[11px] font-mono font-medium uppercase tracking-[0.1em] text-subtle-foreground">About you</p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input
+            label="Name"
+            name="name"
+            autoComplete="name"
+            placeholder="Jane Rivera"
+            value={values.name}
+            onChange={(e) => setField("name", e.target.value)}
+            error={fieldErrors.name}
+          />
+          <Input
+            label="Work email"
+            type="email"
+            name="email"
+            autoComplete="email"
+            placeholder="jane@company.com"
+            value={values.email}
+            onChange={(e) => setField("email", e.target.value)}
+            error={fieldErrors.email}
+          />
+        </div>
+      </div>
+
+      <div className="border-t border-border pt-5 flex flex-col gap-1.5">
+        <p className="text-[11px] font-mono font-medium uppercase tracking-[0.1em] text-subtle-foreground">Your brand</p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input
+            label="Company name"
+            name="company"
+            autoComplete="organization"
+            placeholder="Acme Inc."
+            value={values.company}
+            onChange={(e) => setField("company", e.target.value)}
+            error={fieldErrors.company}
+          />
+          <Input
+            label="Website URL"
+            name="website"
+            autoComplete="url"
+            placeholder="acme.com"
+            value={values.website}
+            onChange={(e) => setField("website", e.target.value)}
+            error={fieldErrors.website}
+          />
+          <Input
+            label="Industry / category"
+            description="Optional — helps us pick the right prompts"
+            name="category"
+            placeholder="e.g. Project management software"
+            value={values.category}
+            onChange={(e) => setField("category", e.target.value)}
+          />
+          <Input
+            label="Biggest competitor"
+            description="Optional — we'll include them in the comparison"
+            name="biggestCompetitor"
+            placeholder="e.g. Asana"
+            value={values.biggestCompetitor}
+            onChange={(e) => setField("biggestCompetitor", e.target.value)}
+          />
+        </div>
       </div>
 
       {formError && (
-        <p role="alert" className="rounded-lg border border-danger/30 bg-danger-muted px-4 py-3 text-[13px] text-danger">
+        <p role="alert" className="rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 text-[13px] text-danger">
           {formError}
         </p>
       )}
 
-      <Button type="submit" variant="primary" size="lg" loading={submitting} className="w-full sm:w-auto">
-        Get my free snapshot <ArrowRight size={15} />
-      </Button>
-
-      <p className="text-[12px] text-subtle-foreground leading-relaxed">
-        We&apos;ll crawl a sample of your site, run a sample of AI queries across ChatGPT, Claude, Gemini, and
-        Perplexity, and email you a real, computed report — no spam, no credit card.
-      </p>
+      <div className="border-t border-border pt-5 flex flex-col sm:flex-row sm:items-center gap-4">
+        <Button type="submit" variant="primary" size="lg" loading={submitting} className="w-full sm:w-auto">
+          Get my free snapshot <ArrowRight size={15} />
+        </Button>
+        <p className="text-[12px] text-subtle-foreground leading-relaxed">
+          Real AI queries across 4 models · emailed to you · no spam, no card.
+        </p>
+      </div>
     </form>
   );
 }

@@ -21,20 +21,22 @@ export function SnapshotIntakeView() {
 
   return (
     <>
-      <div className="flex flex-col gap-3 mb-10">
-        <p className="font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-subtle-foreground">
-          Free AI + SEO Growth Snapshot
-        </p>
-        <h1 className="font-display text-[32px] sm:text-[38px] font-semibold text-foreground tracking-[-0.02em] leading-tight">
-          See why AI recommends your competitors.
+      <div className="flex flex-col gap-4 mb-10">
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-[11px] font-mono font-medium uppercase tracking-[0.12em] text-accent">
+          Free · No credit card
+        </span>
+        <h1 className="font-display text-[32px] sm:text-[40px] font-semibold text-foreground tracking-[-0.02em] leading-[1.1]">
+          See why AI recommends<br className="hidden sm:block" /> your competitors.
         </h1>
-        <p className="text-[14.5px] text-muted-foreground leading-relaxed max-w-[56ch]">
-          We&apos;ll run a real, computed sample: your AI Visibility Score across ChatGPT, Claude, Gemini, and
-          Perplexity, a basic SEO pass on your site, and the top gaps and priorities worth fixing first. Free, no
-          credit card.
+        <p className="text-[14.5px] text-muted-foreground leading-relaxed max-w-[54ch]">
+          We&apos;ll run a real sample: your AI Visibility Score across ChatGPT, Claude, Gemini, and Perplexity,
+          a basic SEO pass, and the top gaps worth fixing first.
         </p>
       </div>
-      <SnapshotIntakeForm onSubmitted={setSubmitted} />
+
+      <div className="rounded-2xl border border-border bg-surface shadow-sm p-6 sm:p-8">
+        <SnapshotIntakeForm onSubmitted={setSubmitted} />
+      </div>
     </>
   );
 }
