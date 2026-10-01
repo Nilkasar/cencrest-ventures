@@ -14,8 +14,10 @@ export const metadata: Metadata = {
  */
 export default function SnapshotIntakePage() {
   return (
-    <div className="mx-auto max-w-2xl px-6 py-12 sm:py-20">
-      <SnapshotIntakeView />
+    <div className="h-full flex items-center">
+      <div className="mx-auto w-full max-w-6xl px-6 py-6">
+        <SnapshotIntakeView />
+      </div>
     </div>
   );
 }

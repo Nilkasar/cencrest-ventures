@@ -91,10 +91,10 @@ export function SnapshotIntakeForm({ onSubmitted }: { onSubmitted: (response: Sn
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-6" noValidate>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
       <div className="flex flex-col gap-1.5">
         <p className="text-[11px] font-mono font-medium uppercase tracking-[0.1em] text-subtle-foreground">About you</p>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           <Input
             label="Name"
             name="name"
@@ -117,9 +117,9 @@ export function SnapshotIntakeForm({ onSubmitted }: { onSubmitted: (response: Sn
         </div>
       </div>
 
-      <div className="border-t border-border pt-5 flex flex-col gap-1.5">
+      <div className="border-t border-border pt-4 flex flex-col gap-1.5">
         <p className="text-[11px] font-mono font-medium uppercase tracking-[0.1em] text-subtle-foreground">Your brand</p>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           <Input
             label="Company name"
             name="company"
@@ -163,7 +163,7 @@ export function SnapshotIntakeForm({ onSubmitted }: { onSubmitted: (response: Sn
         </p>
       )}
 
-      <div className="border-t border-border pt-5 flex flex-col sm:flex-row sm:items-center gap-4">
+      <div className="border-t border-border pt-4 flex flex-col sm:flex-row sm:items-center gap-3">
         <Button type="submit" variant="primary" size="lg" loading={submitting} className="w-full sm:w-auto">
           Get my free snapshot <ArrowRight size={15} />
         </Button>

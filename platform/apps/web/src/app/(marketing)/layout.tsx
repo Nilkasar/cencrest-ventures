@@ -18,9 +18,9 @@ import Link from "next/link";
  */
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-dvh flex flex-col bg-background">
-      <header className="border-b border-border">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
+    <div className="h-dvh flex flex-col bg-background overflow-hidden">
+      <header className="border-b border-border shrink-0">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link href="/snapshot" className="flex items-center gap-2.5">
             <img src="/logo-mark.png" alt="BeBest" className="size-7 object-contain" />
             <span className="font-display text-[19px] font-semibold text-foreground tracking-[-0.02em]">BeBest</span>
@@ -33,12 +33,7 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
           </Link>
         </div>
       </header>
-      <main className="flex-1">{children}</main>
-      <footer className="border-t border-border">
-        <div className="mx-auto max-w-5xl px-6 py-8 text-[12px] text-subtle-foreground">
-          BeBest measures how AI models and search engines see your brand.
-        </div>
-      </footer>
+      <main className="flex-1 min-h-0">{children}</main>
     </div>
   );
 }
