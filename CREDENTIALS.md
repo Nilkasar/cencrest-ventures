@@ -24,8 +24,8 @@ Collect all values here before go-live. Add to Vercel via `vercel env add <NAME>
 
 | Variable | Where to get it | Notes |
 |---|---|---|
-| `GOOGLE_CLIENT_ID` | Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID | Create a Web Application credential. Register redirect URI: `https://bebest-api.vercel.app/api/integrations/google/callback` |
-| `GOOGLE_CLIENT_SECRET` | Same credential as above | Keep secret — never commit |
+| `GOOGLE_CLIENT_ID` | ✅ Set 2026-10-02 | Client ID: `664252236076-kh88lqo856ggf3nob9lkv97mvvfu7pnl.apps.googleusercontent.com` |
+| `GOOGLE_CLIENT_SECRET` | ✅ Set 2026-10-02 | Never commit — stored in Vercel only |
 | `ANTHROPIC_API_KEY` | console.anthropic.com → API Keys | Powers AI visibility queries (Claude) |
 | `OPENAI_API_KEY` | platform.openai.com → API Keys | Powers AI visibility queries (ChatGPT) |
 | `PERPLEXITY_API_KEY` | perplexity.ai → Settings → API | Powers AI visibility queries (Perplexity) |
