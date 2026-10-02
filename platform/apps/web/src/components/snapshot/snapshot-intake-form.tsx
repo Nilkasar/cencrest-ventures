@@ -91,10 +91,10 @@ export function SnapshotIntakeForm({ onSubmitted }: { onSubmitted: (response: Sn
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3" noValidate>
       <div className="flex flex-col gap-1.5">
         <p className="text-[11px] font-mono font-medium uppercase tracking-[0.1em] text-subtle-foreground">About you</p>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-2.5 sm:grid-cols-2">
           <Input
             label="Name"
             name="name"
@@ -117,9 +117,9 @@ export function SnapshotIntakeForm({ onSubmitted }: { onSubmitted: (response: Sn
         </div>
       </div>
 
-      <div className="border-t border-border pt-4 flex flex-col gap-1.5">
+      <div className="border-t border-border pt-3 flex flex-col gap-1.5">
         <p className="text-[11px] font-mono font-medium uppercase tracking-[0.1em] text-subtle-foreground">Your brand</p>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-2.5 sm:grid-cols-2">
           <Input
             label="Company name"
             name="company"
@@ -163,12 +163,18 @@ export function SnapshotIntakeForm({ onSubmitted }: { onSubmitted: (response: Sn
         </p>
       )}
 
-      <div className="border-t border-border pt-4 flex flex-col sm:flex-row sm:items-center gap-3">
-        <Button type="submit" variant="primary" size="lg" loading={submitting} className="w-full sm:w-auto">
+      <div className="border-t border-border pt-3 flex flex-col gap-2">
+        <Button
+          type="submit"
+          variant="primary"
+          size="lg"
+          loading={submitting}
+          className="w-full rounded-xl bg-verdant-700 hover:bg-verdant-800 text-ink-0"
+        >
           Get my free snapshot <ArrowRight size={15} />
         </Button>
-        <p className="text-[12px] text-subtle-foreground leading-relaxed">
-          Real AI queries across 4 models · emailed to you · no spam, no card.
+        <p className="text-[11.5px] text-subtle-foreground text-center">
+          No spam · No credit card · Results in 24 hrs
         </p>
       </div>
     </form>
