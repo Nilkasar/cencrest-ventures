@@ -218,7 +218,7 @@ export function SidebarNav({ collapsed, query, pillId, highlightIndex, onNavigat
               return (
                 <div key={group.label}>
                   {collapsed ? (
-                    gi > 0 && <div className="mx-auto mb-3 h-px w-6 bg-border" aria-hidden />
+                    gi > 0 && <div className="mx-auto mb-3 h-px w-6 bg-[var(--sidebar-border)]" aria-hidden />
                   ) : (
                     <button
                       type="button"
@@ -264,7 +264,7 @@ export function SidebarNav({ collapsed, query, pillId, highlightIndex, onNavigat
         )}
       </div>
 
-      <div className="shrink-0 border-t border-border px-3 py-3">
+      <div className="shrink-0 border-t border-[var(--sidebar-border)] px-3 py-3">
         <NavLink
           item={settingsItem}
           active={isActive(pathname, settingsItem.href)}

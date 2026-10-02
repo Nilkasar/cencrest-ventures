@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger, cn } from "@bebest/ui";
 import { useSidebarCollapsed } from "@/lib/use-sidebar";
 import { SidebarNav, SidebarSearch, useJumpTo } from "./sidebar-nav";
 
-const SIDEBAR_WIDTH = 264;
+const SIDEBAR_WIDTH = 240;
 const EASE = [0.16, 1, 0.3, 1] as const;
 
 function isTypingTarget(target: EventTarget | null) {
@@ -79,10 +79,10 @@ function SidebarBody({
   const { highlightIndex, onKeyDown } = useJumpTo(query, setQuery, onClose);
 
   return (
-    <div className="flex h-full flex-col border-r border-border bg-surface">
+    <div className="flex h-full flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar)]">
       <div
         className={cn(
-          "flex h-16 shrink-0 items-center border-b border-border",
+          "flex h-16 shrink-0 items-center border-b border-[var(--sidebar-border)]",
           collapsed ? "justify-center px-3" : "justify-between gap-2 pl-5 pr-3",
         )}
       >

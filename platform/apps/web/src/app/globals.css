@@ -25,6 +25,23 @@
   font-family: var(--font-mono);
 }
 
+/* Sidebar panel colour — a verdant-tinted shade set apart from the page
+   background in both themes, so the nav reads as its own surface. */
+:root {
+  --sidebar: color-mix(in oklab, var(--color-verdant-100) 45%, var(--color-ink-150));
+  --sidebar-border: color-mix(in oklab, var(--color-verdant-200) 40%, var(--color-ink-200));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sidebar: color-mix(in oklab, var(--color-verdant-900) 55%, var(--color-ink-950));
+    --sidebar-border: color-mix(in oklab, var(--color-verdant-800) 45%, var(--color-ink-800));
+  }
+}
+:root[data-theme="dark"] {
+  --sidebar: color-mix(in oklab, var(--color-verdant-900) 55%, var(--color-ink-950));
+  --sidebar-border: color-mix(in oklab, var(--color-verdant-800) 45%, var(--color-ink-800));
+}
+
 /* App shell layout: content column offsets for the fixed sidebar. */
 .app-content {
   margin-left: 0;
@@ -32,7 +49,7 @@
 /* Desktop sidebar width (components/shell/sidebar.tsx) — CSS-driven off
    <html data-sidebar> so it's right before hydration, like the offset. */
 .app-sidebar {
-  width: 264px;
+  width: 240px;
   transition: width 260ms var(--ease-emphasized);
 }
 [data-sidebar="collapsed"] .app-sidebar {
@@ -40,7 +57,7 @@
 }
 @media (min-width: 1024px) {
   .app-content {
-    margin-left: 264px;
+    margin-left: 240px;
     transition: margin-left 260ms var(--ease-emphasized);
   }
   [data-sidebar="collapsed"] .app-content {
