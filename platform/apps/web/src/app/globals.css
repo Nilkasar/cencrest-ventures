@@ -29,9 +29,28 @@
 .app-content {
   margin-left: 0;
 }
+/* Desktop sidebar width (components/shell/sidebar.tsx) — CSS-driven off
+   <html data-sidebar> so it's right before hydration, like the offset. */
+.app-sidebar {
+  width: 264px;
+  transition: width 260ms var(--ease-emphasized);
+}
+[data-sidebar="collapsed"] .app-sidebar {
+  width: 72px;
+}
 @media (min-width: 1024px) {
   .app-content {
     margin-left: 264px;
+    transition: margin-left 260ms var(--ease-emphasized);
+  }
+  [data-sidebar="collapsed"] .app-content {
+    margin-left: 72px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar,
+  .app-content {
+    transition: none;
   }
 }
 
