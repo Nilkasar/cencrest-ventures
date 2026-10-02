@@ -2,8 +2,8 @@ import { Hono } from 'hono';
 import { createHmac, randomUUID } from 'node:crypto';
 import { google } from 'googleapis';
 import { db } from '@bebest/database';
-import { signAccessToken, refreshTokenExpiry } from '../lib/jwt.js';
-import { generateRefreshToken, generateOpaqueToken } from '../lib/tokens.js';
+import { signAccessToken, refreshTokenExpiry, generateRefreshToken } from '../lib/jwt.js';
+import { generateOpaqueToken } from '../lib/tokens.js';
 import { clientIp } from '../lib/client-ip.js';
 import { authRateLimit } from '../middleware/rate-limit.js';
 import type { AppEnv } from '../types/context.js';
@@ -84,10 +84,10 @@ router.get('/callback', async (c) => {
     if (!user) {
       user = await db.users.create({
         data: {
-          email: googleUser.email,
-          name: googleUser.name ?? googleUser.email.split('@')[0],
+          email: googleUser.email!,
+          name: googleUser.name ?? (googleUser.email!.split('@')[0] ?? 'User'),
           email_verified: true,
-          avatar_url: googleUser.picture ?? null,
+          avatar_url: googleUser.picture ?? null as string | null,
         },
       });
     } else {
