@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowRight, Check, Plus } from "lucide-react";
 import { Button, Input } from "@bebest/ui";
 import { normalizeUrl } from "@/lib/onboarding-client";
 import { submitFreeSnapshot, SnapshotRateLimitedError, SnapshotValidationError } from "@/data/snapshot/client";
@@ -19,6 +20,9 @@ interface FormValues {
 const EMPTY_FORM: FormValues = { name: "", email: "", company: "", website: "", category: "", biggestCompetitor: "" };
 
 type FieldErrors = Partial<Record<keyof FormValues, string>>;
+
+const EASE = [0.16, 1, 0.3, 1] as const;
+const INPUT_CLASS = "h-11 rounded-lg text-[14px]";
 
 /** Client-side pass before the network round trip — the same fields the
  *  server re-validates (`routes/snapshot.ts`'s `snapshotRequestSchema`),
@@ -41,18 +45,18 @@ function validate(values: FormValues): FieldErrors {
 /**
  * `docs/09-ux/CUSTOMER_JOURNEY.md` Stage 2's intake form, field-for-field:
  * name, work email, company name, website URL, industry/category
- * (optional), biggest competitor (optional). Calls the real
- * `POST /api/snapshot` from the first submit — no fixture layer, per this
- * epic's standing rule — and hands the caller the confirmation payload
- * (including the tokenized report link) the instant the lead is created,
- * rather than owning any post-submit UI itself; `SnapshotIntakeView` (the
- * page-level component) decides what happens next.
+ * (optional), biggest competitor (optional). The two optional fields sit
+ * behind a disclosure so the form reads as four questions, not six. Calls
+ * the real `POST /api/snapshot` and hands the caller the confirmation
+ * payload (including the tokenized report link) the instant the lead is
+ * created; `SnapshotIntakeView` decides what happens next.
  */
 export function SnapshotIntakeForm({ onSubmitted }: { onSubmitted: (response: SnapshotSubmitResponse) => void }) {
   const [values, setValues] = useState<FormValues>(EMPTY_FORM);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
+  const [showContext, setShowContext] = useState(false);
 
   function setField<K extends keyof FormValues>(key: K, value: FormValues[K]) {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -91,91 +95,146 @@ export function SnapshotIntakeForm({ onSubmitted }: { onSubmitted: (response: Sn
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-3" noValidate>
-      <div className="flex flex-col gap-1.5">
-        <p className="text-[11px] font-mono font-medium uppercase tracking-[0.1em] text-subtle-foreground">About you</p>
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          <Input
-            label="Name"
-            name="name"
-            autoComplete="name"
-            placeholder="Jane Rivera"
-            value={values.name}
-            onChange={(e) => setField("name", e.target.value)}
-            error={fieldErrors.name}
-          />
-          <Input
-            label="Work email"
-            type="email"
-            name="email"
-            autoComplete="email"
-            placeholder="jane@company.com"
-            value={values.email}
-            onChange={(e) => setField("email", e.target.value)}
-            error={fieldErrors.email}
-          />
-        </div>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Input
+          label="Name"
+          name="name"
+          autoComplete="name"
+          placeholder="Jane Rivera"
+          className={INPUT_CLASS}
+          value={values.name}
+          onChange={(e) => setField("name", e.target.value)}
+          error={fieldErrors.name}
+        />
+        <Input
+          label="Work email"
+          type="email"
+          name="email"
+          autoComplete="email"
+          placeholder="jane@company.com"
+          className={INPUT_CLASS}
+          value={values.email}
+          onChange={(e) => setField("email", e.target.value)}
+          error={fieldErrors.email}
+        />
+        <Input
+          label="Company"
+          name="company"
+          autoComplete="organization"
+          placeholder="Acme Inc."
+          className={INPUT_CLASS}
+          value={values.company}
+          onChange={(e) => setField("company", e.target.value)}
+          error={fieldErrors.company}
+        />
+        <Input
+          label="Website"
+          name="website"
+          autoComplete="url"
+          inputMode="url"
+          placeholder="acme.com"
+          className={INPUT_CLASS}
+          value={values.website}
+          onChange={(e) => setField("website", e.target.value)}
+          error={fieldErrors.website}
+        />
       </div>
 
-      <div className="border-t border-border pt-3 flex flex-col gap-1.5">
-        <p className="text-[11px] font-mono font-medium uppercase tracking-[0.1em] text-subtle-foreground">Your brand</p>
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          <Input
-            label="Company name"
-            name="company"
-            autoComplete="organization"
-            placeholder="Acme Inc."
-            value={values.company}
-            onChange={(e) => setField("company", e.target.value)}
-            error={fieldErrors.company}
-          />
-          <Input
-            label="Website URL"
-            name="website"
-            autoComplete="url"
-            placeholder="acme.com"
-            value={values.website}
-            onChange={(e) => setField("website", e.target.value)}
-            error={fieldErrors.website}
-          />
-          <Input
-            label="Industry / category"
-            description="Optional — helps us pick the right prompts"
-            name="category"
-            placeholder="e.g. Project management software"
-            value={values.category}
-            onChange={(e) => setField("category", e.target.value)}
-          />
-          <Input
-            label="Biggest competitor"
-            description="Optional — we'll include them in the comparison"
-            name="biggestCompetitor"
-            placeholder="e.g. Asana"
-            value={values.biggestCompetitor}
-            onChange={(e) => setField("biggestCompetitor", e.target.value)}
-          />
-        </div>
+      <div className="flex flex-col">
+        <button
+          type="button"
+          onClick={() => setShowContext((v) => !v)}
+          aria-expanded={showContext}
+          aria-controls="snapshot-optional-context"
+          className="group flex w-fit items-center gap-2 rounded-md text-left text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border transition-colors group-hover:border-border-strong">
+            <Plus
+              size={12}
+              className={`transition-transform duration-300 ease-[var(--ease-emphasized)] ${showContext ? "rotate-45" : ""}`}
+              aria-hidden="true"
+            />
+          </span>
+          <span>
+            Add your category &amp; main competitor{" "}
+            <span className="font-normal text-subtle-foreground">· optional</span>
+          </span>
+        </button>
+
+        <AnimatePresence initial={false}>
+          {showContext && (
+            <motion.div
+              id="snapshot-optional-context"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.35, ease: EASE }}
+              className="overflow-hidden"
+            >
+              <div className="grid gap-4 px-0.5 pb-0.5 pt-4 sm:grid-cols-2">
+                <Input
+                  label="Industry / category"
+                  name="category"
+                  placeholder="Project management software"
+                  className={INPUT_CLASS}
+                  value={values.category}
+                  onChange={(e) => setField("category", e.target.value)}
+                />
+                <Input
+                  label="Biggest competitor"
+                  name="biggestCompetitor"
+                  placeholder="Asana"
+                  className={INPUT_CLASS}
+                  value={values.biggestCompetitor}
+                  onChange={(e) => setField("biggestCompetitor", e.target.value)}
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {formError && (
-        <p role="alert" className="rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 text-[13px] text-danger">
-          {formError}
-        </p>
-      )}
+      <AnimatePresence initial={false}>
+        {formError && (
+          <motion.p
+            role="alert"
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25, ease: EASE }}
+            className="rounded-lg border border-danger/30 bg-danger-muted px-4 py-3 text-[13px] text-danger"
+          >
+            {formError}
+          </motion.p>
+        )}
+      </AnimatePresence>
 
-      <div className="border-t border-border pt-3 flex flex-col gap-2">
+      <div className="flex flex-col gap-4 pt-1">
         <Button
           type="submit"
           variant="primary"
           size="lg"
           loading={submitting}
-          className="w-full rounded-xl bg-verdant-700 hover:bg-verdant-800 text-ink-0"
+          className="group h-12 w-full rounded-xl text-[15px] shadow-md hover:shadow-lg"
         >
-          Get my free snapshot <ArrowRight size={15} />
+          {submitting ? "Starting your snapshot…" : "Get my free snapshot"}
+          {!submitting && (
+            <ArrowRight
+              size={16}
+              className="transition-transform duration-300 ease-[var(--ease-emphasized)] group-hover:translate-x-1"
+              aria-hidden="true"
+            />
+          )}
         </Button>
-        <p className="text-[11.5px] text-subtle-foreground text-center">
-          No spam · No credit card · Results in 24 hrs
-        </p>
+        <ul className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-[12.5px] text-subtle-foreground">
+          {["Free, no credit card", "Results within 24h", "No spam"].map((item) => (
+            <li key={item} className="flex items-center gap-1.5">
+              <Check size={13} className="text-accent" aria-hidden="true" />
+              {item}
+            </li>
+          ))}
+        </ul>
       </div>
     </form>
   );

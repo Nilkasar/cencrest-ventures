@@ -247,8 +247,13 @@
 }
 
 /* ── Base element defaults ───────────────────────────────────────────── */
-* {
-  border-color: var(--border);
+/* Layered so any `border-*` color utility wins: unlayered CSS beats every
+   @layer rule regardless of specificity, which silently overrode e.g.
+   `border-danger` on invalid inputs. */
+@layer base {
+  * {
+    border-color: var(--border);
+  }
 }
 
 html {

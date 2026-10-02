@@ -49,3 +49,97 @@
     margin-left: 0 !important;
   }
 }
+
+/* Snapshot hero signal field (components/snapshot/snapshot-signal-field.tsx).
+   One 6.4s cycle shared with the component's STEP_MS (1.6s x 4 models):
+   each comet travels in the first 30% of its cycle, so a signal lands on
+   the dial every 1.6s, starting 1.92s in — `sf-arrive` is offset to match.
+   All of these stop under the global prefers-reduced-motion rule. */
+.sf-comet {
+  stroke-dasharray: 7 100;
+  stroke-dashoffset: 7;
+  opacity: 0;
+  animation: sf-travel 6.4s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+@keyframes sf-travel {
+  0% {
+    stroke-dashoffset: 7;
+    opacity: 0;
+  }
+  4% {
+    opacity: 1;
+  }
+  26% {
+    opacity: 1;
+  }
+  30% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+}
+.sf-arrive {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: sf-arrive 1.6s var(--ease-decelerate) 1.92s infinite;
+}
+@keyframes sf-arrive {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  70%,
+  100% {
+    transform: scale(1.22);
+    opacity: 0;
+  }
+}
+.sf-ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sf-ping 1.6s var(--ease-decelerate) infinite;
+}
+@keyframes sf-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  80%,
+  100% {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+.sf-orbit {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sf-spin 60s linear infinite;
+}
+@keyframes sf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.sf-breathe {
+  animation: sf-breathe 6.4s ease-in-out infinite;
+}
+@keyframes sf-breathe {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Faint instrument grid behind the snapshot hero, fading toward the edges. */
+.snapshot-grid {
+  background-image: radial-gradient(rgb(244 242 236 / 0.07) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 80% 70% at 60% 55%, #000 30%, transparent 100%);
+}
