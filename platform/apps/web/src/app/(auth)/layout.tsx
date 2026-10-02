@@ -30,7 +30,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           </div>
 
           {/* AI model flow diagram */}
-          <div className="w-full">
+          <div className="w-full mt-2">
             <svg
               viewBox="0 0 520 260"
               fill="none"
@@ -51,44 +51,122 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
 
               {/* Model cards — left column */}
               {/* ChatGPT */}
-              <rect x="0" y="10" width="130" height="44" rx="8" fill="#1a1f17" stroke="#5c9c78" strokeOpacity="0.25" strokeWidth="1" />
+              <rect x="0" y="10" width="130" height="44" rx="8" fill="#1a1f17" stroke="#5c9c78" strokeWidth="1">
+                <animate attributeName="strokeOpacity" values="0.2;0.45;0.2" dur="5s" repeatCount="indefinite" begin="0s" />
+              </rect>
               <circle cx="22" cy="32" r="9" fill="#10a37f" />
               <text x="22" y="36" textAnchor="middle" fill="white" fontSize="10" fontWeight="700">G</text>
               <text x="38" y="28" fill="#f4f2ec" fontSize="11" fontWeight="600">ChatGPT</text>
               <text x="38" y="42" fill="#a89c81" fontSize="9">OpenAI</text>
 
               {/* Claude */}
-              <rect x="0" y="66" width="130" height="44" rx="8" fill="#1a1f17" stroke="#5c9c78" strokeOpacity="0.25" strokeWidth="1" />
+              <rect x="0" y="66" width="130" height="44" rx="8" fill="#1a1f17" stroke="#5c9c78" strokeWidth="1">
+                <animate attributeName="strokeOpacity" values="0.2;0.45;0.2" dur="6s" repeatCount="indefinite" begin="1.2s" />
+              </rect>
               <circle cx="22" cy="88" r="9" fill="#cc785c" />
               <text x="22" y="92" textAnchor="middle" fill="white" fontSize="11" fontWeight="700">✳</text>
               <text x="38" y="84" fill="#f4f2ec" fontSize="11" fontWeight="600">Claude</text>
               <text x="38" y="98" fill="#a89c81" fontSize="9">Anthropic</text>
 
               {/* Gemini */}
-              <rect x="0" y="122" width="130" height="44" rx="8" fill="#1a1f17" stroke="#5c9c78" strokeOpacity="0.25" strokeWidth="1" />
+              <rect x="0" y="122" width="130" height="44" rx="8" fill="#1a1f17" stroke="#5c9c78" strokeWidth="1">
+                <animate attributeName="strokeOpacity" values="0.2;0.45;0.2" dur="7s" repeatCount="indefinite" begin="2.4s" />
+              </rect>
               <circle cx="22" cy="144" r="9" fill="#4285f4" />
               <polygon points="22,137 26,144 22,151 18,144" fill="white" />
               <text x="38" y="140" fill="#f4f2ec" fontSize="11" fontWeight="600">Gemini</text>
               <text x="38" y="154" fill="#a89c81" fontSize="9">Google</text>
 
               {/* Perplexity */}
-              <rect x="0" y="178" width="130" height="44" rx="8" fill="#1a1f17" stroke="#5c9c78" strokeOpacity="0.25" strokeWidth="1" />
+              <rect x="0" y="178" width="130" height="44" rx="8" fill="#1a1f17" stroke="#5c9c78" strokeWidth="1">
+                <animate attributeName="strokeOpacity" values="0.2;0.45;0.2" dur="8s" repeatCount="indefinite" begin="3.6s" />
+              </rect>
               <circle cx="22" cy="200" r="9" fill="#20b2aa" />
               <text x="22" y="204" textAnchor="middle" fill="white" fontSize="10" fontWeight="700">❄</text>
               <text x="38" y="196" fill="#f4f2ec" fontSize="11" fontWeight="600">Perplexity</text>
               <text x="38" y="210" fill="#a89c81" fontSize="9">AI</text>
 
-              {/* Bezier curves — model outputs to brand */}
-              <path d="M130 32 C260 32 260 130 390 130" stroke="url(#line-fade)" strokeWidth="1.5" filter="url(#glow-green)" />
-              <path d="M130 88 C255 88 255 128 390 130" stroke="url(#line-fade)" strokeWidth="1.5" filter="url(#glow-green)" />
-              <path d="M130 144 C255 144 260 132 390 130" stroke="url(#line-fade)" strokeWidth="1.5" filter="url(#glow-green)" />
-              <path d="M130 200 C260 200 260 132 390 130" stroke="url(#line-fade)" strokeWidth="1.5" filter="url(#glow-green)" />
+              {/* Bezier curves — model outputs to brand, with path IDs for animateMotion */}
+              <path id="path-gpt" d="M130 32 C260 32 260 130 390 130" stroke="url(#line-fade)" strokeWidth="1.5" filter="url(#glow-green)">
+                <animate attributeName="strokeOpacity" values="0.3;0.6;0.3" dur="3s" repeatCount="indefinite" begin="0s" />
+              </path>
+              <path id="path-claude" d="M130 88 C255 88 255 128 390 130" stroke="url(#line-fade)" strokeWidth="1.5" filter="url(#glow-green)">
+                <animate attributeName="strokeOpacity" values="0.3;0.6;0.3" dur="3.5s" repeatCount="indefinite" begin="0.5s" />
+              </path>
+              <path id="path-gemini" d="M130 144 C255 144 260 132 390 130" stroke="url(#line-fade)" strokeWidth="1.5" filter="url(#glow-green)">
+                <animate attributeName="strokeOpacity" values="0.3;0.6;0.3" dur="4s" repeatCount="indefinite" begin="1s" />
+              </path>
+              <path id="path-perplexity" d="M130 200 C260 200 260 132 390 130" stroke="url(#line-fade)" strokeWidth="1.5" filter="url(#glow-green)">
+                <animate attributeName="strokeOpacity" values="0.3;0.6;0.3" dur="3.8s" repeatCount="indefinite" begin="1.5s" />
+              </path>
 
-              {/* Small circles on the paths */}
-              <circle cx="200" cy="50" r="2.5" fill="#5c9c78" fillOpacity="0.6" />
-              <circle cx="240" cy="95" r="2.5" fill="#5c9c78" fillOpacity="0.6" />
-              <circle cx="250" cy="138" r="2.5" fill="#5c9c78" fillOpacity="0.6" />
-              <circle cx="210" cy="178" r="2.5" fill="#5c9c78" fillOpacity="0.6" />
+              {/* Flowing dots — ChatGPT path */}
+              <circle r="3" fill="#5c9c78" opacity="0.8">
+                <animateMotion dur="4s" repeatCount="indefinite" begin="0s">
+                  <mpath href="#path-gpt" />
+                </animateMotion>
+              </circle>
+              <circle r="2" fill="#5c9c78" opacity="0.5">
+                <animateMotion dur="4s" repeatCount="indefinite" begin="1.3s">
+                  <mpath href="#path-gpt" />
+                </animateMotion>
+              </circle>
+              <circle r="1.5" fill="#5c9c78" opacity="0.35">
+                <animateMotion dur="4s" repeatCount="indefinite" begin="2.6s">
+                  <mpath href="#path-gpt" />
+                </animateMotion>
+              </circle>
+
+              {/* Flowing dots — Claude path */}
+              <circle r="3" fill="#5c9c78" opacity="0.8">
+                <animateMotion dur="5s" repeatCount="indefinite" begin="0.4s">
+                  <mpath href="#path-claude" />
+                </animateMotion>
+              </circle>
+              <circle r="2" fill="#5c9c78" opacity="0.5">
+                <animateMotion dur="5s" repeatCount="indefinite" begin="2s">
+                  <mpath href="#path-claude" />
+                </animateMotion>
+              </circle>
+              <circle r="1.5" fill="#5c9c78" opacity="0.35">
+                <animateMotion dur="5s" repeatCount="indefinite" begin="3.6s">
+                  <mpath href="#path-claude" />
+                </animateMotion>
+              </circle>
+
+              {/* Flowing dots — Gemini path */}
+              <circle r="3" fill="#5c9c78" opacity="0.8">
+                <animateMotion dur="6s" repeatCount="indefinite" begin="0.8s">
+                  <mpath href="#path-gemini" />
+                </animateMotion>
+              </circle>
+              <circle r="2" fill="#5c9c78" opacity="0.5">
+                <animateMotion dur="6s" repeatCount="indefinite" begin="2.8s">
+                  <mpath href="#path-gemini" />
+                </animateMotion>
+              </circle>
+              <circle r="1.5" fill="#5c9c78" opacity="0.35">
+                <animateMotion dur="6s" repeatCount="indefinite" begin="4.8s">
+                  <mpath href="#path-gemini" />
+                </animateMotion>
+              </circle>
+
+              {/* Flowing dots — Perplexity path */}
+              <circle r="3" fill="#5c9c78" opacity="0.8">
+                <animateMotion dur="4.5s" repeatCount="indefinite" begin="1.2s">
+                  <mpath href="#path-perplexity" />
+                </animateMotion>
+              </circle>
+              <circle r="2" fill="#5c9c78" opacity="0.5">
+                <animateMotion dur="4.5s" repeatCount="indefinite" begin="2.7s">
+                  <mpath href="#path-perplexity" />
+                </animateMotion>
+              </circle>
+              <circle r="1.5" fill="#5c9c78" opacity="0.35">
+                <animateMotion dur="4.5s" repeatCount="indefinite" begin="4.2s">
+                  <mpath href="#path-perplexity" />
+                </animateMotion>
+              </circle>
 
               {/* Label annotations floating near lines */}
               <text x="155" y="26" fill="#5c9c78" fillOpacity="0.55" fontSize="8" fontFamily="monospace" letterSpacing="0.08em">QUESTIONS</text>
@@ -96,8 +174,15 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
               <text x="148" y="138" fill="#5c9c78" fillOpacity="0.55" fontSize="8" fontFamily="monospace" letterSpacing="0.08em">BRAND MENTIONS</text>
               <text x="155" y="192" fill="#5c9c78" fillOpacity="0.55" fontSize="8" fontFamily="monospace" letterSpacing="0.08em">SENTIMENT</text>
 
+              {/* Soft halo pulse behind "Your Brand" box center */}
+              <circle cx="455" cy="130" r="16" fill="#5c9c78">
+                <animate attributeName="opacity" values="0;0.15;0" dur="2.5s" repeatCount="indefinite" begin="0s" />
+              </circle>
+
               {/* Your Brand box — right */}
-              <rect x="390" y="98" width="130" height="64" rx="10" fill="#1e2b22" stroke="#5c9c78" strokeOpacity="0.45" strokeWidth="1.5" />
+              <rect x="390" y="98" width="130" height="64" rx="10" fill="#1e2b22" stroke="#5c9c78" strokeWidth="1.5">
+                <animate attributeName="strokeOpacity" values="0.3;0.9;0.3" dur="2s" repeatCount="indefinite" begin="0s" />
+              </rect>
               <text x="455" y="124" textAnchor="middle" fill="#f4f2ec" fontSize="13" fontWeight="600">Your Brand</text>
               <text x="455" y="142" textAnchor="middle" fill="#5c9c78" fontSize="9" fontFamily="monospace" letterSpacing="0.1em">RECOMMENDATIONS</text>
             </svg>
