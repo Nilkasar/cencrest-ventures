@@ -25,9 +25,9 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
         </div>
 
         {/* Center hero */}
-        <div className="flex flex-col gap-6 max-w-lg">
+        <div className="flex flex-col gap-4 max-w-lg">
           <div className="flex flex-col gap-3">
-            <h1 className="font-display text-[58px] leading-[1.08] font-semibold tracking-[-0.02em] text-ink-0">
+            <h1 className="font-display text-[48px] leading-[1.08] font-semibold tracking-[-0.02em] text-ink-0">
               Your brand&apos;s AI<br />
               <span className="text-verdant-400">visibility score.</span>
             </h1>
