@@ -50,12 +50,10 @@ export default function LoginPage() {
       </div>
 
       <div className="flex flex-col gap-4 w-full">
-        {/* Google button — UI only, no OAuth wired */}
-        {/* TODO: wire up Google OAuth */}
         <button
           type="button"
-          disabled
-          className="flex w-full items-center justify-center gap-3 rounded-xl border border-border bg-surface-raised py-3 text-[14px] font-medium text-foreground transition-colors hover:bg-surface disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={() => { window.location.href = `${process.env.NEXT_PUBLIC_API_URL}/auth/google`; }}
+          className="flex w-full items-center justify-center gap-3 rounded-xl border border-border bg-surface-raised py-3 text-[14px] font-medium text-foreground transition-colors hover:bg-surface"
         >
           {/* Google G logo */}
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
