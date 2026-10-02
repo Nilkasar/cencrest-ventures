@@ -1,15 +1,17 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { SnapshotSignalField } from "./snapshot-signal-field";
+import { SignalField } from "./signal-field";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
-const STATS = [
-  { value: "4", label: "AI models queried" },
-  { value: "Top 3", label: "Competitors compared" },
-  { value: "24h", label: "To your inbox" },
-] as const;
+export interface HeroPanelProps {
+  eyebrow: string;
+  /** Two headline lines; the second renders in the accent color. */
+  headline: readonly [string, string];
+  description: string;
+  stats: readonly { value: string; label: string }[];
+}
 
 /** One headline line revealed from behind a mask — reads as typeset, not faded. */
 function RevealLine({ children, delay, className }: { children: React.ReactNode; delay: number; className?: string }) {
@@ -28,12 +30,14 @@ function RevealLine({ children, delay, className }: { children: React.ReactNode;
 }
 
 /**
- * Dark left half of the snapshot intake screen (desktop only). Three bands:
- * brand, the pitch + live signal visual (which absorbs any spare height and
- * shrinks first on short viewports), and the three facts that answer
- * "what do I get".
+ * Dark left half of the public split screens (snapshot intake, sign-in),
+ * desktop only. Three bands: brand, the pitch + live signal visual (which
+ * absorbs spare height and shrinks first on short viewports), and three
+ * facts. The headline is a styled paragraph, not a heading — each page's
+ * own form title is its h1, so mobile (where this panel is hidden) still
+ * has one.
  */
-export function SnapshotHeroPanel() {
+export function HeroPanel({ eyebrow, headline, description, stats }: HeroPanelProps) {
   return (
     <aside className="relative hidden lg:flex w-[54%] shrink-0 flex-col overflow-hidden bg-ink-950 text-ink-0">
       <div className="snapshot-grid pointer-events-none absolute inset-0" aria-hidden="true" />
@@ -67,13 +71,13 @@ export function SnapshotHeroPanel() {
                 <span className="absolute inset-0 animate-ping rounded-full bg-verdant-400 opacity-60" />
                 <span className="relative size-1.5 rounded-full bg-verdant-400" />
               </span>
-              Free AI Visibility Snapshot
+              {eyebrow}
             </motion.p>
 
             <p className="font-display text-[clamp(40px,3.9vw,60px)] font-semibold leading-[1.02] tracking-[-0.025em] [@media(max-height:760px)]:text-[clamp(36px,3.3vw,48px)]">
-              <RevealLine delay={0.1}>Does AI recommend</RevealLine>
+              <RevealLine delay={0.1}>{headline[0]}</RevealLine>
               <RevealLine delay={0.2} className="text-verdant-400">
-                your brand?
+                {headline[1]}
               </RevealLine>
             </p>
 
@@ -83,8 +87,7 @@ export function SnapshotHeroPanel() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, delay: 0.35, ease: EASE }}
             >
-              We ask ChatGPT, Claude, Gemini and Perplexity the questions your buyers ask — then show you exactly where
-              you stand against your competitors.
+              {description}
             </motion.p>
           </div>
 
@@ -94,12 +97,12 @@ export function SnapshotHeroPanel() {
             animate={{ opacity: 1 }}
             transition={{ duration: 1, delay: 0.3, ease: EASE }}
           >
-            <SnapshotSignalField className="h-full max-h-full w-full max-w-[640px]" />
+            <SignalField className="h-full max-h-full w-full max-w-[640px]" />
           </motion.div>
         </div>
 
         <dl className="grid grid-cols-3 border-t border-ink-0/10 pt-6 [@media(max-height:760px)]:pt-4">
-          {STATS.map((s, i) => (
+          {stats.map((s, i) => (
             <motion.div
               key={s.label}
               className={`flex flex-col-reverse gap-1.5 ${i > 0 ? "border-l border-ink-0/10 pl-6" : "pr-6"}`}

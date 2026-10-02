@@ -61,7 +61,7 @@ function pathFor(i: number) {
   return `M${NODE_W} ${y} C ${NODE_W + 96} ${y}, ${endX - 92} ${DIAL.cy}, ${endX} ${DIAL.cy}`;
 }
 
-export function SnapshotSignalField({ className }: { className?: string }) {
+export function SignalField({ className }: { className?: string }) {
   const reduce = useReducedMotion();
   const [active, setActive] = useState(0);
   // Starts at 0 on server and client alike (reduced-motion is unknown during

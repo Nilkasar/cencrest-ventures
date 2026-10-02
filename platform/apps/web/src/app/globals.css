@@ -50,7 +50,7 @@
   }
 }
 
-/* Snapshot hero signal field (components/snapshot/snapshot-signal-field.tsx).
+/* Hero signal field (components/brand-hero/signal-field.tsx).
    One 6.4s cycle shared with the component's STEP_MS (1.6s x 4 models):
    each comet travels in the first 30% of its cycle, so a signal lands on
    the dial every 1.6s, starting 1.92s in — `sf-arrive` is offset to match.

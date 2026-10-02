@@ -3,9 +3,12 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { motion } from "framer-motion";
 import { Mail } from "lucide-react";
 import { Button } from "@bebest/ui";
 import { apiClient } from "@/lib/api-client";
+
+const EASE = [0.16, 1, 0.3, 1] as const;
 
 function CheckEmailContent() {
   const searchParams = useSearchParams();
@@ -28,30 +31,56 @@ function CheckEmailContent() {
   }
 
   return (
-    <div className="flex flex-col items-center text-center gap-5">
-      <div className="flex items-center justify-center size-12 rounded-full border border-border bg-surface text-accent">
-        <Mail size={20} />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <h1 className="font-display text-[22px] font-semibold text-foreground tracking-[-0.015em]">
+    <div className="flex flex-col items-center gap-7 text-center">
+      <motion.div
+        className="relative flex size-16 items-center justify-center rounded-full bg-accent-muted text-accent"
+        initial={{ scale: 0.6, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 0.6, ease: EASE }}
+        aria-hidden="true"
+      >
+        <span className="absolute inset-0 animate-ping rounded-full bg-accent-muted [animation-duration:2.4s]" />
+        <Mail size={24} className="relative" />
+      </motion.div>
+
+      <motion.div
+        className="flex flex-col gap-3"
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.2, ease: EASE }}
+      >
+        <h1 className="font-display text-[28px] font-semibold leading-[1.1] tracking-[-0.02em] text-foreground">
           Check your email
         </h1>
-        <p className="text-[13.5px] text-muted-foreground max-w-[36ch]">
-          We sent a sign-in link to <span className="font-medium text-foreground">{email}</span>. It&apos;ll be
-          valid for 15 minutes.
+        <p className="text-pretty text-[14.5px] leading-relaxed text-muted-foreground">
+          We sent a sign-in link to <span className="font-medium text-foreground">{email}</span>. It&apos;s valid
+          for 15 minutes.
         </p>
-      </div>
+      </motion.div>
 
-      <Button variant="secondary" size="sm" onClick={handleResend} loading={resending} disabled={resent}>
-        {resent ? "Link resent" : "Resend link"}
-      </Button>
-
-      <Link
-        href="/login"
-        className="text-[12.5px] text-muted-foreground hover:text-foreground underline underline-offset-4"
+      <motion.div
+        className="flex w-full flex-col items-center gap-4"
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.35, ease: EASE }}
       >
-        Use a different email
-      </Link>
+        <Button
+          variant="secondary"
+          size="lg"
+          className="h-11 w-full rounded-xl"
+          onClick={handleResend}
+          loading={resending}
+          disabled={resent}
+        >
+          {resent ? "Link resent" : "Resend link"}
+        </Button>
+        <Link
+          href="/login"
+          className="text-[13px] text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+        >
+          Use a different email
+        </Link>
+      </motion.div>
     </div>
   );
 }

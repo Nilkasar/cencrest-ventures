@@ -5,8 +5,20 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { SnapshotIntakeForm } from "./snapshot-intake-form";
 import { SnapshotConfirmation } from "./snapshot-confirmation";
-import { SnapshotHeroPanel } from "./snapshot-hero-panel";
+import { HeroPanel } from "@/components/brand-hero/hero-panel";
 import type { SnapshotSubmitResponse } from "@/data/snapshot/types";
+
+const HERO = {
+  eyebrow: "Free AI Visibility Snapshot",
+  headline: ["Does AI recommend", "your brand?"],
+  description:
+    "We ask ChatGPT, Claude, Gemini and Perplexity the questions your buyers ask — then show you exactly where you stand against your competitors.",
+  stats: [
+    { value: "4", label: "AI models queried" },
+    { value: "Top 3", label: "Competitors compared" },
+    { value: "24h", label: "To your inbox" },
+  ],
+} as const;
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -20,7 +32,7 @@ export function SnapshotIntakeView() {
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
-      <SnapshotHeroPanel />
+      <HeroPanel {...HERO} />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
         <header className="flex items-center justify-between gap-4 px-6 pt-6 sm:px-10 lg:justify-end">
