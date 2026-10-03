@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@bebest/ui";
-import { setSession, setOrgScopedAccessToken } from "@/lib/auth-state";
+import { consumePostLoginPath, setOrgScopedAccessToken, setSession } from "@/lib/auth-state";
 import { apiClient } from "@/lib/api-client";
 
 interface MeResponse {
@@ -83,7 +83,7 @@ function GoogleCallbackContent() {
 
     setSession({ accessToken, refreshToken });
     selectInitialOrg()
-      .then((hasOrg) => router.replace(hasOrg ? "/overview" : "/onboarding"))
+      .then((hasOrg) => router.replace(hasOrg ? (consumePostLoginPath() ?? "/overview") : "/onboarding"))
       .catch(() => router.replace("/overview"));
   }, [searchParams, router]);
 

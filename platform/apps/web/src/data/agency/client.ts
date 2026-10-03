@@ -203,7 +203,7 @@ export class OrgAccessDeniedError extends Error {
  * re-verifies membership AND agency access fresh on every subsequent
  * request, so minting it here grants nothing by itself.
  *
- * The caller (`OrgSwitcher`) is responsible for storing the returned
+ * The caller is responsible for storing the returned
  * `accessToken` via `lib/auth-state.ts`'s `setOrgScopedAccessToken` — this
  * function only makes the call and returns the result, it doesn't reach
  * into session storage itself.

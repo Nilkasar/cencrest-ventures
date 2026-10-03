@@ -5,9 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronRight, Menu, Search } from "lucide-react";
 import { Button, cn } from "@bebest/ui";
-import { navGroups, settingsItem, type NavItem } from "@/data/nav";
+import { navGroups, platformNavGroups, settingsItem, type NavItem } from "@/data/nav";
 import { NotificationBell } from "./notification-bell";
-import { OrgSwitcher } from "./org-switcher";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 import { JUMP_EVENT } from "./sidebar";
@@ -21,7 +20,9 @@ interface Crumb {
 
 function resolveCrumb(pathname: string): Crumb | null {
   const all = [
-    ...navGroups.flatMap((g) => g.items.map((item) => ({ group: g.label as string | undefined, item }))),
+    ...[...navGroups, ...platformNavGroups].flatMap((g) =>
+      g.items.filter((item) => !item.comingSoon).map((item) => ({ group: g.label as string | undefined, item })),
+    ),
     { group: undefined, item: settingsItem },
   ];
   // Longest matching href wins, so /crm/leads beats a hypothetical /crm.
@@ -119,8 +120,6 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
       <SearchTrigger />
 
       <div className="ml-auto flex shrink-0 items-center gap-2">
-        <OrgSwitcher />
-        <div className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden />
         <div className="flex items-center gap-0.5">
           <NotificationBell />
           <ThemeToggle />

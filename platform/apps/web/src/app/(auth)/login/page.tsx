@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, Lock } from "lucide-react";
 import { Button, Input } from "@bebest/ui";
 import { apiClient } from "@/lib/api-client";
+import { hasStoredSession, markSessionPresent, rememberPostLoginPath, safeNextPath } from "@/lib/auth-state";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -20,6 +21,22 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>();
+
+  useEffect(() => {
+    // `?next=` comes from `proxy.ts` (or a session that expired mid-page).
+    // Parked now so it survives the inbox / Google round trip; validated as
+    // a same-origin path on the way in and again on the way out.
+    const next = new URLSearchParams(window.location.search).get("next");
+    rememberPostLoginPath(next);
+    // Already signed in on this browser (e.g. a session from before the
+    // presence cookie existed): restore the cookie and go straight back.
+    // If the stored session turns out to be dead, the first API call clears
+    // it and lands here again — without a session, so no loop.
+    if (hasStoredSession()) {
+      markSessionPresent();
+      router.replace(safeNextPath(next) ?? "/overview");
+    }
+  }, [router]);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();

@@ -1,9 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { SessionProvider } from "@/lib/session-context";
+import { SessionProvider, useSession } from "@/lib/session-context";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
+
+/** Re-mounts the page whenever the session switches org, so every
+ *  org-scoped fetch on it runs again under the newly minted token instead
+ *  of showing the previous org's data. */
+function OrgScoped({ children }: { children: React.ReactNode }) {
+  const { orgEpoch } = useSession();
+  return <div key={orgEpoch} className="contents">{children}</div>;
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -21,7 +29,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="app-content flex min-h-dvh flex-col">
           <Topbar onOpenMobileNav={() => setMobileNavOpen(true)} />
           <main id="main-content" className="flex-1 px-4 py-8 sm:px-8">
-            <div className="mx-auto w-full max-w-[1180px]">{children}</div>
+            <div className="mx-auto w-full max-w-[1180px]">
+              <OrgScoped>{children}</OrgScoped>
+            </div>
           </main>
         </div>
       </div>

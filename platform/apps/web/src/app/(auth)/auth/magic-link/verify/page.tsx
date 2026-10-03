@@ -15,7 +15,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@bebest/ui";
 import { apiClient, ApiError } from "@/lib/api-client";
-import { setOrgScopedAccessToken, setSession } from "@/lib/auth-state";
+import { consumePostLoginPath, setOrgScopedAccessToken, setSession } from "@/lib/auth-state";
 
 interface VerifyResponse {
   accessToken: string;
@@ -139,7 +139,7 @@ function VerifyContent() {
         setSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
         const hasOrg = await selectInitialOrg();
         setStatus({ kind: "success" });
-        router.replace(hasOrg ? "/overview" : "/onboarding");
+        router.replace(hasOrg ? (consumePostLoginPath() ?? "/overview") : "/onboarding");
       })
       .catch((err: unknown) => {
         setStatus({ kind: "error", message: messageFor(err) });

@@ -35,6 +35,36 @@ const ORG_SLUG_STORAGE_KEY = "bebest.auth.orgSlug.v1";
 
 let accessToken: string | null = null;
 
+/**
+ * Presence cookie for `src/proxy.ts`'s sign-in redirect — UX ONLY, NOT a
+ * credential. The proxy runs before any page JS and cannot see
+ * `localStorage`, so without this a signed-out visitor to an app route got
+ * the whole shell rendered until the first API call 401'd. The value is a
+ * constant `1`: it carries no identity and grants nothing — forging it only
+ * gets you the shell of a page whose every API call still 401s. The API
+ * (bearer tokens, re-verified per request) remains the real security
+ * boundary. Set whenever a session is established or rotated (login,
+ * `/auth/refresh`), cleared on logout and on refresh failure. Lifetime
+ * mirrors the API's refresh-token TTL (7 days, `apps/api/src/lib/jwt.ts`).
+ */
+export const SESSION_PRESENCE_COOKIE = "bb_session";
+const SESSION_PRESENCE_MAX_AGE_S = 7 * 24 * 60 * 60;
+
+function writePresenceCookie(present: boolean): void {
+  if (typeof document === "undefined") return;
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = present
+    ? `${SESSION_PRESENCE_COOKIE}=1; Path=/; Max-Age=${SESSION_PRESENCE_MAX_AGE_S}; SameSite=Lax${secure}`
+    : `${SESSION_PRESENCE_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax${secure}`;
+}
+
+/** Re-asserts the presence cookie for a session already on disk (a browser
+ *  that signed in before the cookie existed, or whose cookie expired while
+ *  the refresh token is still valid). */
+export function markSessionPresent(): void {
+  writePresenceCookie(true);
+}
+
 function hasLocalStorage(): boolean {
   try {
     return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
@@ -82,6 +112,7 @@ function setRefreshToken(token: string | null): void {
 export function setSession(tokens: { accessToken: string; refreshToken: string }): void {
   setAccessToken(tokens.accessToken);
   setRefreshToken(tokens.refreshToken);
+  writePresenceCookie(true);
 }
 
 /** `/auth/select-org` mints a new org-scoped access token but does NOT
@@ -114,6 +145,24 @@ export function setSelectedOrgSlug(slug: string | null): void {
   }
 }
 
+/**
+ * The `org` claim of the in-memory access token — the organization the API
+ * scopes the next request to. Decoded WITHOUT verification: a read of our
+ * own token for display/routing only; the server re-verifies the signature
+ * and the membership behind the claim on every request.
+ */
+export function getAccessTokenOrgId(): string | null {
+  if (!accessToken) return null;
+  try {
+    const payload = accessToken.split(".")[1];
+    if (!payload) return null;
+    const claims = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as { org?: unknown };
+    return typeof claims.org === "string" ? claims.org : null;
+  } catch {
+    return null;
+  }
+}
+
 /** True if a refresh token is on disk — i.e. "was logged in on this
  *  browser," even though `accessToken` is always null immediately after a
  *  reload. Doesn't guarantee the refresh token is still valid server-side
@@ -127,9 +176,73 @@ export function clearSession(): void {
   setAccessToken(null);
   setRefreshToken(null);
   setSelectedOrgSlug(null);
+  writePresenceCookie(false);
 }
 
-const AUTH_PAGE_PREFIXES = ["/login", "/auth/magic-link/verify"];
+const SAME_ORIGIN_BASE = "http://same-origin.invalid";
+
+/**
+ * Where to send the user after sign-in. Only same-origin relative paths are
+ * accepted ("/x" — never "//host", "/\host" or "https://…"), so `?next=`
+ * can never become an open redirect. Returns null for anything else.
+ */
+export function safeNextPath(raw: string | null | undefined): string | null {
+  if (!raw || raw.length > 2048) return null;
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) return null;
+  if (/[\u0000-\u001f]/.test(raw)) return null;
+  try {
+    const url = new URL(raw, SAME_ORIGIN_BASE);
+    if (url.origin !== SAME_ORIGIN_BASE) return null;
+    if (url.pathname === "/login" || url.pathname.startsWith("/login/") || url.pathname.startsWith("/auth/")) {
+      return null;
+    }
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `?next=` has to survive the trip through the user's inbox (the magic link
+ * is often opened in a new tab) or Google's consent screen, so it's parked
+ * here when sign-in starts and consumed once by the page that completes it —
+ * re-validated on the way out.
+ */
+const NEXT_PATH_STORAGE_KEY = "bebest.auth.next.v1";
+
+export function rememberPostLoginPath(raw: string | null | undefined): void {
+  if (!hasLocalStorage()) return;
+  const next = safeNextPath(raw);
+  try {
+    if (next) window.localStorage.setItem(NEXT_PATH_STORAGE_KEY, next);
+    else window.localStorage.removeItem(NEXT_PATH_STORAGE_KEY);
+  } catch {
+    // Storage blocked — the user just lands on the default page.
+  }
+}
+
+export function consumePostLoginPath(): string | null {
+  if (!hasLocalStorage()) return null;
+  try {
+    const raw = window.localStorage.getItem(NEXT_PATH_STORAGE_KEY);
+    window.localStorage.removeItem(NEXT_PATH_STORAGE_KEY);
+    return safeNextPath(raw);
+  } catch {
+    return null;
+  }
+}
+
+/** `/login`, carrying the page to return to after sign-in. */
+export function loginUrlFor(path: string | null): string {
+  const next = safeNextPath(path);
+  return next ? `/login?next=${encodeURIComponent(next)}` : "/login";
+}
+
+function currentPath(): string {
+  return `${window.location.pathname}${window.location.search}`;
+}
+
+const AUTH_PAGE_PREFIXES = ["/login", "/auth/"];
 
 function isOnAuthPage(): boolean {
   if (typeof window === "undefined") return false;
@@ -138,9 +251,10 @@ function isOnAuthPage(): boolean {
 
 /** Called when a refresh attempt fails (refresh token missing, expired, or
  *  revoked) while retrying a 401 — i.e. the session is truly over, not just
- *  the access token expiring normally. Clears local state and, since this
- *  app has no route-guard middleware yet to react to "logged out" on its
- *  own, forces navigation back to `/login` directly. Guarded against
+ *  the access token expiring normally. Clears local state — including the
+ *  presence cookie, so `proxy.ts` treats this browser as signed out from
+ *  the next navigation on — and sends the user to `/login?next=<here>`.
+ *  Guarded against
  *  redirect loops on pages that never had a session to lose in the first
  *  place (login/verify themselves never reach this path — see
  *  `api-client.ts`). */
@@ -149,8 +263,7 @@ export function handleSessionExpired(): void {
   if (typeof window !== "undefined" && !isOnAuthPage()) {
     // A plain module, not a component — there's no `useRouter()`/`redirect()`
     // to reach for here, this fires from `api-client.ts`'s fetch layer.
-    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.href = "/login";
+    window.location.href = loginUrlFor(currentPath());
   }
 }
 
@@ -163,8 +276,7 @@ if (hasLocalStorage()) {
   window.addEventListener("storage", (event) => {
     if (event.key === REFRESH_TOKEN_STORAGE_KEY && event.newValue === null) {
       setAccessToken(null);
-      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-      if (!isOnAuthPage()) window.location.href = "/login";
+      if (!isOnAuthPage()) window.location.href = loginUrlFor(currentPath());
     }
   });
 }

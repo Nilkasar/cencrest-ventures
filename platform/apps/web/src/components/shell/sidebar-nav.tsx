@@ -6,8 +6,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, Search, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger, cn } from "@bebest/ui";
-import { navGroups, settingsItem, type NavItem } from "@/data/nav";
+import type { NavGroup, NavItem } from "@/data/nav";
 import { readClosedGroups, writeClosedGroups } from "@/lib/use-sidebar";
+import { useWorkspaceNav } from "./use-workspace-nav";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -28,6 +29,41 @@ interface NavLinkProps {
 
 function NavLink({ item, active, collapsed, highlighted, pillId, onNavigate }: NavLinkProps) {
   const Icon = item.icon;
+
+  if (item.comingSoon) {
+    // Not built yet: visible so the view's shape is clear, but not a link
+    // (no 404s) and not a tab stop.
+    const row = (
+      <div
+        aria-disabled="true"
+        aria-label={collapsed ? `${item.label} (${item.comingSoon})` : undefined}
+        className={cn(
+          "flex h-9 cursor-default select-none items-center rounded-lg text-[13.5px] font-medium text-subtle-foreground/80",
+          collapsed ? "mx-auto w-10 justify-center" : "gap-3 px-3",
+        )}
+      >
+        <Icon size={16} className="shrink-0 opacity-70" />
+        {!collapsed && (
+          <>
+            <span className="truncate">{item.label}</span>
+            <span className="ml-auto shrink-0 rounded border border-border px-1 font-mono text-[9.5px] uppercase leading-4 tracking-[0.08em]">
+              {item.comingSoon}
+            </span>
+          </>
+        )}
+      </div>
+    );
+    if (!collapsed) return row;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{row}</TooltipTrigger>
+        <TooltipContent side="right" sideOffset={10}>
+          {item.label} · {item.comingSoon}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
   const link = (
     <Link
       href={item.href}
@@ -127,17 +163,22 @@ interface SidebarNavProps {
 }
 
 /** Items matching the jump-to query, in nav order. */
-export function filterNav(query: string): NavItem[] {
+export function filterNav(query: string, groups: NavGroup[], footer: NavItem | null): NavItem[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
-  return [...navGroups.flatMap((g) => g.items.map((item) => ({ item, group: g.label }))), { item: settingsItem, group: "" }]
+  return [
+    ...groups.flatMap((g) => g.items.map((item) => ({ item, group: g.label }))),
+    ...(footer ? [{ item: footer, group: "" }] : []),
+  ]
+    .filter(({ item }) => !item.comingSoon)
     .filter(({ item, group }) => item.label.toLowerCase().includes(q) || group.toLowerCase().includes(q))
     .map(({ item }) => item);
 }
 
 export function useJumpTo(query: string, setQuery: (v: string) => void, onNavigate?: () => void) {
   const router = useRouter();
-  const results = useMemo(() => filterNav(query), [query]);
+  const { groups, footer } = useWorkspaceNav();
+  const results = useMemo(() => filterNav(query, groups, footer), [query, groups, footer]);
   const [highlightIndex, setHighlightIndex] = useState(0);
   const [prevQuery, setPrevQuery] = useState(query);
   if (prevQuery !== query) {
@@ -169,6 +210,7 @@ export function useJumpTo(query: string, setQuery: (v: string) => void, onNaviga
 
 export function SidebarNav({ collapsed, query, pillId, highlightIndex, onNavigate }: SidebarNavProps) {
   const pathname = usePathname();
+  const { workspace, groups, footer } = useWorkspaceNav();
   const [closed, setClosed] = useState<string[]>([]);
 
   useEffect(() => {
@@ -185,11 +227,11 @@ export function SidebarNav({ collapsed, query, pillId, highlightIndex, onNavigat
     });
   }
 
-  const results = filterNav(query);
+  const results = filterNav(query, groups, footer);
   const searching = !collapsed && query.trim().length > 0;
 
   return (
-    <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col">
+    <nav aria-label={workspace === "platform" ? "Platform" : "Main"} className="flex min-h-0 flex-1 flex-col">
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 [scrollbar-width:thin]">
         {searching ? (
           results.length === 0 ? (
@@ -211,7 +253,7 @@ export function SidebarNav({ collapsed, query, pillId, highlightIndex, onNavigat
           )
         ) : (
           <div className="flex flex-col gap-4">
-            {navGroups.map((group, gi) => {
+            {groups.map((group, gi) => {
               const isClosed = !collapsed && closed.includes(group.label);
               // A closed group still shows its active page, so "where am I" never hides.
               const visible = isClosed ? group.items.filter((item) => isActive(pathname, item.href)) : group.items;
@@ -264,15 +306,17 @@ export function SidebarNav({ collapsed, query, pillId, highlightIndex, onNavigat
         )}
       </div>
 
-      <div className="shrink-0 border-t border-[var(--sidebar-border)] px-3 py-3">
-        <NavLink
-          item={settingsItem}
-          active={isActive(pathname, settingsItem.href)}
-          collapsed={collapsed}
-          pillId={pillId}
-          onNavigate={onNavigate}
-        />
-      </div>
+      {footer && (
+        <div className="shrink-0 border-t border-[var(--sidebar-border)] px-3 py-3">
+          <NavLink
+            item={footer}
+            active={isActive(pathname, footer.href)}
+            collapsed={collapsed}
+            pillId={pillId}
+            onNavigate={onNavigate}
+          />
+        </div>
+      )}
     </nav>
   );
 }

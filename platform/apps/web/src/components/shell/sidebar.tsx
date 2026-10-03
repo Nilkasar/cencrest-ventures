@@ -7,6 +7,8 @@ import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import { Tooltip, TooltipContent, TooltipTrigger, cn } from "@bebest/ui";
 import { useSidebarCollapsed } from "@/lib/use-sidebar";
 import { SidebarNav, SidebarSearch, useJumpTo } from "./sidebar-nav";
+import { useWorkspaceNav } from "./use-workspace-nav";
+import { ViewSwitcher } from "./view-switcher";
 
 const SIDEBAR_WIDTH = 240;
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -20,9 +22,10 @@ function isTypingTarget(target: EventTarget | null) {
 }
 
 function Wordmark() {
+  const { workspace } = useWorkspaceNav();
   return (
     <Link
-      href="/overview"
+      href={workspace === "platform" ? "/platform" : "/overview"}
       className="flex min-w-0 items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -127,6 +130,10 @@ function SidebarBody({
             )}
           </>
         )}
+      </div>
+
+      <div className={cn("shrink-0 pt-3", collapsed ? "flex justify-center px-3" : "px-3")}>
+        <ViewSwitcher collapsed={collapsed} onNavigate={onClose} />
       </div>
 
       <div className="shrink-0 pt-3 pb-1">

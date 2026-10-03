@@ -18,7 +18,15 @@ import {
   Sparkles,
   Bot,
   Cable,
+  Gauge,
+  Building,
+  UsersRound,
+  Briefcase,
+  TrendingUp,
+  Activity,
+  ScrollText,
 } from "lucide-react";
+import type { OrgKind } from "@/lib/session-context";
 
 export interface NavItem {
   href: string;
@@ -26,6 +34,9 @@ export interface NavItem {
   icon: ComponentType<{ size?: number; className?: string }>;
   /** Which future epic (see platform/EPICS.md) delivers real data here. */
   epic?: number;
+  /** Listed so the shape of the view is visible, but not built yet —
+   *  rendered as a non-interactive row, never a link to a 404. */
+  comingSoon?: string;
 }
 
 export interface NavGroup {
@@ -78,3 +89,37 @@ export const navGroups: NavGroup[] = [
 ];
 
 export const settingsItem: NavItem = { href: "/settings", label: "Settings", icon: Settings };
+
+/**
+ * Organization view (Epic 22): the full nav minus the groups the active
+ * org's kind doesn't entitle — CRM is BeBest's own internal sales tool
+ * (`kind === 'internal'`), Agency is the client portfolio
+ * (`kind === 'agency'`). The API enforces both independently.
+ */
+export function orgNavGroups(kind: OrgKind | null | undefined): NavGroup[] {
+  return navGroups.filter((group) => {
+    if (group.label === "CRM") return kind === "internal";
+    if (group.label === "Agency") return kind === "agency";
+    return true;
+  });
+}
+
+/** Platform view (BeBest staff). Phase 0 ships the landing page only; the
+ *  Phase 1 sections are listed, marked as coming. */
+export const platformNavGroups: NavGroup[] = [
+  {
+    label: "Platform",
+    items: [{ href: "/platform", label: "Overview", icon: Gauge }],
+  },
+  {
+    label: "Phase 1",
+    items: [
+      { href: "/platform/organizations", label: "Organizations", icon: Building, comingSoon: "Phase 1" },
+      { href: "/platform/users", label: "Users", icon: UsersRound, comingSoon: "Phase 1" },
+      { href: "/platform/agencies", label: "Agencies", icon: Briefcase, comingSoon: "Phase 1" },
+      { href: "/platform/growth", label: "Growth", icon: TrendingUp, comingSoon: "Phase 1" },
+      { href: "/platform/operations", label: "Operations", icon: Activity, comingSoon: "Phase 1" },
+      { href: "/platform/audit", label: "Audit log", icon: ScrollText, comingSoon: "Phase 1" },
+    ],
+  },
+];
