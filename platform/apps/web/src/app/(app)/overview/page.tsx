@@ -10,7 +10,7 @@ export default function OverviewPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Overview"
-        description="How am I doing? Your AI Visibility Score, SEO Health, active opportunities, and the single next thing to do."
+        description="How am I doing? Your whole workspace at a glance — what AI assistants say about you, how you rank, what to do next, and what your work has already moved."
       />
       <OverviewView />
     </>

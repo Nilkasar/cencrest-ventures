@@ -88,4 +88,81 @@ aiRunDetailsRoute.get('/:id/responses', requireAuth, authenticatedRateLimit, req
   });
 });
 
+// ── GET /:id/provider-summary — per-model observation counts ────────────
+// Read-only aggregate for the Overview dashboard's per-model nodes. The
+// same numbers are derivable client-side from `/responses`, but that means
+// paging every raw response body (thousands of rows of model prose on a
+// Pro-tier run) just to count four booleans per provider. This selects only
+// the handful of scalar columns it counts — no `raw_response` — and returns
+// one row per provider in the run's own `providers` order (providers with
+// no responses yet still get a zeroed row, so a running run never loses a
+// model). Rates are over EXTRACTED responses only — a response whose
+// observation hasn't landed can't honestly count as "not mentioned".
+aiRunDetailsRoute.get('/:id/provider-summary', requireAuth, authenticatedRateLimit, requireOrgFromToken('viewer'), requirePermission(VIEW), async (c) => {
+  const org = c.get('org');
+  const run = await getAiRun(org.organizationId, c.req.param('id'));
+  if (!run) return c.json(NOT_FOUND_ERROR, 404);
+
+  const rows = await withOrgContext(org.organizationId, (tx) =>
+    tx.ai_run_responses.findMany({
+      where: { ai_run_id: run.id, organization_id: org.organizationId },
+      select: {
+        provider: true,
+        latency_ms: true,
+        brand_observations: { select: { brand_mentioned: true, brand_recommended: true, brand_first_position: true } },
+      },
+    }),
+  );
+
+  interface Acc {
+    responses: number;
+    extracted: number;
+    mentioned: number;
+    recommended: number;
+    positions: number[];
+    latencies: number[];
+  }
+  const order: string[] = [...run.providers];
+  const byProvider = new Map<string, Acc>(order.map((p) => [p, { responses: 0, extracted: 0, mentioned: 0, recommended: 0, positions: [], latencies: [] }]));
+  for (const row of rows) {
+    let acc = byProvider.get(row.provider);
+    if (!acc) {
+      acc = { responses: 0, extracted: 0, mentioned: 0, recommended: 0, positions: [], latencies: [] };
+      byProvider.set(row.provider, acc);
+      order.push(row.provider);
+    }
+    acc.responses += 1;
+    if (row.latency_ms !== null) acc.latencies.push(row.latency_ms);
+    const obs = row.brand_observations;
+    if (!obs) continue;
+    acc.extracted += 1;
+    if (obs.brand_mentioned) acc.mentioned += 1;
+    if (obs.brand_recommended) acc.recommended += 1;
+    if (obs.brand_first_position !== null) acc.positions.push(Number(obs.brand_first_position));
+  }
+
+  const round1 = (n: number) => Math.round(n * 10) / 10;
+  const mean = (xs: number[]) => (xs.length === 0 ? null : xs.reduce((a, b) => a + b, 0) / xs.length);
+
+  return c.json({
+    runId: run.id,
+    providers: order.map((provider) => {
+      const acc = byProvider.get(provider)!;
+      const avgPos = mean(acc.positions);
+      const avgLatency = mean(acc.latencies);
+      return {
+        provider,
+        responses: acc.responses,
+        extracted: acc.extracted,
+        mentioned: acc.mentioned,
+        recommended: acc.recommended,
+        mentionRatePct: acc.extracted > 0 ? round1((acc.mentioned / acc.extracted) * 100) : null,
+        recommendationRatePct: acc.extracted > 0 ? round1((acc.recommended / acc.extracted) * 100) : null,
+        avgFirstPosition: avgPos === null ? null : Math.round(avgPos * 1000) / 1000,
+        avgLatencyMs: avgLatency === null ? null : Math.round(avgLatency),
+      };
+    }),
+  });
+});
+
 export default aiRunDetailsRoute;

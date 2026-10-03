@@ -179,3 +179,134 @@
   background-size: 22px 22px;
   mask-image: radial-gradient(ellipse 80% 70% at 60% 55%, #000 30%, transparent 100%);
 }
+
+/* ── Overview command center (components/overview/*) ───────────────────
+   Every continuous motion on the dashboard is CSS on a handful of SVG
+   strokes — no per-frame JS. A widget scrolled offscreen sets
+   `data-paused="true"` on its root and everything inside stops. All of it
+   is also stopped by the global prefers-reduced-motion rule in tokens.css;
+   the comets/particles are hidden outright under it so a frozen mid-flight
+   dash never reads as data. */
+[data-paused="true"] * {
+  animation-play-state: paused !important;
+}
+
+/* A signal travelling along a model -> dial wire. Duration/delay come from
+   the element (`--ov-dur`, `--ov-delay`), so a stronger signal (higher
+   mention rate) can arrive more often than a weak one. */
+.ov-comet {
+  stroke-dasharray: 9 100;
+  stroke-dashoffset: 9;
+  opacity: 0;
+  animation: ov-travel var(--ov-dur, 3.2s) cubic-bezier(0.45, 0, 0.25, 1) var(--ov-delay, 0s) infinite;
+}
+@keyframes ov-travel {
+  0% {
+    stroke-dashoffset: 9;
+    opacity: 0;
+  }
+  6% {
+    opacity: 1;
+  }
+  44% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+}
+
+/* Particles drifting along a flow band (execution loop, CRM funnel). */
+.ov-flow {
+  stroke-dasharray: 1.5 14;
+  animation: ov-flow var(--ov-dur, 6s) linear infinite;
+}
+@keyframes ov-flow {
+  to {
+    stroke-dashoffset: -155;
+  }
+}
+
+.ov-spin {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sf-spin var(--ov-dur, 80s) linear infinite;
+}
+.ov-spin-rev {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sf-spin var(--ov-dur, 120s) linear infinite reverse;
+}
+
+.ov-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ov-pulse 2.4s var(--ease-decelerate) infinite;
+}
+@keyframes ov-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  80%,
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+.ov-breathe {
+  animation: sf-breathe 7s ease-in-out infinite;
+}
+
+/* "Live" status dot — a ring expanding off a solid dot. */
+.ov-live {
+  position: relative;
+}
+.ov-live::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: currentColor;
+  animation: ov-live 1.8s var(--ease-decelerate) infinite;
+}
+@keyframes ov-live {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+
+/* Faint instrument grid + accent glow behind the hero, theme-aware: the
+   dots are the foreground colour at low alpha, so they read on paper and
+   on ink alike. */
+.ov-grid {
+  background-image: radial-gradient(color-mix(in oklab, var(--foreground) 9%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 75% 80% at 35% 50%, #000 25%, transparent 100%);
+}
+.ov-glow {
+  background: radial-gradient(
+    ellipse 55% 70% at 32% 50%,
+    color-mix(in oklab, var(--accent) 16%, transparent),
+    transparent 70%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ov-comet,
+  .ov-pulse,
+  .ov-live::after {
+    display: none;
+  }
+  .ov-flow {
+    animation: none;
+  }
+}

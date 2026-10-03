@@ -233,3 +233,38 @@ describe('GET /ai-runs/:id/responses', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('GET /ai-runs/:id/provider-summary', () => {
+  it('counts observations per provider in run order, rates over extracted responses only, never selecting raw_response', async () => {
+    db.ai_run_responses.findMany.mockResolvedValue([
+      { provider: 'openai', latency_ms: 400, brand_observations: { brand_mentioned: true, brand_recommended: true, brand_first_position: 0.2 } },
+      { provider: 'openai', latency_ms: 600, brand_observations: { brand_mentioned: false, brand_recommended: false, brand_first_position: null } },
+      { provider: 'anthropic', latency_ms: 300, brand_observations: { brand_mentioned: true, brand_recommended: false, brand_first_position: 0.5 } },
+      // Extraction not landed yet — counts as a response, never as "not mentioned".
+      { provider: 'anthropic', latency_ms: null, brand_observations: null },
+    ]);
+
+    const app = await buildApp();
+    const res = await app.request('/ai-runs/run-1/provider-summary', { headers: await authHeader('user-1', 'org-1') });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { runId: string; providers: Array<Record<string, unknown>> };
+
+    expect(body.runId).toBe('run-1');
+    expect(body.providers.map((p) => p.provider)).toEqual(['openai', 'anthropic', 'google', 'perplexity']);
+    expect(body.providers[0]).toMatchObject({ responses: 2, extracted: 2, mentioned: 1, recommended: 1, mentionRatePct: 50, recommendationRatePct: 50, avgFirstPosition: 0.2, avgLatencyMs: 500 });
+    expect(body.providers[1]).toMatchObject({ responses: 2, extracted: 1, mentioned: 1, mentionRatePct: 100, avgLatencyMs: 300 });
+    // A provider with no responses yet keeps a zeroed row rather than vanishing.
+    expect(body.providers[2]).toMatchObject({ responses: 0, extracted: 0, mentionRatePct: null, avgFirstPosition: null });
+
+    const call = db.ai_run_responses.findMany.mock.calls[0]![0] as { where: Record<string, unknown>; select: Record<string, unknown> };
+    expect(call.where).toMatchObject({ ai_run_id: 'run-1', organization_id: 'org-1' });
+    expect(call.select).not.toHaveProperty('raw_response');
+  });
+
+  it('404s when the run does not exist for this org', async () => {
+    db.ai_runs.findFirst.mockResolvedValue(null);
+    const app = await buildApp();
+    const res = await app.request('/ai-runs/nope/provider-summary', { headers: await authHeader('user-1', 'org-1') });
+    expect(res.status).toBe(404);
+  });
+});

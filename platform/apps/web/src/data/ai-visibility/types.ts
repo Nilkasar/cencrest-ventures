@@ -128,3 +128,25 @@ export interface AiVisibilityQueryMeta {
   intentType: "informational" | "commercial" | "comparison" | "transactional" | null;
   category: string | null;
 }
+
+/** One row of `GET /ai-runs/:id/provider-summary` — per-model observation
+ *  counts for a run, in the run's own `providers` order. Rates are over
+ *  EXTRACTED responses only (`null` until at least one has extracted). */
+export interface AiRunProviderSummaryRow {
+  provider: string;
+  responses: number;
+  extracted: number;
+  mentioned: number;
+  recommended: number;
+  mentionRatePct: number | null;
+  recommendationRatePct: number | null;
+  /** Mean relative position of the first brand mention in the response
+   *  (0 = very start, 1 = very end) across mentioning responses. */
+  avgFirstPosition: number | null;
+  avgLatencyMs: number | null;
+}
+
+export interface AiRunProviderSummary {
+  runId: string;
+  providers: AiRunProviderSummaryRow[];
+}
