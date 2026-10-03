@@ -27,6 +27,11 @@ function translateError(provider: string, err: unknown): never {
     const body = err.body as { error?: string } | undefined;
     // Backend returns 404 for not_connected (no integration row / wrong status)
     if (err.status === 404 && body?.error === "not_connected") throw new ConnectorNotConnectedError(provider);
+    // Backend returns 422 when connected but no verified site exists in GSC
+    if (err.status === 422 && body?.error === "no_site_found") {
+      const msg = (body as { message?: string }).message ?? "No verified site found in your Search Console account.";
+      throw new Error(msg);
+    }
     // Backend returns 409 for token_expired (integration exists but token is stale)
     if (err.status === 409 && body?.error === "token_expired") throw new TokenExpiredError(provider);
     if (err.status === 503 && body?.error === "google_oauth_not_configured") throw new OAuthNotConfiguredError();

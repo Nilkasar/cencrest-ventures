@@ -303,7 +303,7 @@ integrationsRoute.get(
       siteUrl?: string;
     } | null;
 
-    if (!cfg?.accessToken || !cfg.siteUrl) {
+    if (!cfg?.accessToken) {
       return c.json({ error: 'not_connected' }, 404);
     }
 
@@ -316,11 +316,30 @@ integrationsRoute.get(
     if ('error' in tokenResult) return c.json({ error: tokenResult.error, message: tokenResult.message }, tokenResult.status);
     const { accessToken } = tokenResult;
 
+    // siteUrl may not have been discovered at connect time — try to resolve it now
+    let siteUrl = cfg.siteUrl;
+    if (!siteUrl) {
+      const gscProvider = new GoogleSearchConsoleProvider(accessToken);
+      siteUrl = (await gscProvider.getSiteUrl()) ?? undefined;
+      if (!siteUrl) {
+        return c.json(
+          { error: 'no_site_found', message: 'No verified site found in your Google Search Console account. Add and verify your site at search.google.com/search-console first.' },
+          422,
+        );
+      }
+      await withOrgContext(org.organizationId, (tx) =>
+        tx.integrations.update({
+          where: { id: connection.id },
+          data: { config_enc: { ...cfg, siteUrl }, updated_at: new Date() },
+        }),
+      );
+    }
+
     const rawDays = c.req.query('days');
     const days = Math.min(Math.max(rawDays ? parseInt(rawDays, 10) || 28 : 28, 1), 90);
 
     try {
-      const stats = await getGSCStats(accessToken, cfg.siteUrl, days);
+      const stats = await getGSCStats(accessToken, siteUrl, days);
       return c.json(stats);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
