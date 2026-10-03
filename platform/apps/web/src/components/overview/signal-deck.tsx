@@ -4,7 +4,22 @@ import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowUpRight, Minus, Radar, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
-import { Badge, Button, Card, Skeleton, cn, easings } from "@bebest/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  Skeleton,
+  cn,
+  easings,
+} from "@bebest/ui";
 import type { AsyncState } from "@/lib/use-async-data";
 import { getAiRunProviderSummary, getAiRunScore, startAiRun } from "@/data/ai-visibility/client";
 import { describeStartError } from "@/components/ai-visibility/ai-run-empty-state";
@@ -226,12 +241,55 @@ function useStartScan(onStarted: () => void) {
   return { starting, start, errorInfo };
 }
 
+/** A scan spends the org's monthly AI query allowance, so every trigger
+ *  on the Overview goes through this confirmation first. */
+function ConfirmScanDialog({ scan, children }: { scan: ScanTrigger; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+
+  async function handleConfirm() {
+    await scan.start();
+    // Closed either way: a start failure renders inline on the deck.
+    setOpen(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !scan.starting && setOpen(next)}>
+      <DialogTrigger asChild>{children}</DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Run a visibility scan?</DialogTitle>
+          <DialogDescription>
+            We’ll ask ChatGPT, Claude, Gemini and Perplexity every question in your active query set and recalculate your AI
+            Visibility Score.
+          </DialogDescription>
+        </DialogHeader>
+        <ul className="flex flex-col gap-2 text-[13px] text-muted-foreground">
+          <li>• Uses AI queries from your plan’s monthly allowance.</li>
+          <li>• Takes about 20–60 minutes and runs in the background — you can leave this page.</li>
+        </ul>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="ghost" size="sm" disabled={scan.starting}>
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button type="button" variant="primary" size="sm" loading={scan.starting} onClick={() => void handleConfirm()}>
+            {scan.starting ? "Starting…" : "Start scan"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function RunScanButton({ scan, className }: { scan: ScanTrigger; className?: string }) {
   return (
-    <Button variant="outline" size="sm" loading={scan.starting} onClick={() => void scan.start()} className={className}>
-      {!scan.starting && <RefreshCw size={13} aria-hidden="true" />}
-      {scan.starting ? "Starting…" : "Run scan"}
-    </Button>
+    <ConfirmScanDialog scan={scan}>
+      <Button variant="outline" size="sm" loading={scan.starting} className={className}>
+        {!scan.starting && <RefreshCw size={13} aria-hidden="true" />}
+        {scan.starting ? "Starting…" : "Run scan"}
+      </Button>
+    </ConfirmScanDialog>
   );
 }
 
@@ -259,9 +317,11 @@ function FirstRunCallout({ scan }: { scan: ScanTrigger }) {
         No visibility scan has run yet, so there’s no score to show. Your first run asks every model your real buyer questions —
         about 20–60 minutes, in the background. Leave whenever you like; this dial fills in when it lands.
       </p>
-      <Button variant="primary" size="md" className="self-start" loading={scan.starting} onClick={() => void scan.start()}>
-        {scan.starting ? "Starting your scan…" : "Run your first visibility scan"}
-      </Button>
+      <ConfirmScanDialog scan={scan}>
+        <Button variant="primary" size="md" className="self-start" loading={scan.starting}>
+          {scan.starting ? "Starting your scan…" : "Run your first visibility scan"}
+        </Button>
+      </ConfirmScanDialog>
     </div>
   );
 }
