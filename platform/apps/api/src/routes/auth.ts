@@ -9,6 +9,7 @@ import {
 } from '../lib/jwt.js';
 import { generateOpaqueToken } from '../lib/tokens.js';
 import type { EmailSender } from '../lib/email.js';
+import { issueMagicLink } from '../lib/magic-link.js';
 import { requireAuth } from '../middleware/auth.js';
 import { authRateLimit, authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { auditLog } from '../middleware/audit-log.js';
@@ -16,8 +17,6 @@ import { parsePlatformRole } from '../middleware/platform-role.js';
 import { resolveAgencyAccess } from '../lib/agency-access.js';
 import { clientIp } from '../lib/client-ip.js';
 import type { AppEnv } from '../types/context.js';
-
-const MAGIC_LINK_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
 /**
  * Resolves an org the given user may act as — direct membership first, then
@@ -69,19 +68,7 @@ export function createAuthRoutes(emailSender: EmailSender) {
       return c.json({ success: true });
     }
 
-    const { email } = parsed.data;
-    const { token, hash } = generateOpaqueToken(32);
-    const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL_MS);
-
-    await db.magic_link_tokens.create({
-      data: { email, token_hash: hash, expires_at: expiresAt },
-    });
-
-    const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
-    await emailSender.sendMagicLink({
-      to: email,
-      magicLinkUrl: `${appUrl}/auth/magic-link/verify?token=${token}`,
-    });
+    await issueMagicLink(emailSender, parsed.data.email);
 
     return c.json({ success: true });
   });

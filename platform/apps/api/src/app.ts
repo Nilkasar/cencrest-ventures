@@ -54,6 +54,7 @@ import agency from './routes/agency.js';
 import whiteLabel from './routes/white-label.js';
 import integrations from './routes/integrations.js';
 import platformSession from './routes/platform/session.js';
+import { createPlatformRoutes } from './routes/platform/index.js';
 import { ConsoleEmailSender, ResendEmailSender } from './lib/email.js';
 import { getDefaultErrorTracker } from './lib/observability/default-error-tracker.js';
 import { clientFaultResponse } from './lib/db-errors.js';
@@ -337,9 +338,12 @@ app.route('/api/integrations', integrations);
 // (middleware/platform-role.ts), which re-reads `users.platform_role` from
 // the database and writes a `platform_access_events` row before the handler
 // runs. Only files under `routes/platform/` may import `platformDb` (ESLint
-// `no-restricted-imports`, apps/api/eslint.config.mjs). Phase 0 ships only
-// `/session`, the route that proves the guard is wired end to end.
+// `no-restricted-imports`, apps/api/eslint.config.mjs). Phase 0 shipped
+// `/session`; Phase 1 adds overview, capabilities, orgs, users, agencies,
+// jobs, audit and growth (routes/platform/index.ts). Data routes answer 503
+// when PLATFORM_DATABASE_URL is unset.
 app.route('/api/platform/session', platformSession);
+app.route('/api/platform', createPlatformRoutes(emailSender));
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 

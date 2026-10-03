@@ -24,7 +24,7 @@ const db = {
   subscriptions: { findFirst: vi.fn(), update: vi.fn() },
   plans: { findUnique: vi.fn() },
   billing_webhook_events: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
-  audit_events: { create: vi.fn().mockResolvedValue({}) },
+  audit_events: { create: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({ count: 1 }) },
 };
 
 vi.mock('@bebest/database', () => ({
@@ -81,8 +81,8 @@ describe('POST /webhooks/billing — signature verification', () => {
     expect(res.status).toBe(400);
     expect(db.subscriptions.update).not.toHaveBeenCalled();
     expect(db.organizations.update).not.toHaveBeenCalled();
-    expect(db.audit_events.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ action: 'billing.webhook_rejected', result: 'failure' }) }),
+    expect(db.audit_events.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: [expect.objectContaining({ action: 'billing.webhook_rejected', result: 'failure' })] }),
     );
   });
 

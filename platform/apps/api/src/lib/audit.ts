@@ -70,7 +70,13 @@ export async function writeAuditEvent(input: AuditEventInput): Promise<void> {
     if (input.organizationId) {
       await withOrgContext(input.organizationId, (tx) => tx.audit_events.create({ data }));
     } else {
-      await db.audit_events.create({ data });
+      // `createMany`, not `create`: `create` adds `RETURNING`, and Postgres
+      // checks returned rows against the SELECT policy (`audit_events_read`:
+      // organization_id = app.current_org), which a null-org row can never
+      // satisfy — so under `bebest_app` every platform-level event (login,
+      // logout, staff actions) failed with 42501 and was swallowed below.
+      // Found by Epic 22 Phase 1's smoke; same fix as platform_access_events.
+      await db.audit_events.createMany({ data: [data] });
     }
   } catch (err) {
     console.error(
@@ -169,4 +175,9 @@ export const ALWAYS_AUDITED_ACTIONS = [
   // movement, report-ready) now routes through.
   'report.generated',
   'notification.sent',
+  // Epic 22 (Workspace Views) Phase 1 — BeBest staff acting from the
+  // Platform view (routes/platform/*). Reads are logged separately, in
+  // platform_access_events; these are the staff WRITES.
+  'platform.job_cancelled',
+  'platform.magic_link_sent',
 ] as const;

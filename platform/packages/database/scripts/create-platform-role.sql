@@ -32,9 +32,11 @@
 -- may DO. Phase 0 grants SELECT on every table and INSERT on
 -- `platform_access_events` only. Later phases add the specific writes they
 -- need, one statement each, here:
---   Phase 1 — job retry/cancel (UPDATE on the job tables),
---             admin magic-link / disable user (INSERT magic_link_tokens,
---             UPDATE users).
+--   Phase 1 — job cancel: column-level UPDATE on the four job tables (see
+--             the grants at the bottom). The admin magic link and the
+--             cancel's audit row are written through `bebest_app`, so
+--             Phase 1 grants no INSERT anywhere. Retry and "disable user"
+--             were deferred out of Phase 1 and are not granted.
 --   Phase 4 — support_sessions (INSERT/UPDATE), plan comp / limit override,
 --             org suspension, platform_role grants.
 -- Never a blanket INSERT/UPDATE/DELETE: a staff tool that can read
@@ -98,6 +100,22 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO bebest_platf
 
 -- Phase 0's only write: the access log itself.
 GRANT INSERT ON platform_access_events TO bebest_platform;
+
+-- Phase 1 — `POST /api/platform/jobs/:type/:id/cancel` (admin). COLUMN-level
+-- UPDATE on exactly the columns a cancel writes, nothing else: staff can
+-- move a stuck job to its terminal status and say why, but cannot rewrite
+-- a job's scores, counters, owner or organization. Every other Phase 1
+-- write goes through the request role, not this one: the admin magic link
+-- (`magic_link_tokens`) and the `audit_events` row for a cancel are written
+-- by `bebest_app` exactly as the customer-facing code paths write them, so
+-- this role needs no INSERT on either.
+GRANT UPDATE (status, error, completed_at, updated_at) ON crawl_jobs TO bebest_platform;
+GRANT UPDATE (status, error, completed_at, updated_at) ON ai_runs TO bebest_platform;
+GRANT UPDATE (status, error, completed_at, updated_at) ON agent_runs TO bebest_platform;
+-- `snapshot_requests` has no `error`/`completed_at` column; a failure
+-- reason lives in `result_json` (`{ "error": ... }`, the orchestrator's own
+-- failure shape — lib/free-snapshot/orchestrator.ts).
+GRANT UPDATE (status, result_json, updated_at) ON snapshot_requests TO bebest_platform;
 
 COMMIT;
 

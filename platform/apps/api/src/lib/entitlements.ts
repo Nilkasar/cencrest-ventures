@@ -81,7 +81,19 @@ export async function resolvePlanLimits(
       include: { plans: true },
     }),
   );
+  return planLimitsFromSubscription(subscription);
+}
 
+/**
+ * The pure half of `resolvePlanLimits`: given an already-loaded subscription
+ * (with its joined `plans` row, or `null`), which tier and limits apply.
+ * Exported so a caller that loaded the subscription some other way — Epic
+ * 22's Platform org detail reads it cross-tenant through `platformDb` —
+ * resolves limits by exactly the same rules instead of a second copy.
+ */
+export function planLimitsFromSubscription(
+  subscription: { plan: string; plans: { slug: string; active: boolean | null; limits: unknown } | null } | null,
+): { plan: PlanTier; limits: PlanLimits } {
   // PRIMARY path — the real, joined `plans` row. This is what production
   // (and a properly-seeded database) always hits. Guarded defensively (an
   // inactive plan, or a slug outside the known seven, both fail toward the

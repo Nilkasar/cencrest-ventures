@@ -1,13 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const createMock = vi.fn();
+const createManyMock = vi.fn();
 const txCreateMock = vi.fn();
 const withOrgContextMock = vi.fn(async (_orgId: string, fn: (tx: unknown) => unknown) =>
   fn({ audit_events: { create: txCreateMock } }),
 );
 
 vi.mock('@bebest/database', () => ({
-  db: { audit_events: { create: createMock } },
+  db: { audit_events: { create: createMock, createMany: createManyMock } },
   withOrgContext: withOrgContextMock,
 }));
 
@@ -16,6 +17,7 @@ const ORG = '11111111-1111-4111-8111-111111111111';
 beforeEach(() => {
   vi.clearAllMocks();
   createMock.mockResolvedValue({});
+  createManyMock.mockResolvedValue({ count: 1 });
   txCreateMock.mockResolvedValue({});
 });
 
@@ -51,7 +53,11 @@ describe('writeAuditEvent', () => {
     await writeAuditEvent(base);
 
     expect(withOrgContextMock).not.toHaveBeenCalled();
-    expect(createMock).toHaveBeenCalledTimes(1);
+    // createMany, not create: no RETURNING, which the audit_events SELECT
+    // policy would reject for a null-org row under the request role.
+    expect(createManyMock).toHaveBeenCalledTimes(1);
+    expect(createMock).not.toHaveBeenCalled();
+    expect(createManyMock.mock.calls[0]![0].data[0]).toMatchObject({ action: 'auth.login', organization_id: null });
   });
 
   it('never throws, so a failed audit write cannot break the action it records', async () => {

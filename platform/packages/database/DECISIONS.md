@@ -2153,3 +2153,82 @@ are written `IF NOT EXISTS` with Prisma's own constraint/index names, so a
 fresh build (rendered schema already has them) and an existing database
 converge on the identical schema — both paths were verified (fresh: a
 throwaway database, 46 files, 0 failures, then dropped).
+
+## 31. Epic 22 (Workspace Views) Phase 1 — Platform view API
+
+No migration. Spec: `platform/docs/epics/22-workspace-views.md` (Phase 1).
+Routes: `apps/api/src/routes/platform/*` mounted at `/api/platform`.
+
+### `bebest_platform` grants (scripts/create-platform-role.sql)
+
+Column-level UPDATE on exactly what a staff job-cancel writes —
+`crawl_jobs`/`ai_runs`/`agent_runs (status, error, completed_at, updated_at)`,
+`snapshot_requests (status, result_json, updated_at)` — and nothing else. The
+admin magic link (`magic_link_tokens`) and every Phase 1 `audit_events` row are
+written by the request role (`bebest_app`) through the same code paths the
+customer-facing routes use, so the BYPASSRLS role gained no INSERT. Retry and
+"disable user" were deferred, so their grants were not added.
+
+### Cancel vocabulary
+
+Only `crawl_jobs` has `cancelled` (enum `crawl_status`). `ai_runs`/`agent_runs`
+CHECKs allow `queued|running|completed|failed`, so a cancel there is `failed`
+with `error = 'Cancelled by platform staff'`; `snapshot_requests` (enum
+`snapshot_status`) becomes `failed` with `result_json = { error }`, the
+orchestrator's own failure shape. Widening the CHECKs to add `cancelled` was
+rejected for Phase 1: every consumer of those statuses (UI, agents, scoring)
+would need to learn a new terminal state. The UPDATE is conditional on an
+active status (409 otherwise). It cannot stop a live in-process worker
+(`InMemoryJobQueue` has no cancel hook), whose final unconditional write could
+still land afterwards; in practice the jobs staff cancel are those whose
+worker died with its serverless instance. **Retry is out of scope** for the
+same reason: re-enqueueing on a non-durable queue has no reliable semantics.
+
+### "Stuck"
+
+Active status (queued/running; pending/processing for snapshots) whose
+`COALESCE(started_at, created_at)` is more than 30 minutes ago. `updated_at`
+is not used — no worker bumps it on progress.
+
+### Round trips, not query cost
+
+Against a remote database the cost of a Platform request is its number of
+round trips (dev Neon: ~260ms each, spiking to 1s+), not its SQL. So every
+list is ONE statement (`pagedQuery`: filtered CTE + count + lateral page,
+per-row enrichment evaluated only for the page), `/overview` is one statement
+of scalar subqueries folded into JSON, and `/orgs/:id` and `/users/:id` are
+one JSON document each. Raw SQL goes through `$queryRawUnsafe` with bind
+parameters only (`@bebest/database` exports `Prisma` as a type, so the tagged
+helpers are unavailable); SQL text is assembled from constants.
+
+### Capability matrix
+
+`lib/platform/capabilities.ts` is a pure catalog over `LiveChecks`; everything
+checkable is checked per request (provider `healthCheck()` — free `/models`
+calls — time-boxed 3s each, cached 60s in-process with one in-flight gather;
+env presence; which implementation each factory returns; the RLS probe;
+`SELECT 1` on the platform connection). Only facts no runtime check can
+observe are static, each naming the file that makes it true (no cron, the
+setTimeout re-measurement scheduler, white label not rendered). A probe that
+times out is "unknown" and degrades rather than blocks.
+
+### CRM access for staff
+
+`middleware/crm-access.ts`: a caller whose token selects the internal org takes
+the original membership path unchanged. Anyone else gets one `users` read;
+platform staff (re-read every request) are given the INTERNAL org as context
+with a fixed CRM role — `support` → `analyst`, `admin` → `admin`, never
+`owner` — so `requirePermission` still decides what they may do, and the data
+still goes through `withOrgContext(internal org)` on `bebest_app`, not
+`platformDb`. CRM calls by staff are not written to `platform_access_events`:
+they read BeBest's own internal org, not a customer's.
+
+### Null-organization audit writes (bug fix found by the Phase 1 smoke)
+
+`lib/audit.ts` wrote null-org events with `create`, which adds `RETURNING`;
+Postgres checks returned rows against `audit_events_read`
+(`organization_id = app.current_org`), which a null-org row never satisfies.
+Under `bebest_app` every platform-level audit event — `auth.login`,
+`auth.logout`, `billing.webhook_rejected`, `lead.created` from `/apply`, and
+the new `platform.*` events — failed with 42501 and was swallowed. Now
+`createMany` (no RETURNING), the same fix `platform_access_events` uses.

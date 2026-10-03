@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 
 const db = {
   leads: { create: vi.fn() },
-  audit_events: { create: vi.fn().mockResolvedValue({}) },
+  audit_events: { create: vi.fn().mockResolvedValue({}), createMany: vi.fn().mockResolvedValue({ count: 1 }) },
   organization_rate_limits: { upsert: vi.fn() },
 };
 const tx = {
@@ -93,14 +93,18 @@ describe('POST /api/apply', () => {
       body: JSON.stringify(VALID_BODY),
     });
 
-    expect(db.audit_events.create).toHaveBeenCalledWith(
+    // A null-organization event: written with createMany (no RETURNING —
+    // see lib/audit.ts).
+    expect(db.audit_events.createMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
-          action: 'lead.created',
-          entity_type: 'lead',
-          entity_id: 'lead-1',
-          actor_type: 'system',
-        }),
+        data: [
+          expect.objectContaining({
+            action: 'lead.created',
+            entity_type: 'lead',
+            entity_id: 'lead-1',
+            actor_type: 'system',
+          }),
+        ],
       }),
     );
   });

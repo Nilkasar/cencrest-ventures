@@ -45,14 +45,22 @@ RLS is `FORCE`d on every tenant table — a role with `BYPASSRLS` or table owner
 - **`bebest_app`** — no `BYPASSRLS`, not the table owner. What the running API actually connects as.
 - **`bebest_admin`** — migrations/seeding/admin tooling only. Never serves a real request.
 
-**Epic 22 (Workspace Views) adds a third, optional role — `bebest_platform`** — the connection behind the cross-tenant Platform API (`@bebest/database/platform`). It is the one application role allowed `BYPASSRLS`; Phase 0 grants it SELECT on every table and INSERT on `platform_access_events` only. Phase 0 has no route that uses it yet (`GET /api/platform/session` reads nothing cross-tenant), so the API boots and works without it; Phase 1's routes will need it. To provision it, as the database owner:
+**Epic 22 (Workspace Views) adds a third role — `bebest_platform`** — the connection behind the cross-tenant Platform API (`@bebest/database/platform`). It is the one application role allowed `BYPASSRLS`. Grants: SELECT on every table, INSERT on `platform_access_events`, and (Phase 1) column-level UPDATE on exactly the columns a staff job-cancel writes — `crawl_jobs`/`ai_runs`/`agent_runs (status, error, completed_at, updated_at)` and `snapshot_requests (status, result_json, updated_at)`. Nothing else: no DELETE anywhere, no INSERT on `magic_link_tokens`/`audit_events` (those Phase 1 writes go through `bebest_app`). **Required from Epic 22 Phase 1**: without it the API still boots and every customer route works, but every Platform data route (`/api/platform/overview|orgs|users|agencies|jobs|audit|growth`) answers **503 `{ error: 'Platform database not configured' }`**; `/api/platform/capabilities` still answers and reports the gap. To provision it, as the database owner (the script is idempotent — re-run it to apply the Phase 1 grants to a role created in Phase 0):
 
 ```
 psql "$ADMIN_DATABASE_URL" -v platform_password="'a-real-password'" \
      -f packages/database/scripts/create-platform-role.sql
 ```
 
-then set `PLATFORM_DATABASE_URL` (§2) to a connection string for `bebest_platform`. Verify with `SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'bebest_platform';` → `f`, `t`. The script was verified against the dev database inside a rolled-back transaction (Neon's owner role can create a BYPASSRLS role; it cannot alter `SUPERUSER` at all, which is why the script checks `rolsuper` instead of setting `NOSUPERUSER`). The role was deliberately NOT created in the dev database.
+then set `PLATFORM_DATABASE_URL` (§2) to a connection string for `bebest_platform`. Verify with `SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'bebest_platform';` → `f`, `t`. Neon's owner role can create a BYPASSRLS role; it cannot alter `SUPERUSER` at all, which is why the script checks `rolsuper` instead of setting `NOSUPERUSER`. **Dev status (2026-10-03, Epic 22 Phase 1):** the role now exists in the dev database (created by running this exact script; verified `rolsuper=f`, `rolbypassrls=t`, no CREATEDB/CREATEROLE, SELECT on 131/131 tables, DELETE on `leads` and UPDATE of `ai_runs.mention_score` and INSERT on `magic_link_tokens` all refused, the cancel columns allowed) and `apps/api/.env` carries its `PLATFORM_DATABASE_URL`.
+
+**Production steps (Epic 22 Phase 1):**
+
+1. Generate a strong password (e.g. 48 hex chars) and run the script above against the production database as the owner role.
+2. Build the connection string: the production `DATABASE_URL` host/database/`sslmode`, with user `bebest_platform` and that password. Use the same endpoint style (pooled vs direct) as `DATABASE_URL`.
+3. Set it as `PLATFORM_DATABASE_URL` on the **bebest-api** Vercel project (Production environment only — never on Preview against the production database), then redeploy the API.
+4. Verify: `GET /api/platform/capabilities` as a staff user shows `platform_view` = `working`; `GET /api/platform/overview` answers 200 (not 503); and `SELECT count(*) FROM platform_access_events` grows by one per call.
+5. Optional: `PLATFORM_DATABASE_POOL_MAX` (default 3) — staff traffic is a handful of people.
 
 **Grant staff access (Phase 0 — SQL only; Phase 4 adds a UI):**
 
@@ -113,7 +121,7 @@ It fails loudly if the id names no live organization.
 | `DATABASE_URL` | **Required** | Postgres connection string |
 | `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` | **Required** | RS256 PEM keys for access/refresh tokens. `apps/api/README.md` has the exact `openssl genpkey`/`openssl pkey` commands. |
 | `CRM_INTERNAL_ORG_ID` | **Required** (for CRM routes) | See §1.4 |
-| `PLATFORM_DATABASE_URL` | Optional in Epic 22 Phase 0; required from Phase 1 | Connection as `bebest_platform` (§1.2) for the cross-tenant Platform API. Unset → the API still boots; only code that uses `platformDb` fails, with `PlatformDatabaseNotConfiguredError`. Never point it at the `bebest_app` URL. |
+| `PLATFORM_DATABASE_URL` | Required from Epic 22 Phase 1 | Connection as `bebest_platform` (§1.2) for the cross-tenant Platform API. Unset → the API still boots and every customer route works; Platform data routes answer 503 `{ error: 'Platform database not configured' }` and `/api/platform/capabilities` reports the gap. Never point it at the `bebest_app` URL. |
 | `BILLING_WEBHOOK_SECRET` | **Required** (for billing) | Verifies Stripe-shaped webhook signatures |
 | `APP_URL` | Recommended | Used to build magic-link/invite/snapshot-report URLs. Defaults to `http://localhost:3000` — **must** be set to the real domain in production or every email link is wrong. |
 | `PORT` | Optional | Defaults to `3001` |
