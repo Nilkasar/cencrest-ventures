@@ -41,10 +41,18 @@ export interface OrgContext {
   viaAgencyOrgId?: string;
 }
 
+/** Epic 22 — `users.platform_role`'s closed vocabulary
+ * (0023_workspace_views/checks.sql). */
+export type PlatformRole = 'none' | 'support' | 'admin';
+
 export type AppEnv = {
   Variables: {
     requestId: string;
     user: AuthUser;
     org: OrgContext;
+    /** Set ONLY by `requirePlatformRole`, after it has re-read the caller's
+     * role from the database and audited the request — so a handler that
+     * sees it can rely on both having happened. Never `'none'`. */
+    platformRole: Exclude<PlatformRole, 'none'>;
   };
 };

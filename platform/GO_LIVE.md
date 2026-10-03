@@ -45,6 +45,23 @@ RLS is `FORCE`d on every tenant table — a role with `BYPASSRLS` or table owner
 - **`bebest_app`** — no `BYPASSRLS`, not the table owner. What the running API actually connects as.
 - **`bebest_admin`** — migrations/seeding/admin tooling only. Never serves a real request.
 
+**Epic 22 (Workspace Views) adds a third, optional role — `bebest_platform`** — the connection behind the cross-tenant Platform API (`@bebest/database/platform`). It is the one application role allowed `BYPASSRLS`; Phase 0 grants it SELECT on every table and INSERT on `platform_access_events` only. Phase 0 has no route that uses it yet (`GET /api/platform/session` reads nothing cross-tenant), so the API boots and works without it; Phase 1's routes will need it. To provision it, as the database owner:
+
+```
+psql "$ADMIN_DATABASE_URL" -v platform_password="'a-real-password'" \
+     -f packages/database/scripts/create-platform-role.sql
+```
+
+then set `PLATFORM_DATABASE_URL` (§2) to a connection string for `bebest_platform`. Verify with `SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'bebest_platform';` → `f`, `t`. The script was verified against the dev database inside a rolled-back transaction (Neon's owner role can create a BYPASSRLS role; it cannot alter `SUPERUSER` at all, which is why the script checks `rolsuper` instead of setting `NOSUPERUSER`). The role was deliberately NOT created in the dev database.
+
+**Grant staff access (Phase 0 — SQL only; Phase 4 adds a UI):**
+
+```sql
+UPDATE users SET platform_role = 'admin', updated_at = now() WHERE email = 'someone@bebestwithai.com';  -- or 'support'; 'none' revokes
+```
+
+Takes effect on the user's next request — the API re-reads it every time, never from the token.
+
 ### 1.3 Seed the billing plan catalog
 
 Required — an empty `plans` table breaks every billing route (Epic 16):
@@ -72,6 +89,15 @@ then copy that org's id.)
 
 Without this, every CRM route (`/api/leads`, `/api/deals`, `/api/activities`, `/api/accounts`, `/api/crm/users`) fails outright.
 
+**Mark it `internal` (Epic 22).** Migration 0023 adds `organizations.kind` and backfills `agency`, but cannot know which org is the internal one. `seed:dev` creates the ops org with `kind = 'internal'`; for an org created any other way, run once with the same id as `CRM_INTERNAL_ORG_ID`:
+
+```
+psql "$ADMIN_DATABASE_URL" -v org_id="'<CRM_INTERNAL_ORG_ID>'" \
+     -f packages/database/scripts/set-internal-org.sql
+```
+
+It fails loudly if the id names no live organization.
+
 ### 1.5 Run the integration test suite against this real database (recommended, not optional)
 
 79 tenant-isolation tests are `.skip`/`.todo` across the whole build (`tenant-isolation.integration.test.ts`) — every one of them needs a live, RLS-applied Postgres connection to ever run, and none of them have. This is the single largest "not actually proven yet" claim in the entire rebuild. Un-skip and run them against the real database from 1.1–1.2 before trusting tenant isolation in production.
@@ -87,6 +113,7 @@ Without this, every CRM route (`/api/leads`, `/api/deals`, `/api/activities`, `/
 | `DATABASE_URL` | **Required** | Postgres connection string |
 | `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` | **Required** | RS256 PEM keys for access/refresh tokens. `apps/api/README.md` has the exact `openssl genpkey`/`openssl pkey` commands. |
 | `CRM_INTERNAL_ORG_ID` | **Required** (for CRM routes) | See §1.4 |
+| `PLATFORM_DATABASE_URL` | Optional in Epic 22 Phase 0; required from Phase 1 | Connection as `bebest_platform` (§1.2) for the cross-tenant Platform API. Unset → the API still boots; only code that uses `platformDb` fails, with `PlatformDatabaseNotConfiguredError`. Never point it at the `bebest_app` URL. |
 | `BILLING_WEBHOOK_SECRET` | **Required** (for billing) | Verifies Stripe-shaped webhook signatures |
 | `APP_URL` | Recommended | Used to build magic-link/invite/snapshot-report URLs. Defaults to `http://localhost:3000` — **must** be set to the real domain in production or every email link is wrong. |
 | `PORT` | Optional | Defaults to `3001` |

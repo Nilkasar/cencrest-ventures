@@ -53,6 +53,7 @@ import apply from './routes/apply.js';
 import agency from './routes/agency.js';
 import whiteLabel from './routes/white-label.js';
 import integrations from './routes/integrations.js';
+import platformSession from './routes/platform/session.js';
 import { ConsoleEmailSender, ResendEmailSender } from './lib/email.js';
 import { getDefaultErrorTracker } from './lib/observability/default-error-tracker.js';
 import { clientFaultResponse } from './lib/db-errors.js';
@@ -328,6 +329,15 @@ app.route('/api/apply', apply);
 app.route('/api/agency', agency);
 app.route('/api/orgs/me/settings/white-label', whiteLabel);
 app.route('/api/integrations', integrations);
+
+// Epic 22 — Workspace Views: the cross-tenant Platform API. Every route
+// under `/api/platform` sits behind `requirePlatformRole`
+// (middleware/platform-role.ts), which re-reads `users.platform_role` from
+// the database and writes a `platform_access_events` row before the handler
+// runs. Only files under `routes/platform/` may import `platformDb` (ESLint
+// `no-restricted-imports`, apps/api/eslint.config.mjs). Phase 0 ships only
+// `/session`, the route that proves the guard is wired end to end.
+app.route('/api/platform/session', platformSession);
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 

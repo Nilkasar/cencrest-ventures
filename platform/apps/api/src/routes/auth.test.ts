@@ -15,7 +15,7 @@ const db = {
   // test in this file — none of which sets this up — keeps its original
   // "no membership -> 403" outcome unchanged.
   memberships: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
-  agency_clients: { findFirst: vi.fn() },
+  agency_clients: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
   organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
   audit_events: { create: vi.fn().mockResolvedValue({}) },
 };
@@ -462,5 +462,106 @@ describe('POST /auth/select-org', () => {
       body: JSON.stringify({ slug: 'client' }),
     });
     expect(res.status).toBe(403);
+  });
+});
+
+// Epic 22 (Workspace Views) — /me gained `platformRole`, each
+// organization's `kind`, and `agencyClients`. All additive.
+describe('GET /auth/me', () => {
+  const USER = { id: 'user-1', email: 'a@example.com', name: 'Ada', deleted_at: null };
+
+  async function getMe(platformRole: string | undefined) {
+    const { signAccessToken } = await import('../lib/jwt.js');
+    const token = await signAccessToken({ sub: USER.id, email: USER.email, org: null });
+    db.users.findUnique.mockImplementation(async (args: { select?: unknown }) =>
+      args.select ? (platformRole === undefined ? null : { platform_role: platformRole }) : USER,
+    );
+    const { app } = await buildApp();
+    return app.request('/auth/me', { headers: { authorization: `Bearer ${token}` } });
+  }
+
+  function membership(org: { id: string; slug: string; kind: string; deleted_at?: Date | null }, role = 'owner') {
+    return {
+      role,
+      organizations: { id: org.id, name: org.slug.toUpperCase(), slug: org.slug, kind: org.kind, deleted_at: org.deleted_at ?? null },
+    };
+  }
+
+  it("keeps the existing fields and adds platformRole 'none' and each org's kind for a customer", async () => {
+    db.memberships.findMany.mockResolvedValue([membership({ id: 'org-1', slug: 'acme', kind: 'customer' })]);
+
+    const res = await getMe('none');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      id: 'user-1',
+      email: 'a@example.com',
+      name: 'Ada',
+      platformRole: 'none',
+      organizations: [{ id: 'org-1', name: 'ACME', slug: 'acme', role: 'owner', kind: 'customer' }],
+      agencyClients: [],
+    });
+    // No agency membership → no agency_clients read at all.
+    expect(db.agency_clients.findMany).not.toHaveBeenCalled();
+  });
+
+  it('reads platformRole from the database, and fails closed to none for an unknown value', async () => {
+    db.memberships.findMany.mockResolvedValue([]);
+    expect(((await (await getMe('support')).json()) as { platformRole: string }).platformRole).toBe('support');
+    expect(((await (await getMe('admin')).json()) as { platformRole: string }).platformRole).toBe('admin');
+    expect(((await (await getMe('root')).json()) as { platformRole: string }).platformRole).toBe('none');
+  });
+
+  it('lists the active client links of every agency org the user belongs to, skipping deleted client orgs', async () => {
+    db.memberships.findMany.mockResolvedValue([
+      membership({ id: 'agency-org', slug: 'agency', kind: 'agency' }, 'admin'),
+      membership({ id: 'own-org', slug: 'own', kind: 'customer' }),
+    ]);
+    db.agency_clients.findMany.mockResolvedValue([
+      {
+        agency_org_id: 'agency-org',
+        access_level: 'full',
+        status: 'active',
+        organizations_client: { id: 'client-1', name: 'Client One', slug: 'client-one', deleted_at: null },
+      },
+      {
+        agency_org_id: 'agency-org',
+        access_level: 'read_only',
+        status: 'active',
+        organizations_client: { id: 'client-2', name: 'Gone', slug: 'gone', deleted_at: new Date() },
+      },
+    ]);
+
+    const res = await getMe('none');
+    const body = (await res.json()) as { organizations: { kind: string }[]; agencyClients: unknown[] };
+    expect(body.organizations.map((o) => o.kind)).toEqual(['agency', 'customer']);
+    expect(body.agencyClients).toEqual([
+      {
+        organizationId: 'client-1',
+        slug: 'client-one',
+        name: 'Client One',
+        accessLevel: 'full',
+        status: 'active',
+        agencyOrganizationId: 'agency-org',
+      },
+    ]);
+
+    // Read under the agency org's own context, active links only.
+    const { withOrgContext } = await import('@bebest/database');
+    expect(withOrgContext).toHaveBeenCalledWith('agency-org', expect.any(Function));
+    expect(db.agency_clients.findMany).toHaveBeenCalledTimes(1);
+    expect(db.agency_clients.findMany.mock.calls[0]?.[0]).toMatchObject({
+      where: { agency_org_id: 'agency-org', status: 'active', deleted_at: null },
+    });
+  });
+
+  it('omits memberships of deleted organizations, as before', async () => {
+    db.memberships.findMany.mockResolvedValue([
+      membership({ id: 'org-1', slug: 'acme', kind: 'customer' }),
+      membership({ id: 'org-2', slug: 'old-agency', kind: 'agency', deleted_at: new Date() }),
+    ]);
+    const body = (await (await getMe('none')).json()) as { organizations: { id: string }[]; agencyClients: unknown[] };
+    expect(body.organizations.map((o) => o.id)).toEqual(['org-1']);
+    expect(body.agencyClients).toEqual([]);
+    expect(db.agency_clients.findMany).not.toHaveBeenCalled();
   });
 });

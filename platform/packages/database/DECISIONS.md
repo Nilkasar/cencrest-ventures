@@ -2073,3 +2073,83 @@ competitor-movement-alert logic onto one real notification mechanism, the
 four report-generation builders reading Epic 4/7/8/9/14's already-computed
 data, and the four routes) is documented in
 `platform/docs/epics/15-reporting-notifications-backend.md`.
+
+## 30. Epic 22 (Workspace Views) Phase 0 schema additions — migration 0023
+
+`prisma/migrations/0023_workspace_views/` (0023 was the next free number;
+0022 was the latest folder). Spec: `platform/docs/epics/22-workspace-views.md`.
+
+### Columns
+
+- **`users.platform_role`** `VARCHAR(20) NOT NULL DEFAULT 'none'`, CHECK
+  `none|support|admin`. Per-person staff grant for the cross-tenant Platform
+  view. `users` has no RLS, so the column is readable by the app role — it
+  is never trusted from a token: `apps/api/src/middleware/platform-role.ts`
+  re-reads it on every Platform request.
+- **`organizations.kind`** `VARCHAR(20) NOT NULL DEFAULT 'customer'`, CHECK
+  `customer|agency|internal`. Backfilled in `ddl.sql`: an org that is the
+  agency side of ANY `agency_clients` row (any status — a revoked link still
+  means it works as an agency), or whose subscription plan's
+  `limits.client_accounts` is an explicit number `> 0`, becomes `agency`.
+  "Explicit number", not "non-null": in `plans.limits` `null` means
+  *unlimited*, and the catalog carries `client_accounts: null` on every
+  non-agency tier — reading null as "grants client accounts" would have made
+  every org an agency. `internal` cannot be expressed in static SQL (the id is
+  `CRM_INTERNAL_ORG_ID`, deployment config): `scripts/set-internal-org.sql`
+  sets it per environment, and `seed:dev` creates the ops org with it. The API
+  does NOT infer `internal` from the env var at request time — the column is
+  the source of truth.
+
+### Tables
+
+- **`platform_access_events`** — append-only record of every Platform API
+  call, reads included. FKs RESTRICT (nothing ever cascades into an audit
+  log; users/orgs are soft-deleted anyway). Indexes: `(created_at DESC)`,
+  `(user_id, created_at DESC)`, `(target_org_id, created_at DESC)`.
+- **`support_sessions`** — schema only in Phase 0 (Phase 4's read-only
+  "view as org"). CHECKs: non-blank reason, `expires_at > started_at`,
+  `ended_at >= started_at`.
+
+### RLS decision for two non-tenant tables
+
+Neither table is tenant data, so neither gets `tenant_isolation`. Both are
+still put under RLS (ENABLE + FORCE) — as a capability boundary, not a tenant
+boundary. Left without RLS (the `users`/`organizations` treatment) they would
+be fully readable by `bebest_app`, i.e. by any customer route, including a
+buggy one: "which BeBest staff member looked at which customer, when" is not
+data any tenant should be able to reach.
+
+- `platform_access_events`: a single `FOR INSERT WITH CHECK (true)` policy and
+  nothing else. The app role can append, but SELECT returns zero rows and
+  UPDATE/DELETE match zero rows — append-only and unreadable by construction
+  (verified live by `smoke:workspaces`). Consequence: the writer must not use
+  `RETURNING` (Postgres applies SELECT policies to returned rows), so the
+  middleware uses `createMany`. Reads belong to `bebest_platform` (BYPASSRLS).
+- `support_sessions`: no policy at all — every operation is denied to the app
+  role until Phase 4 adds the access path it needs.
+
+### `bebest_platform` and `@bebest/database/platform`
+
+`scripts/create-platform-role.sql` creates the one application role allowed
+BYPASSRLS, with SELECT on everything and (Phase 0) INSERT only on
+`platform_access_events`; later phases add their specific writes there.
+`src/platform.ts` (`platformDb`, exported only as `@bebest/database/platform`)
+is a lazily-constructed client on `PLATFORM_DATABASE_URL`: importing it does
+nothing, first use without the variable throws
+`PlatformDatabaseNotConfiguredError`, and it never falls back to
+`DATABASE_URL`. `apps/api`'s ESLint `no-restricted-imports` confines it to
+`src/routes/platform/**`. `assertRlsEnforced` still checks only the app role.
+
+### `db:apply` and a changing `schema.prisma`
+
+`apply-sql.mjs`'s first step renders `schema.prisma` to DDL and is recorded
+with a checksum like every file — so ANY schema change made it report
+"EDITED … add a new migration instead" and exit 1, even though the change
+came with its migration. That step is the baseline for a fresh database
+only; an existing one receives schema changes through the folder's
+`ddl.sql`. The runner now reports a changed rendered schema as a NOTE and
+re-records its checksum once the run succeeds. 0023's `ddl.sql`/`indexes.sql`
+are written `IF NOT EXISTS` with Prisma's own constraint/index names, so a
+fresh build (rendered schema already has them) and an existing database
+converge on the identical schema — both paths were verified (fresh: a
+throwaway database, 46 files, 0 failures, then dropped).
