@@ -33,6 +33,7 @@ import { LeadScore, LeadSourceBadge, LeadStatusBadge } from "@/components/crm/st
 import { DEFAULT_PAGE_SIZE, fetchLeads, type LeadFilters } from "@/data/crm/client";
 import type { Lead, LeadSource, LeadStatus } from "@/data/crm/types";
 import { useAsyncData } from "@/lib/use-async-data";
+import { useCrmBasePath } from "@/components/crm/crm-base-path";
 import { formatRelativeTime } from "@/lib/format";
 
 const STATUS_OPTIONS: { value: LeadStatus | "all"; label: string }[] = [
@@ -101,6 +102,7 @@ function StatCard({ label, value }: { label: string; value: string }) {
 }
 
 export function LeadsView() {
+  const crm = useCrmBasePath();
   const router = useRouter();
   const [status, setStatus] = useState<LeadStatus | "all">("all");
   const [source, setSource] = useState<LeadSource | "all">("all");
@@ -248,9 +250,9 @@ export function LeadsView() {
                 className="cursor-pointer"
                 tabIndex={0}
                 role="link"
-                onClick={() => router.push(`/crm/leads/${lead.id}`)}
+                onClick={() => router.push(`${crm}/leads/${lead.id}`)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") router.push(`/crm/leads/${lead.id}`);
+                  if (event.key === "Enter") router.push(`${crm}/leads/${lead.id}`);
                 }}
               >
                 <TableCell>

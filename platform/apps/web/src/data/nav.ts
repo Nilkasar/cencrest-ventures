@@ -37,6 +37,9 @@ export interface NavItem {
   /** Listed so the shape of the view is visible, but not built yet —
    *  rendered as a non-interactive row, never a link to a 404. */
   comingSoon?: string;
+  /** Active only on this exact path, not its children (a section root such
+   *  as `/platform` whose sub-pages have their own nav items). */
+  exact?: boolean;
 }
 
 export interface NavGroup {
@@ -104,22 +107,29 @@ export function orgNavGroups(kind: OrgKind | null | undefined): NavGroup[] {
   });
 }
 
-/** Platform view (BeBest staff). Phase 0 ships the landing page only; the
- *  Phase 1 sections are listed, marked as coming. */
+/** Platform view (BeBest staff, Epic 22 Phase 1). */
 export const platformNavGroups: NavGroup[] = [
   {
     label: "Platform",
-    items: [{ href: "/platform", label: "Overview", icon: Gauge }],
+    items: [{ href: "/platform", label: "Overview", icon: Gauge, exact: true }],
   },
   {
-    label: "Phase 1",
+    label: "Customers",
     items: [
-      { href: "/platform/organizations", label: "Organizations", icon: Building, comingSoon: "Phase 1" },
-      { href: "/platform/users", label: "Users", icon: UsersRound, comingSoon: "Phase 1" },
-      { href: "/platform/agencies", label: "Agencies", icon: Briefcase, comingSoon: "Phase 1" },
-      { href: "/platform/growth", label: "Growth", icon: TrendingUp, comingSoon: "Phase 1" },
-      { href: "/platform/operations", label: "Operations", icon: Activity, comingSoon: "Phase 1" },
-      { href: "/platform/audit", label: "Audit log", icon: ScrollText, comingSoon: "Phase 1" },
+      { href: "/platform/organizations", label: "Organizations", icon: Building },
+      { href: "/platform/users", label: "Users", icon: UsersRound },
+      { href: "/platform/agencies", label: "Agencies", icon: Briefcase },
+    ],
+  },
+  {
+    label: "Business",
+    items: [{ href: "/platform/growth", label: "Growth", icon: TrendingUp }],
+  },
+  {
+    label: "Health",
+    items: [
+      { href: "/platform/operations", label: "Operations", icon: Activity },
+      { href: "/platform/audit", label: "Audit log", icon: ScrollText },
     ],
   },
 ];

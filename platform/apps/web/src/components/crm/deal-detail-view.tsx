@@ -30,6 +30,7 @@ import { DealStageBadge, LeadStatusBadge } from "@/components/crm/status-badges"
 import { fetchAccount, fetchActivitiesForDeal, fetchDeal, fetchLead, updateDealStage } from "@/data/crm/client";
 import { DEAL_STAGE_LABEL, DEAL_STAGE_SEQUENCE, type DealStage } from "@/data/crm/types";
 import { useAsyncData } from "@/lib/use-async-data";
+import { useCrmBasePath } from "@/components/crm/crm-base-path";
 import { formatCurrency, formatDate } from "@/lib/format";
 
 function DealDetailSkeleton() {
@@ -50,6 +51,7 @@ function DealDetailSkeleton() {
 }
 
 export function DealDetailView({ dealId }: { dealId: string }) {
+  const crm = useCrmBasePath();
   const router = useRouter();
   const [stageUpdating, setStageUpdating] = useState(false);
   const [pendingLostReason, setPendingLostReason] = useState("");
@@ -87,7 +89,7 @@ export function DealDetailView({ dealId }: { dealId: string }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <Link href="/crm/deals" className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground w-fit">
+      <Link href={`${crm}/deals`} className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground w-fit">
         <ArrowLeft size={14} /> Deals
       </Link>
 
@@ -101,7 +103,7 @@ export function DealDetailView({ dealId }: { dealId: string }) {
           title="Deal not found"
           description="This deal may have been removed, or the link is out of date."
           action={
-            <Button variant="secondary" size="sm" onClick={() => router.push("/crm/deals")}>
+            <Button variant="secondary" size="sm" onClick={() => router.push(`${crm}/deals`)}>
               Back to deals
             </Button>
           }
@@ -236,13 +238,13 @@ export function DealDetailView({ dealId }: { dealId: string }) {
                   </CardHeader>
                   <CardContent className="flex flex-col gap-3">
                     {state.data.account && (
-                      <Link href={`/crm/accounts/${state.data.account.id}`} className="flex items-center gap-2.5 rounded-md -mx-2 px-2 py-1.5 hover:bg-surface transition-colors">
+                      <Link href={`${crm}/accounts/${state.data.account.id}`} className="flex items-center gap-2.5 rounded-md -mx-2 px-2 py-1.5 hover:bg-surface transition-colors">
                         <Building2 size={14} className="text-muted-foreground shrink-0" />
                         <span className="text-[13px] font-medium text-foreground truncate">{state.data.account.name}</span>
                       </Link>
                     )}
                     {state.data.lead && (
-                      <Link href={`/crm/leads/${state.data.lead.id}`} className="flex items-center gap-2.5 rounded-md -mx-2 px-2 py-1.5 hover:bg-surface transition-colors">
+                      <Link href={`${crm}/leads/${state.data.lead.id}`} className="flex items-center gap-2.5 rounded-md -mx-2 px-2 py-1.5 hover:bg-surface transition-colors">
                         <User size={14} className="text-muted-foreground shrink-0" />
                         <span className="text-[13px] font-medium text-foreground truncate">{state.data.lead.name}</span>
                         <LeadStatusBadge status={state.data.lead.status} size="sm" />

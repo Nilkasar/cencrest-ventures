@@ -12,8 +12,8 @@ import { useWorkspaceNav } from "./use-workspace-nav";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
-function isActive(pathname: string, href: string) {
-  return pathname === href || pathname.startsWith(`${href}/`);
+function isActive(pathname: string, item: NavItem) {
+  return pathname === item.href || (!item.exact && pathname.startsWith(`${item.href}/`));
 }
 
 interface NavLinkProps {
@@ -242,7 +242,7 @@ export function SidebarNav({ collapsed, query, pillId, highlightIndex, onNavigat
                 <NavLink
                   key={item.href}
                   item={item}
-                  active={isActive(pathname, item.href)}
+                  active={isActive(pathname, item)}
                   collapsed={false}
                   highlighted={i === highlightIndex}
                   pillId={pillId}
@@ -256,7 +256,7 @@ export function SidebarNav({ collapsed, query, pillId, highlightIndex, onNavigat
             {groups.map((group, gi) => {
               const isClosed = !collapsed && closed.includes(group.label);
               // A closed group still shows its active page, so "where am I" never hides.
-              const visible = isClosed ? group.items.filter((item) => isActive(pathname, item.href)) : group.items;
+              const visible = isClosed ? group.items.filter((item) => isActive(pathname, item)) : group.items;
               return (
                 <div key={group.label}>
                   {collapsed ? (
@@ -291,7 +291,7 @@ export function SidebarNav({ collapsed, query, pillId, highlightIndex, onNavigat
                         <NavLink
                           key={item.href}
                           item={item}
-                          active={isActive(pathname, item.href)}
+                          active={isActive(pathname, item)}
                           collapsed={collapsed}
                           pillId={pillId}
                           onNavigate={onNavigate}
@@ -310,7 +310,7 @@ export function SidebarNav({ collapsed, query, pillId, highlightIndex, onNavigat
         <div className="shrink-0 border-t border-[var(--sidebar-border)] px-3 py-3">
           <NavLink
             item={footer}
-            active={isActive(pathname, footer.href)}
+            active={isActive(pathname, footer)}
             collapsed={collapsed}
             pillId={pillId}
             onNavigate={onNavigate}

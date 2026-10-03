@@ -1,8 +1,22 @@
 # Session Log — Cencrest Ventures
 
-## ▶ RESUME HERE (last updated 2026-10-03)
+## ▶ RESUME HERE (last updated 2026-10-03, evening)
 
-**Latest (2026-10-03): UI pass on the platform app — sign-in, shell, and the Overview dashboard.** See the 2026-10-03 entry at the bottom. Short version: the auth screens share the snapshot split-panel hero (with Google sign-in kept); the sidebar is theme-aware, tinted, 240px, collapsible to a 72px rail, with ⌘K "Jump to…"; the topbar has a breadcrumb, a search trigger and refined org/account controls; `/overview` was rebuilt as an animated command center on real data only, with a confirmed "Run scan" button. Everything is on `main` (Vercel deploys web and API from `main` on push). **None of it has been opened in a browser** — the Chrome extension wasn't connected all session.
+**Epic 22 — Workspace Views (Platform · Organization · Agency) — Phases 0 and 1 are built and verified, NOT deployed.** Spec: `platform/docs/epics/22-workspace-views.md`. Full account in the "2026-10-03 — Epic 22" entry at the bottom. On `rebuild/platform`; `main` does not have it yet.
+
+- **Phase 0 (foundations):** migration `0023_workspace_views` (`users.platform_role`, `organizations.kind`, `platform_access_events`, `support_sessions`); `/auth/me` returns platform role, membership kinds and agency clients; `requirePlatformRole` (role re-read from DB, every allowed call audited); `proxy.ts` sign-in guard; view switcher; CRM only for the internal org, Agency only for agency orgs; the session finally uses the org on the token (was always `orgs[0]`).
+- **Phase 1 (Platform view, `/platform/*`):** overview KPIs + a live capability matrix, organizations, users, agencies, growth (CRM + snapshot requests), operations (cross-org jobs, stuck detection, admin cancel), audit log. Reads cross-tenant through `platformDb` (`bebest_platform` role).
+- **Verify with:** `pnpm --filter @bebest/api run smoke:workspaces` (26), `smoke:platform` (98), `smoke:crm` (59 — flaky on cold Neon connections, retry once). Browser walks live in the session scratchpad only.
+
+**Before deploying (order matters — code before migration breaks sign-in):** on the production DB run `db:apply` (0023), `scripts/set-internal-org.sql`, `scripts/create-platform-role.sql` and set `PLATFORM_DATABASE_URL` on the bebest-api Vercel project, grant staff `platform_role`; then push `rebuild/platform` → `main`. Steps in `platform/GO_LIVE.md` §1.2/§1.4.
+
+**Next:** Phase 2 (Organization view: settings hub, invite-accept page, unique org slugs + onboarding routing), Phase 3 (Agency view: portfolio, create/link client, step-in banner, cross-client queue, white label applied), Phase 4 (admin actions: comp plans, suspend, grant roles, read-only view-as). Separately, the ranked gap list from the 2026-10-03 feature audit (bottom entry) — durable jobs + cron on Vercel is #1.
+
+**Action for the user:** rotate the DEV JWT keypair (`apps/api/.env`) — a subagent printed it into its own transcript.
+
+---
+
+**Also 2026-10-03 (another session, same working copy): UI pass on the platform app — sign-in, shell, and the Overview dashboard.** See the 2026-10-03 entry at the bottom. Short version: the auth screens share the snapshot split-panel hero (with Google sign-in kept); the sidebar is theme-aware, tinted, 240px, collapsible to a 72px rail, with ⌘K "Jump to…"; the topbar has a breadcrumb, a search trigger and refined org/account controls; `/overview` was rebuilt as an animated command center on real data only, with a confirmed "Run scan" button. Everything is on `main` (Vercel deploys web and API from `main` on push). **None of it has been opened in a browser** — the Chrome extension wasn't connected all session.
 
 **Note:** this log had a gap from 2026-09-10 to 2026-10-02. The work in that window is only in git history: Vercel request-body fixes for magic-link, Resend email, default-org on first login, Connectors (Google OAuth + GSC/GA4), CREDENTIALS.md, the new logo/favicon, the login and snapshot redesigns, and Google OAuth login on `main`.
 
@@ -782,3 +796,26 @@ All work is on `rebuild/platform`, and each step was fast-forwarded to `main`, w
   - `connectors/ga4-stats-panel.tsx`: unused `fmtDuration`.
   - `hooks/use-brand-profile.ts`: setState in an effect.
   - `auth/google/callback/page.tsx`: setState in an effect.
+
+---
+
+## Session: 2026-10-03 — Snapshot/login redesign, full feature audit, Epic 22 (Phases 0 + 1)
+
+### Public pages (deployed to production via `main`)
+- `/snapshot` decluttered and rebuilt: one question, one visual, three facts; new animated "signal field" hero (model nodes → comet → score dial, labelled SAMPLE, highlight driven by the comet's own animation events); form trimmed to 4 required fields + optional disclosure; animated confirmation. Fixed a wrong claim ("1,400+ queries" is the Audit, not the Snapshot) and a regression where `/snapshot/[token]` (the report) had been squeezed into the 384px form column. Fixed a design-system bug: `* { border-color }` in tokens.css was unlayered, so it beat every border-color utility (invalid inputs never turned red) — now `@layer base`.
+- Login/check-email/verify share the same hero (`components/brand-hero`). Removed a dead "Continue with Google" button (later re-added for real by another session), fixed Terms/Privacy links that 404'd on the app domain.
+
+### Feature audit (the honest list)
+Four read-only sweeps of the platform code, high-stakes claims spot-checked. Headline gaps, ranked: (1) background jobs are in-process (`InMemoryJobQueue`, `setTimeout` re-measurement) — unreliable on Vercel serverless; no cron at all; (2) an AI run where every provider fails is still `completed` with AVS 0 (`pipeline.ts`); AI needs all 4 cloud keys + Ollama; (3) org slug collision strands a second "john@…" user; invite emails link to a page that doesn't exist; (4) billing is `NullPaymentProvider` — any owner can self-upgrade to any plan for free; (5) "execute/publish" only writes a row (`NullPublishTarget`); (6) SEO volumes are estimates without GSC, analyses can't be read back; (7) notification link to `/agent-runs/:id` 404s, org-wide notifications can't be marked read; (8) Google login state/token-in-URL hardening, plaintext integration tokens; (9) missing screens (reject/edit, entities, query edit, measurements); (10) white label never applied, CRM shown to every customer.
+
+### Epic 22 — Workspace Views
+Decisions (user): explicit `users.platform_role` staff flag; read-only audited "view as org"; agencies create OR link client orgs.
+- **Phase 0:** migration 0023; `/auth/me` additions; `requirePlatformRole` — 403 writes nothing, allowed calls MUST be audited (500 if the audit write fails; differs from `writeAuditEvent`'s swallow-errors by design); `platformDb` on `PLATFORM_DATABASE_URL`, importable only under `routes/platform/**` (ESLint); `proxy.ts` guard on a UX-only `bb_session` presence cookie, `?next=` restricted to same-origin paths; view switcher; per-view nav; `switchOrg` re-mints the token (incl. back home).
+- **Phase 1:** `/api/platform/{overview,capabilities,orgs,orgs/:id,users,users/:id,users/:id/magic-link,agencies,agencies/:id/clients,jobs,jobs/:type/:id/cancel,audit,growth/snapshots}` + seven Platform screens. Capability matrix computes status from live checks (provider keys + health, Ollama, Resend, Google, payment/publish providers, queue type, RLS) with code-audit facts in one catalog file. CRM routes also admit staff (support→analyst, admin→admin) in the internal org; CRM components reused under `/platform/growth/*` via `CrmBasePathProvider`.
+- **Found + fixed:** `writeAuditEvent` silently dropped every org-less audit row (login, logout, /apply, rejected webhooks) under `bebest_app` — `create()` adds `RETURNING`, which the read policy rejects; now `createMany`.
+- **Verification (dev DB, real HTTP, real magic-link sessions):** smoke:workspaces 26/26, smoke:platform 98/98, Phase 0 browser walk 38/38, Phase 1 walk 63/63 on a production build (`next start`); 1190 API tests; web/api typecheck + build clean. All re-run independently by the orchestrator, not just the agents.
+- **Known limits:** Platform requests are ~2–6s on the dev DB (remote Neon, ~260ms RTT; the auth+role chain alone ~1.9s) — co-locate the API with the DB in production. Job retry and user "disable" deliberately not built (no reliable semantics on the in-memory queue / no column). No route sets `organizations.kind='agency'` after the backfill — Phase 3's create-client flow must. Dev DB now holds `e22-*`, `e22p1-*`, `pf-*` test users/orgs. `create-app-role.sql` (older script) can't run as written on Neon.
+
+### Process notes
+- Another Claude session worked in the same working copy all day (Overview, sidebar, Google sign-in, rate-limit fix) — re-read files before editing, keep diffs scoped.
+- Pushing to `main` is blocked by the auto-mode classifier as a production deploy; the user pushes or approves it explicitly.

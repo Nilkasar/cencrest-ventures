@@ -30,6 +30,7 @@ import { AddDealDialog } from "@/components/crm/add-deal-dialog";
 import { fetchCrmUsers, fetchDeals, updateDealStage } from "@/data/crm/client";
 import { DEAL_STAGE_LABEL, DEAL_STAGE_SEQUENCE, type Deal, type DealStage } from "@/data/crm/types";
 import { useAsyncData } from "@/lib/use-async-data";
+import { useCrmBasePath } from "@/components/crm/crm-base-path";
 import { formatCompactCurrency, formatCurrency } from "@/lib/format";
 
 const STAGE_HEADER_TONE: Record<DealStage, string> = {
@@ -76,6 +77,7 @@ function StatCard({ label, value }: { label: string; value: string }) {
 }
 
 export function DealsBoardView() {
+  const crm = useCrmBasePath();
   const router = useRouter();
   const [ownerId, setOwnerId] = useState<string>("all");
   const [q, setQ] = useState("");
@@ -196,7 +198,7 @@ export function DealsBoardView() {
   function linkedInfo(deal: Deal): { name: string | null; href: string | null } {
     if (!deal.linkedTo) return { name: null, href: null };
     const { kind, id, name } = deal.linkedTo;
-    return { name, href: kind === "account" ? `/crm/accounts/${id}` : `/crm/leads/${id}` };
+    return { name, href: kind === "account" ? `${crm}/accounts/${id}` : `${crm}/leads/${id}` };
   }
 
   const openDeals = dealList.filter((d) => d.stage !== "won" && d.stage !== "lost");
@@ -255,7 +257,7 @@ export function DealsBoardView() {
           description="Convert a qualified lead into a deal, or start one directly against an existing account."
           action={<AddDealDialog onCreated={() => reload()} />}
           secondaryAction={
-            <Button variant="ghost" size="sm" onClick={() => router.push("/crm/leads")}>
+            <Button variant="ghost" size="sm" onClick={() => router.push(`${crm}/leads`)}>
               Go to leads
             </Button>
           }

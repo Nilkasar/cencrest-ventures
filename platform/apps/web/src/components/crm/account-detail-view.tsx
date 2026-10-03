@@ -31,6 +31,7 @@ import { DealStageBadge } from "@/components/crm/status-badges";
 import { fetchAccount, fetchActivitiesForAccount, fetchDealsForAccount, fetchLead } from "@/data/crm/client";
 import type { Account } from "@/data/crm/types";
 import { useAsyncData } from "@/lib/use-async-data";
+import { useCrmBasePath } from "@/components/crm/crm-base-path";
 import { formatCurrency, formatDate } from "@/lib/format";
 
 const PLAN_LABEL: Record<NonNullable<Account["plan"]>, string> = {
@@ -54,6 +55,7 @@ function AccountDetailSkeleton() {
 }
 
 export function AccountDetailView({ accountId }: { accountId: string }) {
+  const crm = useCrmBasePath();
   const router = useRouter();
 
   const { reload, ...state } = useAsyncData(async () => {
@@ -69,7 +71,7 @@ export function AccountDetailView({ accountId }: { accountId: string }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <Link href="/crm/accounts" className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground w-fit">
+      <Link href={`${crm}/accounts`} className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground w-fit">
         <ArrowLeft size={14} /> Accounts
       </Link>
 
@@ -83,7 +85,7 @@ export function AccountDetailView({ accountId }: { accountId: string }) {
           title="Account not found"
           description="This account may have been removed, or the link is out of date."
           action={
-            <Button variant="secondary" size="sm" onClick={() => router.push("/crm/accounts")}>
+            <Button variant="secondary" size="sm" onClick={() => router.push(`${crm}/accounts`)}>
               Back to accounts
             </Button>
           }
@@ -135,7 +137,7 @@ export function AccountDetailView({ accountId }: { accountId: string }) {
                     {state.data.sourceLead ? (
                       <>
                         <p className="text-muted-foreground">Converted from lead</p>
-                        <Link href={`/crm/leads/${state.data.sourceLead.id}`} className="text-accent hover:underline font-medium">
+                        <Link href={`${crm}/leads/${state.data.sourceLead.id}`} className="text-accent hover:underline font-medium">
                           {state.data.sourceLead.name}
                         </Link>
                       </>
@@ -233,7 +235,7 @@ export function AccountDetailView({ accountId }: { accountId: string }) {
                   </TableHeader>
                   <TableBody>
                     {state.data.deals.map((deal) => (
-                      <TableRow key={deal.id} className="cursor-pointer" onClick={() => router.push(`/crm/deals/${deal.id}`)}>
+                      <TableRow key={deal.id} className="cursor-pointer" onClick={() => router.push(`${crm}/deals/${deal.id}`)}>
                         <TableCell><span className="text-[13px] font-medium text-foreground">{deal.title}</span></TableCell>
                         <TableCell><DealStageBadge stage={deal.stage} size="sm" /></TableCell>
                         <TableCell><span className="font-mono text-[13px] text-foreground">{formatCurrency(deal.valueCents, deal.currency)}</span></TableCell>

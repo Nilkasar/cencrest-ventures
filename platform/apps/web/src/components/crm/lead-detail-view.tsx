@@ -31,6 +31,7 @@ import { DealStageBadge, LeadScore, LeadSourceBadge, LeadStatusBadge } from "@/c
 import { fetchActivitiesForLead, fetchDealsForLead, fetchLead, updateLeadStatus } from "@/data/crm/client";
 import type { LeadStatus } from "@/data/crm/types";
 import { useAsyncData } from "@/lib/use-async-data";
+import { useCrmBasePath } from "@/components/crm/crm-base-path";
 import { formatCurrency, formatDate } from "@/lib/format";
 
 const STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
@@ -65,6 +66,7 @@ function LeadDetailSkeleton() {
 }
 
 export function LeadDetailView({ leadId }: { leadId: string }) {
+  const crm = useCrmBasePath();
   const router = useRouter();
   const [statusUpdating, setStatusUpdating] = useState(false);
 
@@ -88,7 +90,7 @@ export function LeadDetailView({ leadId }: { leadId: string }) {
   return (
     <div className="flex flex-col gap-5">
       <Link
-        href="/crm/leads"
+        href={`${crm}/leads`}
         className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground w-fit"
       >
         <ArrowLeft size={14} /> Leads
@@ -104,7 +106,7 @@ export function LeadDetailView({ leadId }: { leadId: string }) {
           title="Lead not found"
           description="This lead may have been removed, or the link is out of date."
           action={
-            <Button variant="secondary" size="sm" onClick={() => router.push("/crm/leads")}>
+            <Button variant="secondary" size="sm" onClick={() => router.push(`${crm}/leads`)}>
               Back to leads
             </Button>
           }
@@ -132,10 +134,10 @@ export function LeadDetailView({ leadId }: { leadId: string }) {
               <LogActivityDialog leadId={leadId} onLogged={reload} />
               {state.data.lead.status === "converted" && state.data.lead.organizationId ? (
                 <Button variant="secondary" size="sm" asChild>
-                  <Link href={`/crm/accounts/${state.data.lead.organizationId}`}>View account</Link>
+                  <Link href={`${crm}/accounts/${state.data.lead.organizationId}`}>View account</Link>
                 </Button>
               ) : (
-                <ConvertLeadDialog lead={state.data.lead} onConverted={(accountId) => router.push(`/crm/accounts/${accountId}`)} />
+                <ConvertLeadDialog lead={state.data.lead} onConverted={(accountId) => router.push(`${crm}/accounts/${accountId}`)} />
               )}
             </div>
           </div>
@@ -241,7 +243,7 @@ export function LeadDetailView({ leadId }: { leadId: string }) {
                     {state.data.deals.map((deal) => (
                       <Link
                         key={deal.id}
-                        href={`/crm/deals/${deal.id}`}
+                        href={`${crm}/deals/${deal.id}`}
                         className="flex items-center justify-between gap-2 rounded-md -mx-2 px-2 py-1.5 hover:bg-surface transition-colors"
                       >
                         <div className="min-w-0">

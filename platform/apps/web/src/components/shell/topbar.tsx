@@ -16,6 +16,8 @@ interface Crumb {
   item: NavItem;
   /** True when the path is deeper than the nav item itself (a detail page). */
   nested: boolean;
+  /** Label for the deeper page: a named sub-page ("Leads") or "Details" for an id. */
+  nestedLabel: string;
 }
 
 function resolveCrumb(pathname: string): Crumb | null {
@@ -29,7 +31,12 @@ function resolveCrumb(pathname: string): Crumb | null {
   const match = all
     .filter(({ item }) => pathname === item.href || pathname.startsWith(`${item.href}/`))
     .sort((a, b) => b.item.href.length - a.item.href.length)[0];
-  return match ? { ...match, nested: pathname !== match.item.href } : null;
+  if (!match) return null;
+  const last = pathname.slice(match.item.href.length).split("/").filter(Boolean).pop() ?? "";
+  // An id-like segment (uuid, cuid) is a detail page; a word is a named sub-page.
+  const isId = /\d/.test(last) && last.length >= 16;
+  const nestedLabel = !last || isId ? "Details" : last.charAt(0).toUpperCase() + last.slice(1).replace(/-/g, " ");
+  return { ...match, nested: pathname !== match.item.href, nestedLabel };
 }
 
 function Breadcrumb() {
@@ -59,7 +66,7 @@ function Breadcrumb() {
           </Link>
           <ChevronRight size={13} className="shrink-0 text-subtle-foreground/70" aria-hidden />
           <span aria-current="page" className="truncate font-medium text-foreground">
-            Details
+            {crumb.nestedLabel}
           </span>
         </>
       ) : (

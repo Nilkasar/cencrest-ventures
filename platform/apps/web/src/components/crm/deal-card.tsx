@@ -13,6 +13,7 @@ import {
   getInitials,
 } from "@bebest/ui";
 import { DEAL_STAGE_LABEL, DEAL_STAGE_SEQUENCE, type Deal, type DealStage } from "@/data/crm/types";
+import { useCrmBasePath } from "@/components/crm/crm-base-path";
 import { formatCurrency, formatDate } from "@/lib/format";
 
 export function DealCard({
@@ -36,6 +37,7 @@ export function DealCard({
   onDragEnd?: () => void;
   onMoveStage: (dealId: string, stage: DealStage) => void;
 }) {
+  const crm = useCrmBasePath();
   return (
     <div
       draggable
@@ -56,7 +58,7 @@ export function DealCard({
       } ${isPending && !isDragging ? "opacity-70" : ""}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <Link href={`/crm/deals/${deal.id}`} className="min-w-0 flex-1">
+        <Link href={`${crm}/deals/${deal.id}`} className="min-w-0 flex-1">
           <p className="text-[13px] font-medium text-foreground leading-snug hover:underline">{deal.title}</p>
         </Link>
         <div className="flex items-center gap-0.5 shrink-0 -mr-1 -mt-0.5">
