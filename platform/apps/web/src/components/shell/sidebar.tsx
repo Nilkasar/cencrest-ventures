@@ -11,6 +11,9 @@ import { SidebarNav, SidebarSearch, useJumpTo } from "./sidebar-nav";
 const SIDEBAR_WIDTH = 240;
 const EASE = [0.16, 1, 0.3, 1] as const;
 
+/** Window event that opens the sidebar's "Jump to…" search (topbar button). */
+export const JUMP_EVENT = "bebest:jump-to";
+
 function isTypingTarget(target: EventTarget | null) {
   const el = target as HTMLElement | null;
   return !!el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
@@ -170,20 +173,28 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
   }, [mobileOpen, onClose]);
 
   // Desktop shortcuts: ⌘K / Ctrl+K jumps to a page, "[" toggles the rail.
+  // The topbar's search button fires JUMP_EVENT for the same effect.
   useEffect(() => {
+    function focusJump() {
+      setCollapsed(false);
+      requestAnimationFrame(() => searchRef.current?.focus());
+    }
     function handleKey(event: KeyboardEvent) {
       if (!window.matchMedia("(min-width: 1024px)").matches) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setCollapsed(false);
-        requestAnimationFrame(() => searchRef.current?.focus());
+        focusJump();
       } else if (event.key === "[" && !event.metaKey && !event.ctrlKey && !event.altKey && !isTypingTarget(event.target)) {
         event.preventDefault();
         toggleCollapsed();
       }
     }
     window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    window.addEventListener(JUMP_EVENT, focusJump);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      window.removeEventListener(JUMP_EVENT, focusJump);
+    };
   }, [setCollapsed, toggleCollapsed]);
 
   return (

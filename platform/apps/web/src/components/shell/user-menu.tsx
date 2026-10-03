@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, Settings, User } from "lucide-react";
+import { ChevronDown, LogOut, Settings, User } from "lucide-react";
 import {
   Avatar,
   DropdownMenu,
@@ -52,10 +52,19 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="rounded-full transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="group flex items-center gap-2 rounded-full p-0.5 transition-colors hover:bg-foreground/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-foreground/[0.05] xl:pr-2.5"
         aria-label="Account menu"
       >
         <Avatar fallback={getInitials(displayName)} size="sm" />
+        <span className="hidden max-w-[140px] flex-col items-start leading-tight xl:flex">
+          <span className="max-w-full truncate text-[13px] font-medium text-foreground">{displayName}</span>
+          <span className="max-w-full truncate text-[11.5px] text-subtle-foreground">{displayEmail}</span>
+        </span>
+        <ChevronDown
+          size={14}
+          aria-hidden
+          className="hidden text-subtle-foreground transition-transform group-data-[state=open]:rotate-180 xl:block"
+        />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="flex flex-col gap-0.5 normal-case tracking-normal">
