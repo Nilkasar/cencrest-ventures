@@ -300,9 +300,36 @@
   );
 }
 
+/* In-flight run progress (signal-deck.tsx `RunProgress`): a light sweep
+   across the bar, and a ring pinging off the current stage marker. */
+.ov-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--surface-raised) 55%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: ov-shimmer 2.2s var(--ease-standard, ease-in-out) infinite;
+}
+@keyframes ov-shimmer {
+  from {
+    background-position: -40% 0;
+  }
+  to {
+    background-position: 140% 0;
+  }
+}
+.ov-ping {
+  animation: ov-live 1.8s var(--ease-decelerate) infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ov-comet,
   .ov-pulse,
+  .ov-shimmer,
+  .ov-ping,
   .ov-live::after {
     display: none;
   }

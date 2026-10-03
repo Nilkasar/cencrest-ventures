@@ -140,15 +140,7 @@ function DeckBody({ runs, onStarted }: { runs: AiRun[]; onStarted: () => void })
             </Button>
           </div>
         )}
-        {!current && active && (
-          <div className="flex flex-col gap-2">
-            <p className="font-display text-[22px] font-semibold text-foreground leading-tight">Your baseline is being measured</p>
-            <p className="text-[13px] text-muted-foreground leading-relaxed">
-              {active.completedJobs + active.failedJobs} of {active.totalJobs.toLocaleString("en-US")} AI answers collected. You can leave — this
-              page updates itself, and you’ll be notified when the score lands.
-            </p>
-          </div>
-        )}
+        {!current && active && <RunProgress run={active} providers={providers} summary={summary} />}
 
         {current && score !== null && (
           <>
@@ -203,6 +195,147 @@ function DeckBody({ runs, onStarted }: { runs: AiRun[]; onStarted: () => void })
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+const RUN_STAGES = ["Collecting answers", "Reading mentions", "Scoring"] as const;
+
+/**
+ * The deck's right half while a baseline is in flight — everything here is
+ * the run's own state, refreshed by the deck's 8s poll: overall progress
+ * from `completedJobs`/`failedJobs`/`totalJobs`, each model's collected
+ * answers from the provider summary against its even share of the run
+ * (`totalJobs / providers.length`, since every query goes to every model),
+ * and the stage from progress alone (answers until 100%, then scoring).
+ */
+function RunProgress({
+  run,
+  providers,
+  summary,
+}: {
+  run: AiRun;
+  providers: string[];
+  summary: AiRunProviderSummaryRow[] | null;
+}) {
+  const done = run.completedJobs + run.failedJobs;
+  const remaining = Math.max(run.totalJobs - done, 0);
+  const perModel = providers.length ? Math.max(Math.round(run.totalJobs / providers.length), 1) : 1;
+  const stage = run.status === "queued" ? -1 : run.progressPct < 100 ? 0 : summary?.every((r) => r.extracted >= r.responses) ? 2 : 1;
+
+  return (
+    <div className="flex flex-1 flex-col gap-5">
+      <div>
+        <p className="font-display text-[22px] font-semibold leading-tight text-foreground">
+          {run.status === "queued" ? "Your baseline is queued" : "Your baseline is being measured"}
+        </p>
+        <p className="mt-1 text-[13px] text-muted-foreground">
+          {run.startedAt ? `Started ${formatRelativeTime(run.startedAt)}` : "Waiting for a worker to pick it up"} · usually 20–60 min
+        </p>
+      </div>
+
+      {/* Overall progress */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-end justify-between gap-3">
+          <p className="font-display text-[40px] font-semibold leading-none tracking-[-0.03em] text-foreground">
+            <AnimatedNumber value={run.progressPct} />
+            <span className="ml-0.5 font-sans text-[15px] font-normal tracking-normal text-subtle-foreground">%</span>
+          </p>
+          <p className="pb-1 font-mono text-[11px] text-subtle-foreground">
+            {done.toLocaleString("en-US")} / {run.totalJobs.toLocaleString("en-US")} answers
+          </p>
+        </div>
+        <div
+          className="relative h-2 overflow-hidden rounded-full bg-foreground/[0.07]"
+          role="progressbar"
+          aria-label="Scan progress"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={run.progressPct}
+        >
+          <motion.div
+            className="absolute inset-y-0 left-0 rounded-full bg-accent"
+            initial={false}
+            animate={{ width: `${Math.max(run.progressPct, 2)}%` }}
+            transition={{ duration: 0.8, ease: easings.emphasized }}
+          />
+          <div className="ov-shimmer absolute inset-0" aria-hidden="true" />
+        </div>
+      </div>
+
+      {/* Counts */}
+      <dl className="grid grid-cols-3 gap-2">
+        {[
+          { label: "Collected", value: run.completedJobs, tone: "text-foreground" },
+          { label: "Remaining", value: remaining, tone: "text-foreground" },
+          { label: "Failed", value: run.failedJobs, tone: run.failedJobs > 0 ? "text-danger" : "text-foreground" },
+        ].map((s) => (
+          <div key={s.label} className="rounded-lg border border-border bg-surface/60 px-3 py-2.5">
+            <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-subtle-foreground">{s.label}</dt>
+            <dd className={cn("mt-1 font-display text-[20px] font-semibold leading-none", s.tone)}>
+              <AnimatedNumber value={s.value} />
+            </dd>
+          </div>
+        ))}
+      </dl>
+
+      {/* Per-model answers */}
+      <div className="flex flex-col gap-2.5" aria-label="Answers collected per model">
+        {providers.map((p) => {
+          const meta = modelMeta(p);
+          const row = summary?.find((r) => r.provider === p);
+          const pct = row ? Math.min((row.responses / perModel) * 100, 100) : 0;
+          return (
+            <div key={p} className="grid grid-cols-[88px_minmax(0,1fr)_auto] items-center gap-3 text-[12.5px]">
+              <span className="flex items-center gap-2 truncate text-muted-foreground">
+                <span className="size-2 shrink-0 rounded-full" style={{ background: meta.tint }} aria-hidden="true" />
+                {meta.name}
+              </span>
+              <span className="h-1.5 overflow-hidden rounded-full bg-foreground/[0.07]">
+                {row ? (
+                  <motion.span
+                    className="block h-full rounded-full"
+                    style={{ background: meta.tint }}
+                    initial={false}
+                    animate={{ width: `${pct}%` }}
+                    transition={{ duration: 0.8, ease: easings.emphasized }}
+                  />
+                ) : (
+                  <Skeleton className="h-full w-1/3" />
+                )}
+              </span>
+              <span className="w-[72px] text-right font-mono text-[11px] text-subtle-foreground">
+                {row ? `${row.responses.toLocaleString("en-US")} / ${perModel.toLocaleString("en-US")}` : "—"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Stages */}
+      <ol className="mt-auto flex items-center gap-2 border-t border-border pt-4" aria-label="Scan stages">
+        {RUN_STAGES.map((label, i) => {
+          const state = i < stage ? "done" : i === stage ? "current" : "todo";
+          return (
+            <li key={label} className="flex min-w-0 flex-1 items-center gap-2">
+              <span
+                className={cn(
+                  "relative flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold",
+                  state === "done" && "border-accent bg-accent text-accent-foreground",
+                  state === "current" && "border-accent text-accent",
+                  state === "todo" && "border-border text-subtle-foreground",
+                )}
+                aria-current={state === "current" ? "step" : undefined}
+              >
+                {state === "current" && <span className="ov-ping absolute inset-0 rounded-full border border-accent" aria-hidden="true" />}
+                {i + 1}
+              </span>
+              <span className={cn("truncate text-[12px]", state === "todo" ? "text-subtle-foreground" : "text-foreground")}>{label}</span>
+            </li>
+          );
+        })}
+      </ol>
+      <p className="-mt-2 text-[12px] text-subtle-foreground">You can leave — this updates itself, and you’ll be notified when the score lands.</p>
     </div>
   );
 }
