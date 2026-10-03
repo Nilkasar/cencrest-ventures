@@ -64,3 +64,47 @@ describe('rateLimit middleware', () => {
     );
   });
 });
+
+describe('baselineRateLimit', () => {
+  beforeEach(() => {
+    checkRateLimitMock.mockReset();
+    checkRateLimitMock.mockResolvedValue({ allowed: true, remaining: 1, limit: 1, resetAt: 0 });
+  });
+
+  async function hit(headers: Record<string, string>) {
+    const { baselineRateLimit } = await import('./rate-limit.js');
+    const app = new Hono();
+    app.use('*', baselineRateLimit);
+    app.get('/', (c) => c.json({ ok: true }));
+    return app.request('/', { headers: { 'x-forwarded-for': '9.9.9.9', ...headers } });
+  }
+
+  it('applies the 30/min public limit to anonymous requests', async () => {
+    await hit({});
+    expect(checkRateLimitMock).toHaveBeenCalledWith(
+      expect.objectContaining({ bucket: 'public', max: 30, windowSeconds: 60, key: '9.9.9.9' }),
+    );
+  });
+
+  it('applies the per-IP bearer ceiling, not the public limit, to token-bearing requests', async () => {
+    await hit({ authorization: 'Bearer abc.def.ghi' });
+    expect(checkRateLimitMock).toHaveBeenCalledTimes(1);
+    expect(checkRateLimitMock).toHaveBeenCalledWith(
+      expect.objectContaining({ bucket: 'bearer_ip', max: 600, windowSeconds: 60, key: '9.9.9.9' }),
+    );
+  });
+
+  it('treats a non-bearer or empty Authorization header as anonymous', async () => {
+    await hit({ authorization: 'Basic dXNlcjpwYXNz' });
+    await hit({ authorization: 'Bearer ' });
+    for (const call of checkRateLimitMock.mock.calls) {
+      expect(call[0]).toMatchObject({ bucket: 'public', max: 30 });
+    }
+  });
+
+  it('still answers 429 when the bearer ceiling is exhausted', async () => {
+    checkRateLimitMock.mockResolvedValue({ allowed: false, remaining: 0, limit: 600, resetAt: Math.floor(Date.now() / 1000) + 10 });
+    const res = await hit({ authorization: 'Bearer abc.def.ghi' });
+    expect(res.status).toBe(429);
+  });
+});

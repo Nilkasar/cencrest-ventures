@@ -3,7 +3,7 @@ import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
 import { requestId } from './middleware/request-id.js';
 import { requestLogger } from './middleware/logger.js';
-import { publicRateLimit } from './middleware/rate-limit.js';
+import { baselineRateLimit } from './middleware/rate-limit.js';
 import health from './routes/health.js';
 import { createAuthRoutes } from './routes/auth.js';
 import authGoogle from './routes/auth-google.js';
@@ -107,12 +107,14 @@ app.use(
 app.use('*', requestId);
 app.use('*', requestLogger);
 
-// Baseline public rate limit on everything (SECURITY.md: "Public
-// (unauthenticated): 30 requests / 1 minute"). Routes needing a stricter
+// Baseline rate limit on everything: anonymous requests get SECURITY.md's
+// "Public (unauthenticated): 30 requests / 1 minute"; requests with a
+// bearer token get a 600/min per-IP ceiling instead, since their real
+// limit is the per-user `authenticatedRateLimit`. Routes needing a stricter
 // or authenticated-aware limit apply their own on top — Hono runs
 // middleware in registration order, so the more specific limiter still
 // executes and can reject before the handler runs.
-app.use('*', publicRateLimit);
+app.use('*', baselineRateLimit);
 
 app.route('/api/health', health);
 
