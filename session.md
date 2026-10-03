@@ -1,6 +1,14 @@
 # Session Log — Cencrest Ventures
 
-## ▶ RESUME HERE (last updated 2026-09-09)
+## ▶ RESUME HERE (last updated 2026-10-03)
+
+**Latest (2026-10-03): UI pass on the platform app — sign-in, shell, and the Overview dashboard.** See the 2026-10-03 entry at the bottom. Short version: the auth screens share the snapshot split-panel hero (with Google sign-in kept); the sidebar is theme-aware, tinted, 240px, collapsible to a 72px rail, with ⌘K "Jump to…"; the topbar has a breadcrumb, a search trigger and refined org/account controls; `/overview` was rebuilt as an animated command center on real data only, with a confirmed "Run scan" button. Everything is on `main` (Vercel deploys web and API from `main` on push). **None of it has been opened in a browser** — the Chrome extension wasn't connected all session.
+
+**Note:** this log had a gap from 2026-09-10 to 2026-10-02. The work in that window is only in git history: Vercel request-body fixes for magic-link, Resend email, default-org on first login, Connectors (Google OAuth + GSC/GA4), CREDENTIALS.md, the new logo/favicon, the login and snapshot redesigns, and Google OAuth login on `main`.
+
+---
+
+## Previous resume point (2026-09-09)
 
 **The platform now runs against a real Postgres.** A dev Neon database is wired up (`packages/database/.env`, `apps/api/.env` — both gitignored), the whole schema is applied (128 tables, all RLS/CHECK/index SQL, zero failures), and the API + web app boot and talk to it. See the 2026-09-08/09 session entry at the bottom of this file for the full account.
 
@@ -735,3 +743,42 @@ Fixed in two halves: migration `0021` splits the policy — reads stay tenant-sc
 ### Still open
 
 Per-epic *business-logic* review beyond these classes — the equivalent of the CRM's double-conversion race and stale-lost-reason contradiction — has been done for Epic 18 only. Epics 2–17 have had their systemic 500 classes fixed and their RLS corrected, but not yet a line-by-line semantic read. External integrations and deployment remain untouched by request.
+
+---
+
+## Session: 2026-10-03 — Sign-in, app shell and Overview dashboard UI pass
+
+All work is on `rebuild/platform`, and each step was fast-forwarded to `main`, which Vercel deploys. Every change passed `tsc`, the touched-file ESLint run and `pnpm --filter @bebest/web run build`. **Nothing was checked in a browser**, because the Chrome extension wasn't connected, so the light/dark visuals and the interactions are still unchecked by eye.
+
+### Sign-in screens (`94aeacb`, `a55e87f`, `61aeb4f`)
+- The snapshot hero moved to `components/brand-hero/` as a prop-driven `HeroPanel` plus `SignalField`. The `(auth)` layout now uses it, so `/login`, check-email, magic-link verify and the Google callback match the snapshot screen.
+- Pitfall: `94aeacb` deleted "Continue with Google", treating it as the old disabled placeholder. `main` had meanwhile wired it to real OAuth (`ec79a1f`). `a55e87f` merged `main` and restored the button in the new style. **Check `origin/main` for commits made directly on it before pushing**: `main` is being committed to directly, outside this branch.
+
+### Sidebar (`3a9224b`, `53d3dc5`)
+- It now uses theme tokens instead of hardcoded `ink-950`. A verdant-tinted panel comes from `--sidebar` and `--sidebar-border` in `globals.css`, with per-theme values. Width is 240px.
+- It collapses to a 72px icon rail with tooltips, via the `[` key or the header button. The state lives on `<html data-sidebar>` and is persisted by `lib/use-sidebar.ts`. `theme-script.ts` restores it before paint, and the widths are CSS-driven (`.app-sidebar`, `.app-content`), so nothing jumps on load.
+- "Jump to…" filter: ⌘/Ctrl+K, arrow keys, Enter. Nav groups collapse and stay collapsed (a closed group still shows its active page). The active item gets an animated pill.
+
+### Topbar (`ee5e4d8`)
+- Breadcrumb resolved from `data/nav.ts`: group, then page, with a "Details" step on nested routes.
+- The "Search pages… ⌘K" button fires `JUMP_EVENT` (exported from `sidebar.tsx`) to open the sidebar search.
+- The org switcher is a bordered pill. The account chip shows name and email at xl and above. The theme icon is animated, and the bar gets a shadow on scroll.
+
+### Overview dashboard (`ed4a46a`, `561483e`, `affeef0`, `aed7a3e`)
+- **Rebuild (`ed4a46a`):** built by the frontend-engineer agent. Every figure comes from existing endpoints, with no fabricated series.
+  - Widgets: SignalDeck hero (4-model constellation, score dial, score anatomy), KPI strip, visibility trend, competitive field, growth loop, opportunity impact/effort map, next action, pulse feed, GSC/GA4 traffic, SEO health, CRM pipeline. Files are in `components/overview/`.
+  - **New API route** `GET /ai-runs/:id/provider-summary` in `routes/ai-run-details.ts`. It is org-scoped (`requireOrgFromToken` + `withOrgContext` + an explicit `organization_id`), reads scalar columns only, and has tests. Verified live: an unauthenticated request returns 401 and a sibling bogus path returns 404.
+  - Known gaps, shown honestly rather than faked: no per-model or competitor score history endpoint; growth-loop bands show stage totals rather than lineage; there is no GET for `seo_analyses`; CRM deal totals cover the first 100 rows in one currency.
+- **Poll-failure fix (`561483e`):** `usePolledData` (`overview/primitives.tsx`) passed `useAsyncData`'s error straight through, and `useAsyncData` drops its data on any failure. So one failed 8s poll during a run (429 from the 120 req/min per-user limit, a cold start, a blip) replaced the hero with "Your AI Visibility runs couldn't load right now", and polling stopped. It now keeps the last good data and keeps polling. The user reported this one.
+- **Run scan (`affeef0`, `aed7a3e`):** a button on the hero, and the first-run callout is now a real trigger. Both use `startAiRun()` and reload the runs list. Start errors reuse `describeStartError`, which is now exported from `ai-visibility/ai-run-empty-state.tsx`. A confirmation dialog states the monthly-allowance cost and the 20–60 minute duration.
+
+### Not mine, but on this branch today
+- A parallel session committed `ace53cf` (Epic 22 spec: Platform, Organization and Agency workspace views) and `fef74b4` (Epic 22 Phase 0 backend: platform role, org kind, audited platform guard, migration `0023_workspace_views`). See those commits for details.
+
+### Open
+- Eyeball everything in a browser, in light and dark, at desktop and mobile widths. The sidebar tint strength and the Overview animations are the most likely things to need tuning.
+- `feature-test-tracker.xlsx` has not been updated for any of today's work. The CLAUDE.md rule requires a real test first.
+- Pre-existing lint errors that were left alone:
+  - `connectors/ga4-stats-panel.tsx`: unused `fmtDuration`.
+  - `hooks/use-brand-profile.ts`: setState in an effect.
+  - `auth/google/callback/page.tsx`: setState in an effect.
