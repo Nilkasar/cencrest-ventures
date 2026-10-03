@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { animate, motion, useInView, useMotionValue, useReducedMotion, useTransform, type Variants } from "framer-motion";
 import { AlertTriangle, ArrowUpRight, RotateCw } from "lucide-react";
 import { Button, Card, Skeleton, cn, easings } from "@bebest/ui";
@@ -240,6 +240,12 @@ export function useOffscreenPause<T extends Element>() {
  * interval, skipping ticks while the tab is hidden. Returns to idle the
  * moment the server says the work is done. Refetches never tear down to
  * skeletons — `useAsyncData` keeps the last result on screen.
+ *
+ * A failed background poll (a 429 from the per-user rate limit, a cold
+ * start, a network blip) must not replace good data with an error panel:
+ * `useAsyncData` drops its data on any failure, so the last good result is
+ * kept here and served — and polling continues — until a poll succeeds.
+ * The error state only surfaces when there was never data for these deps.
  */
 export function usePolledData<T>(
   fetcher: () => Promise<T>,
@@ -247,7 +253,16 @@ export function usePolledData<T>(
   intervalFor: (data: T) => number | null,
 ) {
   const state = useAsyncData(fetcher, deps);
-  const ms = state.status === "success" ? intervalFor(state.data) : null;
+  const key = JSON.stringify(deps);
+  const [lastGood, setLastGood] = useState<{ key: string; data: T } | null>(null);
+  if (state.status === "success" && (lastGood?.key !== key || lastGood.data !== state.data)) {
+    setLastGood({ key, data: state.data });
+  }
+  const fallback = lastGood?.key === key ? lastGood : null;
+
+  const effective: typeof state =
+    state.status !== "success" && fallback ? { ...state, status: "success", data: fallback.data } : state;
+  const ms = effective.status === "success" ? intervalFor(effective.data) : null;
   const { reload } = state;
 
   useEffect(() => {
@@ -258,7 +273,7 @@ export function usePolledData<T>(
     return () => window.clearInterval(id);
   }, [ms, reload]);
 
-  return state;
+  return effective;
 }
 
 // ---------------------------------------------------------------------------
