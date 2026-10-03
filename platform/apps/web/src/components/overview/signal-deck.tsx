@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowUpRight, Minus, Radar, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowUpRight, Minus, Radar, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 import { Badge, Button, Card, Skeleton, cn, easings } from "@bebest/ui";
 import type { AsyncState } from "@/lib/use-async-data";
-import { getAiRunProviderSummary, getAiRunScore } from "@/data/ai-visibility/client";
+import { getAiRunProviderSummary, getAiRunScore, startAiRun } from "@/data/ai-visibility/client";
+import { describeStartError } from "@/components/ai-visibility/ai-run-empty-state";
 import type { AiRun, AiRunProviderSummaryRow, AiRunScore, ScoreComponentKey } from "@/data/ai-visibility/types";
 import { SCORE_COMPONENT_DESCRIPTION, SCORE_COMPONENT_LABEL } from "@/data/ai-visibility/labels";
 import { formatRelativeTime } from "@/lib/format";
@@ -52,14 +54,15 @@ export function SignalDeck({ runs }: { runs: RunsState }) {
               <PanelError message="Your AI Visibility runs couldn’t load right now." onRetry={runs.reload} height={320} />
             </div>
           )}
-          {runs.status === "success" && <DeckBody runs={runs.data} />}
+          {runs.status === "success" && <DeckBody runs={runs.data} onStarted={runs.reload} />}
         </div>
       </Card>
     </motion.section>
   );
 }
 
-function DeckBody({ runs }: { runs: AiRun[] }) {
+function DeckBody({ runs, onStarted }: { runs: AiRun[]; onStarted: () => void }) {
+  const scan = useStartScan(onStarted);
   const brandRuns = runs.filter((r) => r.competitorId === null);
   const latest = brandRuns[0] ?? null;
   const completed = brandRuns.filter((r) => r.status === "completed" && r.aiVisibilityScore !== null);
@@ -104,10 +107,15 @@ function DeckBody({ runs }: { runs: AiRun[] }) {
             <Radar size={14} />
           </span>
           <p className="font-mono text-[10.5px] font-medium uppercase tracking-[0.12em] text-subtle-foreground">AI Visibility Score</p>
-          {active && <LiveChip label={active.status === "queued" ? "Queued" : `Running · ${active.progressPct}%`} />}
+          {active ? (
+            <LiveChip label={active.status === "queued" ? "Queued" : `Running · ${active.progressPct}%`} />
+          ) : (
+            (current || latest?.status === "failed") && <RunScanButton scan={scan} className="ml-auto" />
+          )}
         </div>
 
-        {!current && !active && latest?.status !== "failed" && <FirstRunCallout />}
+        {scan.errorInfo && <StartErrorNote info={scan.errorInfo} />}
+        {!current && !active && latest?.status !== "failed" && <FirstRunCallout scan={scan} />}
         {!current && latest?.status === "failed" && !active && (
           <div className="flex flex-col gap-3">
             <p className="font-display text-[22px] font-semibold text-foreground leading-tight">Your last run didn’t finish</p>
@@ -184,7 +192,64 @@ function DeckBody({ runs }: { runs: AiRun[] }) {
   );
 }
 
-function FirstRunCallout() {
+type ScanTrigger = ReturnType<typeof useStartScan>;
+
+/** Starts a brand run from the Overview — the same body-less
+ *  `POST /brands/me/ai-runs` the AI Visibility page's "Run again" uses.
+ *  On success the runs list reloads, so the deck flips to its live state
+ *  (and starts polling) from real server data rather than a local guess. */
+function useStartScan(onStarted: () => void) {
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  async function start() {
+    if (starting) return;
+    setStarting(true);
+    setError(null);
+    try {
+      await startAiRun();
+      onStarted();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  const errorInfo = error
+    ? (describeStartError(error) ?? {
+        title: "Couldn’t start the scan",
+        message: error instanceof Error ? error.message : "Something went wrong. Try again in a moment.",
+      })
+    : null;
+
+  return { starting, start, errorInfo };
+}
+
+function RunScanButton({ scan, className }: { scan: ScanTrigger; className?: string }) {
+  return (
+    <Button variant="outline" size="sm" loading={scan.starting} onClick={() => void scan.start()} className={className}>
+      {!scan.starting && <RefreshCw size={13} aria-hidden="true" />}
+      {scan.starting ? "Starting…" : "Run scan"}
+    </Button>
+  );
+}
+
+function StartErrorNote({ info }: { info: NonNullable<ScanTrigger["errorInfo"]> }) {
+  return (
+    <div role="alert" className="rounded-lg border border-danger/30 bg-danger-muted px-4 py-3 text-[13px]">
+      <p className="font-medium text-danger">{info.title}</p>
+      <p className="mt-0.5 text-muted-foreground leading-relaxed">{info.message}</p>
+      {info.action && (
+        <Link href={info.action.href} className="mt-1.5 inline-flex font-medium text-accent hover:underline underline-offset-4">
+          {info.action.label}
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function FirstRunCallout({ scan }: { scan: ScanTrigger }) {
   return (
     <div className="flex flex-col gap-3">
       <p className="font-display text-[24px] font-semibold text-foreground leading-tight tracking-[-0.01em]">
@@ -194,8 +259,8 @@ function FirstRunCallout() {
         No visibility scan has run yet, so there’s no score to show. Your first run asks every model your real buyer questions —
         about 20–60 minutes, in the background. Leave whenever you like; this dial fills in when it lands.
       </p>
-      <Button asChild variant="primary" size="md" className="self-start">
-        <Link href="/ai-visibility">Run your first visibility scan</Link>
+      <Button variant="primary" size="md" className="self-start" loading={scan.starting} onClick={() => void scan.start()}>
+        {scan.starting ? "Starting your scan…" : "Run your first visibility scan"}
       </Button>
     </div>
   );

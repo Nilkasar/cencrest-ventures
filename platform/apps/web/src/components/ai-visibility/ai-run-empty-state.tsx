@@ -8,7 +8,7 @@ import { providerLabel } from "@/data/ai-visibility/labels";
 
 const PROVIDERS = ["openai", "anthropic", "google", "perplexity"];
 
-function describeStartError(err: unknown): { title: string; message: string; action?: { label: string; href: string } } | null {
+export function describeStartError(err: unknown): { title: string; message: string; action?: { label: string; href: string } } | null {
   if (err instanceof AiQueryLimitError) {
     return { title: "Monthly AI query limit reached", message: err.message };
   }
