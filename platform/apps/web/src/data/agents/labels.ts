@@ -26,7 +26,7 @@ export const AGENT_RUN_STATUS_LABEL: Record<AgentRunStatus, string> = {
 
 export const AGENT_RUN_STATUS_BADGE_VARIANT: Record<AgentRunStatus, NonNullable<BadgeProps["variant"]>> = {
   queued: "neutral",
-  running: "warning",
+  running: "info",
   completed: "success",
   failed: "danger",
 };
@@ -59,9 +59,9 @@ export const AGENT_EVENT_TYPE_LABEL: Record<AgentEventType, string> = {
 
 export const AGENT_EVENT_TYPE_BADGE_VARIANT: Record<AgentEventType, NonNullable<BadgeProps["variant"]>> = {
   progress: "neutral",
-  observation: "outline",
-  recommendation: "accent",
-  draft: "accent",
+  observation: "neutral",
+  recommendation: "info",
+  draft: "info",
   action_required: "warning",
   complete: "success",
   error: "danger",

@@ -1,26 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { ChevronDown, ChevronRight, Sparkles } from "lucide-react";
-import { Badge, Button } from "@bebest/ui";
+import { useId, useState } from "react";
+import { Sparkles } from "lucide-react";
+import { Badge, Button, cn } from "@bebest/ui";
 import type { ContentBrief, ContentDraft } from "@/data/content/types";
-import { BRIEF_STATUS_BADGE_VARIANT, BRIEF_STATUS_LABEL, DRAFT_STATUS_BADGE_VARIANT, DRAFT_STATUS_LABEL, contentTypeLabel, splitImplementationNotes } from "@/data/content/labels";
-import { formatDate } from "@/lib/format";
+import { BRIEF_STATUS_BADGE_VARIANT, BRIEF_STATUS_LABEL, contentTypeLabel, splitImplementationNotes } from "@/data/content/labels";
+import { DisclosureButton, RequirementsGrid } from "@/components/recommendations/level-meter";
+import { formatDateTime, formatRelativeTime } from "@/lib/format";
 
 /**
- * One row in the "Active briefs" list — `docs/epics/11-content-intelligence-
- * generation.md`'s UI surface. Every brief carries forward its source
- * recommendation's dual SEO+GEO requirement VERBATIM (`implementationNotes`
- * — this epic's explicit "not a stripped-down summary" DoD), shown here as
- * two visibly distinct blocks behind a disclosure toggle, same convention
- * `next-action-panel.tsx`'s "Show implementation brief" already sets for
- * Epic 10.
+ * One brief in the Briefs list. Every brief carries its source
+ * recommendation's dual SEO + GEO requirement verbatim (Epic 11's "not a
+ * stripped-down summary" DoD), one click away so the list stays
+ * scannable. The version chips are real links to each draft's review
+ * screen; the one action — generate (or regenerate) a draft — sits right.
  *
- * `drafts` is `undefined` while the per-brief detail fetch (`GET
- * /content-briefs/:id`, which is what actually carries the draft list) is
- * still in flight — distinct from an empty array (fetched, zero drafts
- * yet).
+ * `drafts` is `undefined` while the per-brief detail fetch is in flight,
+ * distinct from `[]` (fetched, no drafts yet).
  */
 export function BriefRow({
   brief,
@@ -34,61 +31,85 @@ export function BriefRow({
   onGenerateDraft: (brief: ContentBrief) => void;
 }) {
   const [showDetails, setShowDetails] = useState(false);
+  const detailsId = useId();
   const notes = splitImplementationNotes(brief.implementationNotes);
-  const hasDrafts = (drafts?.length ?? 0) > 0;
+  const sorted = drafts?.slice().sort((a, b) => b.version - a.version) ?? [];
+  const hasDrafts = sorted.length > 0;
 
   return (
-    <div className="p-5 flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-[14px] font-medium text-foreground">{brief.title}</p>
+    <article className="flex flex-col gap-3 px-5 py-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h3 className="text-[14px] font-medium text-foreground">{brief.title}</h3>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+            <Badge variant={BRIEF_STATUS_BADGE_VARIANT[brief.status]} size="sm" dot>
+              {BRIEF_STATUS_LABEL[brief.status]}
+            </Badge>
             <Badge variant="outline" size="sm">
               {contentTypeLabel(brief.contentType)}
             </Badge>
-            <Badge variant={BRIEF_STATUS_BADGE_VARIANT[brief.status]} size="sm">
-              {BRIEF_STATUS_LABEL[brief.status]}
-            </Badge>
+            <span className="text-[12px] text-muted-foreground" title={formatDateTime(brief.createdAt)}>
+              Created {formatRelativeTime(brief.createdAt)}
+            </span>
           </div>
-          {brief.targetQuery && <p className="text-[12.5px] text-muted-foreground mt-1 truncate">Target: “{brief.targetQuery}”</p>}
-          <button
-            type="button"
-            onClick={() => setShowDetails((v) => !v)}
-            className="mt-2 inline-flex items-center gap-1 text-[12px] text-accent hover:underline underline-offset-4"
-          >
-            {showDetails ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            {showDetails ? "Hide brief" : "Show brief"}
-          </button>
+          {brief.targetQuery && (
+            <p className="mt-2 text-[13px] text-muted-foreground">
+              Target query <span className="text-foreground">&ldquo;{brief.targetQuery}&rdquo;</span>
+            </p>
+          )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <p className="text-[11.5px] text-subtle-foreground">{formatDate(brief.createdAt)}</p>
-          <Button variant="outline" size="sm" loading={generating} onClick={() => onGenerateDraft(brief)}>
-            <Sparkles size={13} /> {hasDrafts ? "Regenerate draft" : "Generate draft"}
-          </Button>
-        </div>
+        <Button variant={hasDrafts ? "secondary" : "primary"} size="sm" loading={generating} onClick={() => onGenerateDraft(brief)} className="shrink-0 self-start">
+          <Sparkles size={13} aria-hidden="true" /> {hasDrafts ? "Regenerate draft" : "Generate draft"}
+        </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <DisclosureButton expanded={showDetails} onClick={() => setShowDetails((v) => !v)} controls={detailsId}>
+          Brief
+        </DisclosureButton>
+        {drafts === undefined && <span className="text-[12px] text-subtle-foreground">Loading versions…</span>}
+        {drafts !== undefined && !hasDrafts && <span className="text-[12px] text-subtle-foreground">No drafts yet</span>}
+        {hasDrafts && (
+          <nav aria-label={`Draft versions of ${brief.title}`} className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[12px] text-muted-foreground">Drafts</span>
+            {sorted.map((draft) => {
+              const awaiting = draft.status === "generated";
+              return (
+                <Link
+                  key={draft.id}
+                  href={`/content/drafts/${draft.id}`}
+                  title={awaiting ? "Awaiting approval" : "Approved"}
+                  className={cn(
+                    "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 font-mono text-[11.5px] tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    "border-border bg-surface-raised text-foreground hover:border-border-strong hover:bg-surface",
+                  )}
+                >
+                  <span className={cn("size-1.5 rounded-full", awaiting ? "bg-warning" : "bg-success")} aria-hidden="true" />
+                  v{draft.version}
+                  <span className="sr-only">{awaiting ? "awaiting approval" : "approved"}</span>
+                </Link>
+              );
+            })}
+          </nav>
+        )}
       </div>
 
       {showDetails && (
-        <div className="rounded-lg border border-border bg-surface p-3 flex flex-col gap-3">
-          <p className="text-[12.5px] text-foreground leading-relaxed">{brief.evidenceSummary}</p>
+        <div id={detailsId} className="flex flex-col gap-3">
+          <blockquote className="border-l-2 border-border-strong pl-3 text-[13px] leading-relaxed text-foreground">
+            <span className="sr-only">Evidence: </span>
+            {brief.evidenceSummary}
+          </blockquote>
           {notes ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <p className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-subtle-foreground mb-1">SEO requirements</p>
-                <p className="text-[12px] text-foreground leading-relaxed">{notes.seo}</p>
-              </div>
-              <div>
-                <p className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-subtle-foreground mb-1">GEO requirements</p>
-                <p className="text-[12px] text-foreground leading-relaxed">{notes.geo}</p>
-              </div>
-            </div>
+            <RequirementsGrid seo={notes.seo} geo={notes.geo} />
           ) : (
-            <p className="text-[12px] text-foreground leading-relaxed whitespace-pre-line">{brief.implementationNotes}</p>
+            <p className="whitespace-pre-line rounded-lg border border-border bg-surface/60 p-4 text-[13px] leading-relaxed text-foreground">{brief.implementationNotes}</p>
           )}
           {brief.keywords.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-[12px] text-muted-foreground">Keywords</span>
               {brief.keywords.map((kw) => (
-                <Badge key={kw} variant="neutral" size="sm">
+                <Badge key={kw} variant="outline" size="sm">
                   {kw}
                 </Badge>
               ))}
@@ -96,29 +117,6 @@ export function BriefRow({
           )}
         </div>
       )}
-
-      {drafts === undefined && <p className="text-[11.5px] text-subtle-foreground">Loading versions…</p>}
-
-      {hasDrafts && (
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-[11px] font-mono uppercase tracking-[0.08em] text-subtle-foreground">Versions</p>
-          {drafts!
-            .slice()
-            .sort((a, b) => b.version - a.version)
-            .map((draft) => (
-              <Link
-                key={draft.id}
-                href={`/content/drafts/${draft.id}`}
-                className="inline-flex items-center gap-1.5 rounded-full border border-border-strong px-2.5 h-6 text-[11.5px] text-foreground hover:bg-surface transition-colors"
-              >
-                v{draft.version}
-                <Badge variant={DRAFT_STATUS_BADGE_VARIANT[draft.status]} size="sm">
-                  {DRAFT_STATUS_LABEL[draft.status]}
-                </Badge>
-              </Link>
-            ))}
-        </div>
-      )}
-    </div>
+    </article>
   );
 }

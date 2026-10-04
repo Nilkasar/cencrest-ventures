@@ -1,5 +1,5 @@
 import type { BadgeProps } from "@bebest/ui";
-import { OPPORTUNITY_STATUS_BADGE_VARIANT, OPPORTUNITY_STATUS_LABEL } from "@/data/opportunities/labels";
+import { OPPORTUNITY_STATUS_LABEL } from "@/data/opportunities/labels";
 import type { RecommendationActionType, RecommendationLevel, RecommendationStatus } from "./types";
 
 /** Display-only label/variant maps for Epic 10 (Recommendation Engine) —
@@ -13,9 +13,9 @@ export const ACTION_TYPE_LABEL: Record<RecommendationActionType, string> = {
 };
 
 export const ACTION_TYPE_BADGE_VARIANT: Record<RecommendationActionType, NonNullable<BadgeProps["variant"]>> = {
-  create_page: "accent",
+  create_page: "outline",
   update_page: "outline",
-  fix_technical: "warning",
+  fix_technical: "outline",
   build_citations: "outline",
 };
 
@@ -24,8 +24,14 @@ export const ACTION_TYPE_BADGE_VARIANT: Record<RecommendationActionType, NonNull
  *  redeclared — one source of truth for what "New"/"In progress" etc. mean
  *  and look like across the product. */
 export const RECOMMENDATION_STATUS_LABEL: Record<RecommendationStatus, string> = OPPORTUNITY_STATUS_LABEL;
-export const RECOMMENDATION_STATUS_BADGE_VARIANT: Record<RecommendationStatus, NonNullable<BadgeProps["variant"]>> =
-  OPPORTUNITY_STATUS_BADGE_VARIANT;
+/** Tones follow the app-wide status map (patterns/README.md §6): not
+ *  started -> neutral, in motion -> info, done -> success. */
+export const RECOMMENDATION_STATUS_BADGE_VARIANT: Record<RecommendationStatus, NonNullable<BadgeProps["variant"]>> = {
+  new: "neutral",
+  in_progress: "info",
+  completed: "success",
+  dismissed: "neutral",
+};
 
 export const LEVEL_LABEL: Record<RecommendationLevel, string> = {
   low: "Low",
