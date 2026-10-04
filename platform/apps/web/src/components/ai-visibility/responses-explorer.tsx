@@ -1,51 +1,37 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, MessageSquareOff, Search, X } from "lucide-react";
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  EmptyState,
-  Input,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Skeleton,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@bebest/ui";
+import { ChevronDown, MessageSquareText, X } from "lucide-react";
+import { Badge, Button, EmptyState, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@bebest/ui";
+import { Section } from "@/components/patterns/section";
+import { FilterSelect, ResultCount, ToolbarSearch } from "@/components/patterns/toolbar";
+import { TableSkeleton, type SkeletonColumn } from "@/components/patterns/data-table";
+import { NoResults } from "@/components/patterns/states";
+import { typography } from "@/components/patterns/typography";
 import type { AiRunResponse, AiVisibilityQueryMeta } from "@/data/ai-visibility/types";
-import {
-  EXTRACTION_STATUS_BADGE_VARIANT,
-  EXTRACTION_STATUS_LABEL,
-  SENTIMENT_BADGE_VARIANT,
-  SENTIMENT_LABEL,
-  providerLabel,
-} from "@/data/ai-visibility/labels";
-import { describeFilter, matchesFilter, type ResponseFilter } from "./response-filter";
+import { formatNumber, formatRelativeTime } from "@/lib/format";
+import { describeFilter, isEmptyFilter, matchesFilter, type ResponseFilter } from "./response-filter";
 import { ResponseDetailDialog } from "./response-detail-dialog";
-import { formatDateTime } from "@/lib/format";
+import { ExtractionBadge, SentimentBadge, shortProviderLabel } from "./status-badges";
 
 const PAGE_SIZE = 25;
 
+const COLUMNS: SkeletonColumn[] = [
+  { header: "Question", cell: "entity" },
+  { header: "Mentioned", cell: "badge" },
+  { header: "Recommended", cell: "badge" },
+  { header: "Tone", cell: "badge" },
+  { header: "Fetched", cell: "meta" },
+];
+
 /**
- * The raw-response explorer — per the epic's UI surface. Operates over the
- * already-fetched, capped response set (`AiRunDetail`'s `getAllAiRunResponses`
- * call) rather than issuing a new server request per filter change: every
- * facet here (provider/status/sentiment/mentioned/recommended/search) is a
- * real field on data already in memory, and this is also the landing spot
- * for every drill-down click elsewhere on the screen (`filter` is owned by
- * `AiRunDetail`, not this component) — one filtering mechanism, not two.
+ * The bottom of the drill-down: every raw AI answer in this run. One
+ * filter state (owned by `AiRunDetail`) is shared with every number on the
+ * page, so "select a number above" and "filter by hand here" are the same
+ * mechanism. Filtering runs over the already-fetched set in memory.
  */
 export function ResponsesExplorer({
+  id,
   responses,
   total,
   truncated,
@@ -55,6 +41,7 @@ export function ResponsesExplorer({
   filter,
   onFilterChange,
 }: {
+  id: string;
   responses: AiRunResponse[];
   total: number;
   truncated: boolean;
@@ -73,210 +60,180 @@ export function ResponsesExplorer({
   );
 
   const visible = filtered.slice(0, visibleCount);
-  const chips = describeFilter(filter);
+  // Facets with no dedicated control (set by a drill-down elsewhere on the
+  // page) are shown as chips so the user can see why the list narrowed.
+  const drillChips = describeFilter({ queryIds: filter.queryIds, queryIdsLabel: filter.queryIdsLabel, recommended: filter.recommended, citedDomain: filter.citedDomain });
   const openResponse = openResponseId ? (responses.find((r) => r.id === openResponseId) ?? null) : null;
+  const filtering = !isEmptyFilter(filter);
 
   function update(patch: Partial<ResponseFilter>) {
     setVisibleCount(PAGE_SIZE);
     onFilterChange({ ...filter, ...patch });
   }
 
+  function clear() {
+    setVisibleCount(PAGE_SIZE);
+    onFilterChange({});
+  }
+
   return (
-    <div className="flex flex-col gap-4">
-      <Card>
-        <CardContent className="p-4 flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-subtle-foreground" aria-hidden="true" />
-              <Input
-                value={filter.search ?? ""}
-                onChange={(e) => update({ search: e.target.value || undefined })}
-                placeholder="Search question or response text…"
-                className="pl-8"
-              />
-            </div>
-
-            <Select value={filter.provider ?? "all"} onValueChange={(v) => update({ provider: v === "all" ? undefined : v })}>
-              <SelectTrigger className="w-auto min-w-[140px]">
-                <SelectValue placeholder="Model" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All models</SelectItem>
-                {providers.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {providerLabel(p)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={filter.extractionStatus ?? "all"}
-              onValueChange={(v) => update({ extractionStatus: v === "all" ? undefined : (v as ResponseFilter["extractionStatus"]) })}
-            >
-              <SelectTrigger className="w-auto min-w-[150px]">
-                <SelectValue placeholder="Extraction" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Any extraction status</SelectItem>
-                <SelectItem value="completed">Extracted</SelectItem>
-                <SelectItem value="pending">Extracting</SelectItem>
-                <SelectItem value="failed">Extraction failed</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={filter.mentioned === undefined ? "all" : filter.mentioned ? "yes" : "no"}
-              onValueChange={(v) => update({ mentioned: v === "all" ? undefined : v === "yes" })}
-            >
-              <SelectTrigger className="w-auto min-w-[150px]">
-                <SelectValue placeholder="Mentioned" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Mentioned or not</SelectItem>
-                <SelectItem value="yes">Brand mentioned</SelectItem>
-                <SelectItem value="no">Brand not mentioned</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={filter.sentiment ?? "all"}
-              onValueChange={(v) => update({ sentiment: v === "all" ? undefined : (v as ResponseFilter["sentiment"]) })}
-            >
-              <SelectTrigger className="w-auto min-w-[140px]">
-                <SelectValue placeholder="Sentiment" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Any sentiment</SelectItem>
-                <SelectItem value="positive">Positive</SelectItem>
-                <SelectItem value="neutral">Neutral</SelectItem>
-                <SelectItem value="negative">Negative</SelectItem>
-                <SelectItem value="mixed">Mixed</SelectItem>
-              </SelectContent>
-            </Select>
+    <Section
+      id={id}
+      className="scroll-mt-20"
+      title="Responses"
+      description="Every raw answer, with what we read from it. Open one to check the reading against the source text."
+      flush
+      footer={
+        visible.length < filtered.length ? (
+          <Button variant="outline" size="sm" onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}>
+            <ChevronDown size={14} aria-hidden="true" /> Show {Math.min(PAGE_SIZE, filtered.length - visible.length)} more
+          </Button>
+        ) : undefined
+      }
+    >
+      <div className="flex flex-col gap-2 border-b border-border px-5 py-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <ToolbarSearch
+            value={filter.search ?? ""}
+            onChange={(v) => update({ search: v || undefined })}
+            placeholder="Search questions and answers"
+            label="Search responses"
+          />
+          <FilterSelect
+            value={filter.provider ?? "all"}
+            onValueChange={(v) => update({ provider: v === "all" ? undefined : v })}
+            options={[{ value: "all", label: "All models" }, ...providers.map((p) => ({ value: p, label: shortProviderLabel(p) }))]}
+            label="Filter by model"
+            className="sm:w-36"
+          />
+          <FilterSelect
+            value={filter.mentioned === undefined ? "all" : filter.mentioned ? "yes" : "no"}
+            onValueChange={(v) => update({ mentioned: v === "all" ? undefined : v === "yes" })}
+            options={[
+              { value: "all", label: "Mentioned or not" },
+              { value: "yes", label: "Mentions you" },
+              { value: "no", label: "Doesn't mention you" },
+            ]}
+            label="Filter by mention"
+            className="sm:w-44"
+          />
+          <FilterSelect
+            value={filter.sentiment ?? "all"}
+            onValueChange={(v) => update({ sentiment: v === "all" ? undefined : (v as ResponseFilter["sentiment"]) })}
+            options={[
+              { value: "all", label: "Any tone" },
+              { value: "positive", label: "Positive" },
+              { value: "neutral", label: "Neutral" },
+              { value: "mixed", label: "Mixed" },
+              { value: "negative", label: "Negative" },
+            ]}
+            label="Filter by tone"
+            className="sm:w-32"
+          />
+          <FilterSelect
+            value={filter.extractionStatus ?? "all"}
+            onValueChange={(v) => update({ extractionStatus: v === "all" ? undefined : (v as ResponseFilter["extractionStatus"]) })}
+            options={[
+              { value: "all", label: "Any reading" },
+              { value: "completed", label: "Extracted" },
+              { value: "pending", label: "Extracting" },
+              { value: "failed", label: "Extraction failed" },
+            ]}
+            label="Filter by extraction status"
+            className="sm:w-40"
+          />
+          <div className="flex items-center gap-2 sm:ml-auto">
+            {filtering && (
+              <Button variant="ghost" size="sm" onClick={clear} className="h-9">
+                <X size={14} aria-hidden="true" /> Clear
+              </Button>
+            )}
+            {!loading && <ResultCount count={filtered.length} noun="response" />}
           </div>
-
-          {chips.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11.5px] text-muted-foreground">Filtered by:</span>
-              {chips.map((chip, i) => (
-                <Badge key={i} variant="accent" size="sm">
-                  {chip}
-                </Badge>
-              ))}
-              <button
-                type="button"
-                onClick={() => onFilterChange({})}
-                className="inline-flex items-center gap-1 text-[11.5px] text-muted-foreground hover:text-foreground ml-1"
-              >
-                <X size={12} /> Clear
-              </button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {truncated && (
-        <p className="text-[12px] text-subtle-foreground">
-          Showing the first {responses.length.toLocaleString()} of {total.toLocaleString()} responses gathered so far —
-          filters apply within this set.
-        </p>
-      )}
-
-      {loading && (
-        <div className="flex flex-col gap-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-full" />
-          ))}
         </div>
-      )}
+        {drillChips.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[12px] text-muted-foreground">Showing answers for</span>
+            {drillChips.map((chip) => (
+              <Badge key={chip} variant="info" size="sm">
+                {chip}
+              </Badge>
+            ))}
+          </div>
+        )}
+        {truncated && (
+          <p className="text-[12px] text-muted-foreground">
+            Showing the first {formatNumber(responses.length)} of {formatNumber(total)} answers gathered so far — filters apply within this set.
+          </p>
+        )}
+      </div>
 
-      {!loading && filtered.length === 0 && (
+      {loading && <TableSkeleton columns={COLUMNS} rows={5} framed={false} label="Loading responses…" />}
+
+      {!loading && responses.length === 0 && (
         <EmptyState
           compact
-          icon={<MessageSquareOff size={18} />}
-          title="No responses match these filters"
-          description={
-            responses.length === 0
-              ? "No responses have been gathered for this run yet."
-              : "Try clearing a filter or two — every response for this run is in this set somewhere."
-          }
+          icon={<MessageSquareText size={18} />}
+          title="No answers gathered yet"
+          description="Answers appear here the moment each model replies — you don't have to wait for the run to finish."
         />
       )}
 
-      {!loading && filtered.length > 0 && (
-        <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Model</TableHead>
-                <TableHead>Query</TableHead>
-                <TableHead>Extraction</TableHead>
-                <TableHead>Mentioned</TableHead>
-                <TableHead>Sentiment</TableHead>
-                <TableHead>Recommended</TableHead>
-                <TableHead>Fetched</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visible.map((response) => {
-                const meta = queryMeta.get(response.queryId);
-                return (
-                  <TableRow
-                    key={response.id}
-                    className="cursor-pointer"
-                    onClick={() => setOpenResponseId(response.id)}
-                    tabIndex={0}
-                    role="button"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") setOpenResponseId(response.id);
-                    }}
-                  >
-                    <TableCell className="whitespace-nowrap text-[12.5px]">{providerLabel(response.provider)}</TableCell>
-                    <TableCell className="max-w-[280px]">
-                      <p className="text-[13px] text-foreground truncate">{meta?.text ?? response.queryId}</p>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={EXTRACTION_STATUS_BADGE_VARIANT[response.extractionStatus]} size="sm">
-                        {EXTRACTION_STATUS_LABEL[response.extractionStatus]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-[12.5px] text-foreground">
-                        {response.observation ? (response.observation.brandMentioned ? "Yes" : "No") : "—"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {response.observation?.brandSentiment ? (
-                        <Badge variant={SENTIMENT_BADGE_VARIANT[response.observation.brandSentiment]} size="sm">
-                          {SENTIMENT_LABEL[response.observation.brandSentiment]}
-                        </Badge>
-                      ) : (
-                        <span className="text-[12.5px] text-subtle-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-[12.5px] text-foreground">
-                        {response.observation ? (response.observation.brandRecommended ? "Yes" : "No") : "—"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-[12px] text-muted-foreground whitespace-nowrap">{formatDateTime(response.createdAt)}</span>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+      {!loading && responses.length > 0 && filtered.length === 0 && (
+        <NoResults noun="responses" onClear={clear} hint="Every answer in this run is in the full list — clear a filter to widen it." />
+      )}
 
-          {visible.length < filtered.length && (
-            <div className="flex justify-center">
-              <Button variant="outline" size="sm" onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}>
-                <ChevronDown size={14} /> Load {Math.min(PAGE_SIZE, filtered.length - visible.length)} more
-              </Button>
-            </div>
-          )}
-        </>
+      {!loading && filtered.length > 0 && (
+        <Table framed={false}>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Question</TableHead>
+              <TableHead>Mentioned</TableHead>
+              <TableHead className="hidden sm:table-cell">Recommended</TableHead>
+              <TableHead className="hidden md:table-cell">Tone</TableHead>
+              <TableHead className="hidden lg:table-cell">Reading</TableHead>
+              <TableHead className="hidden lg:table-cell">Fetched</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visible.map((response) => {
+              const meta = queryMeta.get(response.queryId);
+              const obs = response.observation;
+              return (
+                <TableRow key={response.id} className="cursor-pointer" onClick={() => setOpenResponseId(response.id)}>
+                  <TableCell className="max-w-[360px]">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenResponseId(response.id);
+                      }}
+                      className="block max-w-full truncate rounded-sm text-left text-[13px] font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {meta?.text ?? `Query ${response.queryId.slice(0, 8)}`}
+                    </button>
+                    <p className="truncate text-[12px] text-muted-foreground">{shortProviderLabel(response.provider)}</p>
+                  </TableCell>
+                  <TableCell>
+                    <YesNo value={obs ? obs.brandMentioned : null} />
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">
+                    <YesNo value={obs ? obs.brandRecommended : null} />
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    {obs?.brandSentiment ? <SentimentBadge sentiment={obs.brandSentiment} /> : <span className="text-subtle-foreground">&mdash;</span>}
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell">
+                    <ExtractionBadge status={response.extractionStatus} />
+                  </TableCell>
+                  <TableCell className="hidden whitespace-nowrap lg:table-cell">
+                    <span className={typography.meta}>{formatRelativeTime(response.createdAt)}</span>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       )}
 
       <ResponseDetailDialog
@@ -287,6 +244,19 @@ export function ResponsesExplorer({
           if (!open) setOpenResponseId(null);
         }}
       />
-    </div>
+    </Section>
+  );
+}
+
+function YesNo({ value }: { value: boolean | null }) {
+  if (value === null) return <span className="text-subtle-foreground">&mdash;</span>;
+  return value ? (
+    <Badge variant="success" size="sm" dot>
+      Yes
+    </Badge>
+  ) : (
+    <Badge variant="neutral" size="sm" dot>
+      No
+    </Badge>
   );
 }
