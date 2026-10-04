@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   Button,
   Dialog,
@@ -39,6 +39,7 @@ interface KeywordFormDialogProps {
  *  on create, matching the API's own default for this endpoint
  *  (`routes/seo.ts`'s `keywordCreateSchema`). */
 export function KeywordFormDialog({ open, onOpenChange, mode, initial, onSubmit, submitError, submitting }: KeywordFormDialogProps) {
+  const fieldId = useId();
   const [text, setText] = useState(initial?.text ?? "");
   const [intent, setIntent] = useState<SeoKeywordIntent | "unset">(initial?.intent ?? "unset");
   const [monthlyVolume, setMonthlyVolume] = useState(initial?.monthlyVolume?.toString() ?? "");
@@ -86,9 +87,9 @@ export function KeywordFormDialog({ open, onOpenChange, mode, initial, onSubmit,
             />
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label>Intent</Label>
+                <Label htmlFor={`${fieldId}-intent`}>Intent</Label>
                 <Select value={intent} onValueChange={(v) => setIntent(v as SeoKeywordIntent | "unset")}>
-                  <SelectTrigger>
+                  <SelectTrigger id={`${fieldId}-intent`}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -102,9 +103,9 @@ export function KeywordFormDialog({ open, onOpenChange, mode, initial, onSubmit,
                 </Select>
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label>Confidence</Label>
+                <Label htmlFor={`${fieldId}-confidence`}>Confidence</Label>
                 <Select value={confidence} onValueChange={(v) => setConfidence(v as SeoKeywordConfidence)}>
-                  <SelectTrigger>
+                  <SelectTrigger id={`${fieldId}-confidence`}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -127,7 +128,7 @@ export function KeywordFormDialog({ open, onOpenChange, mode, initial, onSubmit,
                 onChange={(e) => setMonthlyVolume(e.target.value)}
               />
               <Input
-                label="Difficulty (0-100)"
+                label="Difficulty (0–100)"
                 type="number"
                 min={0}
                 max={100}
