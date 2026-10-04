@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   Button,
   Dialog,
@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
+  Label,
   Select,
   SelectContent,
   SelectItem,
@@ -26,8 +27,8 @@ const PRIORITIES: QueryPriority[] = [1, 2, 3];
 interface AddQueryDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Pre-selects the category when opened from that category's own section
-   *  header, so adding a missing query there takes one fewer click. */
+  /** Pre-selects the category when opened from that category's own block,
+   *  so adding a missing query there takes one fewer click. */
   defaultCategory: QueryCategory;
   onSubmit: (values: NewQueryInput) => Promise<void>;
   submitError?: string;
@@ -35,10 +36,9 @@ interface AddQueryDialogProps {
 }
 
 /**
- * The "add missing ones" half of the review-and-curate screen. Remounted
- * (via `key` in the parent) each time it opens so its state resets to
- * `defaultCategory` with no effect required — same pattern as Epic 2's
- * `CompetitorDialog`.
+ * The "add what's missing" half of curation. Remounted (via `key` in the
+ * parent) each time it opens, so its state resets to `defaultCategory`
+ * with no effect required.
  */
 export function AddQueryDialog({ open, onOpenChange, defaultCategory, onSubmit, submitError, submitting }: AddQueryDialogProps) {
   return (
@@ -69,6 +69,7 @@ function AddQueryForm({
   submitError?: string;
   submitting?: boolean;
 }) {
+  const fieldId = useId();
   const [text, setText] = useState("");
   const [category, setCategory] = useState<QueryCategory>(defaultCategory);
   const [intentType, setIntentType] = useState<QueryIntentType>(CATEGORY_INTENT_TYPE[defaultCategory]);
@@ -77,8 +78,7 @@ function AddQueryForm({
 
   function handleCategoryChange(next: QueryCategory) {
     setCategory(next);
-    // Re-suggest the intent type for the new category — still overridable,
-    // this is a starting point, not a locked mapping.
+    // Re-suggest the intent for the new category — still overridable.
     setIntentType(CATEGORY_INTENT_TYPE[next]);
   }
 
@@ -93,10 +93,10 @@ function AddQueryForm({
   }
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} noValidate>
       <DialogHeader>
         <DialogTitle>Add a query</DialogTitle>
-        <DialogDescription>A question this brand should show up for, but the generator missed.</DialogDescription>
+        <DialogDescription>A question buyers ask that you should show up for, but the generator missed.</DialogDescription>
       </DialogHeader>
 
       <div className="flex flex-col gap-4">
@@ -104,14 +104,17 @@ function AddQueryForm({
           label="Query"
           placeholder="e.g. best freight visibility software for 3PLs"
           value={text}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            setText(event.target.value);
+            if (textError && event.target.value.trim()) setTextError(undefined);
+          }}
           error={textError}
           autoFocus
         />
         <div className="flex flex-col gap-1.5">
-          <label className="text-[12.5px] font-medium text-foreground">Category</label>
+          <Label htmlFor={`${fieldId}-category`}>Category</Label>
           <Select value={category} onValueChange={(value) => handleCategoryChange(value as QueryCategory)}>
-            <SelectTrigger>
+            <SelectTrigger id={`${fieldId}-category`}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -122,12 +125,13 @@ function AddQueryForm({
               ))}
             </SelectContent>
           </Select>
+          <p className="font-mono text-[11.5px] text-muted-foreground">{QUERY_CATEGORY_META[category].pattern}</p>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
-            <label className="text-[12.5px] font-medium text-foreground">Intent type</label>
+            <Label htmlFor={`${fieldId}-intent`}>Intent type</Label>
             <Select value={intentType} onValueChange={(value) => setIntentType(value as QueryIntentType)}>
-              <SelectTrigger>
+              <SelectTrigger id={`${fieldId}-intent`}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -140,9 +144,9 @@ function AddQueryForm({
             </Select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-[12.5px] font-medium text-foreground">Priority</label>
+            <Label htmlFor={`${fieldId}-priority`}>Priority</Label>
             <Select value={String(priority)} onValueChange={(value) => setPriority(Number(value) as QueryPriority)}>
-              <SelectTrigger>
+              <SelectTrigger id={`${fieldId}-priority`}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -157,7 +161,7 @@ function AddQueryForm({
         </div>
 
         {submitError && (
-          <p role="alert" className="rounded-md border border-danger/30 bg-danger-muted px-3 py-2.5 text-[12.5px] leading-relaxed text-danger">
+          <p role="alert" className="rounded-md border border-danger/30 bg-danger-muted px-3 py-2.5 text-[12.5px] leading-relaxed text-foreground">
             {submitError}
           </p>
         )}

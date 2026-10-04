@@ -1,110 +1,101 @@
 "use client";
 
-import { ChevronRight, ListTree } from "lucide-react";
-import { Card, CardContent, EmptyState, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@bebest/ui";
+import { ListTree } from "lucide-react";
+import { EmptyState, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, cn } from "@bebest/ui";
+import { Section } from "@/components/patterns/section";
+import { typography } from "@/components/patterns/typography";
 import type { AiRunResponse, AiVisibilityQueryMeta } from "@/data/ai-visibility/types";
 import { computeIntentBreakdown, queryIdsForIntent } from "@/data/ai-visibility/analysis";
 import { INTENT_TYPE_LABEL } from "@/data/query-universe/constants";
+import { formatPercent } from "@/lib/format";
 import type { ResponseFilter } from "./response-filter";
 
 /**
- * "Score breakdown by intent" — per the epic's UI surface. Not a backend
- * endpoint (only the composite AVS + its four global formula components
- * are persisted); computed client-side by grouping this run's responses
- * by their query's `intentType` (`queries.intent_type`, resolved via the
- * query set fetched alongside — see `AiRunDetail`). Every number here is a
- * real count over real observations, so clicking an intent row is exactly
- * as evidence-backed a drill-down as clicking a formula component.
+ * "Score breakdown by intent" — computed client-side by grouping this
+ * run's responses by their query's `intentType`. Every number is a real
+ * count over real observations; selecting a row narrows the Responses
+ * explorer to that intent's answers.
  */
 export function IntentBreakdownPanel({
   responses,
   queryMeta,
-  loading,
+  queryMetaFailed,
   onDrillIntent,
+  className,
 }: {
   responses: AiRunResponse[];
   queryMeta: Map<string, AiVisibilityQueryMeta>;
-  loading: boolean;
+  queryMetaFailed: boolean;
   onDrillIntent: (filter: ResponseFilter) => void;
+  className?: string;
 }) {
-  if (loading) {
-    return (
-      <Card>
-        <CardContent className="p-6 flex flex-col gap-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-full" />
-          ))}
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (queryMeta.size === 0) {
-    return (
-      <EmptyState
-        compact
-        icon={<ListTree size={18} />}
-        title="Query intent labels unavailable"
-        description="Couldn't load this run's query set to group responses by intent — the raw-response explorer still has every response."
-      />
-    );
-  }
-
-  const stats = computeIntentBreakdown(responses, queryMeta);
+  const stats = queryMeta.size > 0 ? computeIntentBreakdown(responses, queryMeta) : [];
 
   return (
-    <Card>
-      <CardContent className="p-0">
-        <Table className="border-0 rounded-none">
+    <Section title="By buyer intent" description="Where in the buying journey AI includes you. Select an intent to read its answers." flush className={className}>
+      {queryMeta.size === 0 ? (
+        <EmptyState
+          compact
+          icon={<ListTree size={18} />}
+          title={queryMetaFailed ? "Intent labels didn't load" : "No queries in this set"}
+          description="Answers can't be grouped by intent without the run's query set. Every answer is still in the Responses list below."
+        />
+      ) : (
+        <Table framed={false}>
           <TableHeader>
             <TableRow>
               <TableHead>Intent</TableHead>
-              <TableHead>Queries covered</TableHead>
-              <TableHead>Responses</TableHead>
-              <TableHead>Mentioned</TableHead>
-              <TableHead>Recommended</TableHead>
-              <TableHead>Avg. position</TableHead>
-              <TableHead />
+              <TableHead className="text-right">Covered</TableHead>
+              <TableHead className="text-right">Mentioned</TableHead>
+              <TableHead className="hidden text-right sm:table-cell">Recommended</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {stats.map((row) => (
-              <TableRow
-                key={row.intentType}
-                className={row.totalQueries === 0 ? "opacity-50" : "cursor-pointer"}
-                onClick={() => {
-                  if (row.totalQueries === 0) return;
-                  onDrillIntent({
-                    queryIds: queryIdsForIntent(queryMeta, row.intentType),
-                    queryIdsLabel: `${INTENT_TYPE_LABEL[row.intentType]} intent`,
-                  });
-                }}
-              >
-                <TableCell className="font-medium">{INTENT_TYPE_LABEL[row.intentType]}</TableCell>
-                <TableCell className="font-mono text-muted-foreground">
-                  {row.queriesCovered}/{row.totalQueries}
-                  {row.coveragePct !== null && <span className="text-subtle-foreground"> ({row.coveragePct}%)</span>}
-                </TableCell>
-                <TableCell className="font-mono text-muted-foreground">{row.totalResponses}</TableCell>
-                <TableCell className="font-mono">
-                  {row.mentionRatePct !== null ? `${row.mentionRatePct}%` : "—"}
-                  <span className="text-subtle-foreground"> ({row.mentioned})</span>
-                </TableCell>
-                <TableCell className="font-mono">
-                  {row.recommendationRatePct !== null ? `${row.recommendationRatePct}%` : "—"}
-                  <span className="text-subtle-foreground"> ({row.recommended})</span>
-                </TableCell>
-                <TableCell className="font-mono text-muted-foreground">
-                  {row.avgFirstPosition !== null ? `${Math.round(row.avgFirstPosition * 100)}%` : "—"}
-                </TableCell>
-                <TableCell className="text-right">
-                  {row.totalQueries > 0 && <ChevronRight size={14} className="text-subtle-foreground inline-block" />}
-                </TableCell>
-              </TableRow>
-            ))}
+            {stats.map((row) => {
+              const empty = row.totalQueries === 0;
+              const drill = () =>
+                onDrillIntent({
+                  queryIds: queryIdsForIntent(queryMeta, row.intentType),
+                  queryIdsLabel: `${INTENT_TYPE_LABEL[row.intentType]} intent`,
+                });
+              return (
+                <TableRow key={row.intentType} className={cn(empty ? "text-muted-foreground hover:bg-transparent" : "cursor-pointer")} onClick={empty ? undefined : drill}>
+                  <TableCell>
+                    {empty ? (
+                      <span className="text-[13px]">{INTENT_TYPE_LABEL[row.intentType]}</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          drill();
+                        }}
+                        className="rounded-sm text-[13px] font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {INTENT_TYPE_LABEL[row.intentType]}
+                      </button>
+                    )}
+                    <p className="text-[12px] text-muted-foreground">
+                      {row.totalQueries} {row.totalQueries === 1 ? "query" : "queries"} · {row.totalResponses} answers
+                    </p>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <span className={typography.numeric}>
+                      {empty ? "—" : `${row.queriesCovered}/${row.totalQueries}`}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <span className={typography.numeric}>{row.mentionRatePct !== null ? formatPercent(row.mentionRatePct) : "—"}</span>
+                  </TableCell>
+                  <TableCell className="hidden text-right sm:table-cell">
+                    <span className={typography.numeric}>{row.recommendationRatePct !== null ? formatPercent(row.recommendationRatePct) : "—"}</span>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
-      </CardContent>
-    </Card>
+      )}
+    </Section>
   );
 }

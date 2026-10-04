@@ -1,36 +1,18 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { Badge, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@bebest/ui";
+import { PropertyList } from "@/components/patterns/section";
+import { typography } from "@/components/patterns/typography";
 import type { AiRunResponse, AiVisibilityQueryMeta } from "@/data/ai-visibility/types";
-import {
-  EXTRACTION_STATUS_BADGE_VARIANT,
-  EXTRACTION_STATUS_LABEL,
-  RECOMMENDATION_STRENGTH_LABEL,
-  SENTIMENT_BADGE_VARIANT,
-  SENTIMENT_LABEL,
-  providerLabel,
-} from "@/data/ai-visibility/labels";
+import { RECOMMENDATION_STRENGTH_LABEL, providerLabel } from "@/data/ai-visibility/labels";
 import { formatDateTime } from "@/lib/format";
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div>
-      <p className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-subtle-foreground mb-1">{label}</p>
-      <div className="text-[13px] text-foreground">{children}</div>
-    </div>
-  );
-}
+import { ExtractionBadge, SentimentBadge } from "./status-badges";
 
 /**
- * The bottom of the drill-down chain: score -> formula component ->
- * observation -> this. Shows the exact raw AI response text alongside the
- * structured fields `brand_observations` extracted from it, so a user can
- * check the extraction against the source themselves — the evidence-
- * traceability guarantee made concrete, not just promised. `rawResponse`
- * is rendered even when `extractionStatus === "failed"`: the evidence was
- * committed before extraction was attempted and is never lost to an
- * extraction bug (the epic's DoD hard gate).
+ * The last hop of score → formula → observation → raw answer: the exact
+ * text the model returned, beside what was read from it, so a user can
+ * check the reading against the source. The raw text renders even when
+ * extraction failed — evidence is saved before extraction runs.
  */
 export function ResponseDetailDialog({
   response,
@@ -43,100 +25,78 @@ export function ResponseDetailDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const obs = response?.observation ?? null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {response && (
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{providerLabel(response.provider)}</DialogTitle>
+            <DialogTitle>{queryMeta?.text ?? "AI answer"}</DialogTitle>
             <DialogDescription>
-              {queryMeta?.text ?? `Query ${response.queryId}`} — {formatDateTime(response.createdAt)}
+              {providerLabel(response.provider)} · {formatDateTime(response.createdAt)}
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex flex-col gap-5">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={EXTRACTION_STATUS_BADGE_VARIANT[response.extractionStatus]} size="sm">
-                {EXTRACTION_STATUS_LABEL[response.extractionStatus]}
-              </Badge>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <ExtractionBadge status={response.extractionStatus} />
               <Badge variant="outline" size="sm">
                 {response.model}
               </Badge>
               <Badge variant="outline" size="sm">
                 Prompt {response.promptVersion}
               </Badge>
-              {response.requestId && (
-                <span className="font-mono text-[11px] text-subtle-foreground">req {response.requestId}</span>
-              )}
+              {response.requestId && <span className="font-mono text-[11px] text-subtle-foreground">req {response.requestId}</span>}
             </div>
 
-            <div>
-              <p className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-subtle-foreground mb-1.5">
-                Raw response
-              </p>
-              <div className="rounded-lg border border-border bg-surface p-4 max-h-72 overflow-y-auto">
-                <p className="text-[13px] text-foreground whitespace-pre-wrap leading-relaxed">{response.rawResponse}</p>
+            <section aria-label="Raw answer">
+              <p className={`${typography.eyebrow} mb-1.5`}>Raw answer</p>
+              <div className="max-h-72 overflow-y-auto rounded-lg border border-border bg-surface p-4">
+                <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">{response.rawResponse}</p>
               </div>
-            </div>
+            </section>
 
             {response.extractionStatus === "failed" && (
-              <div role="alert" className="rounded-lg border border-danger/30 bg-danger-muted p-3">
-                <p className="text-[12.5px] text-danger">{response.extractionError ?? "Extraction failed."}</p>
-                <p className="text-[11.5px] text-muted-foreground mt-1">
-                  The raw response above is unaffected — evidence is always saved before extraction runs.
-                </p>
+              <div role="alert" className="rounded-lg border border-danger/30 bg-danger-muted px-4 py-3">
+                <p className="text-[12.5px] font-medium text-foreground">{response.extractionError ?? "Extraction failed."}</p>
+                <p className="mt-0.5 text-[12px] text-muted-foreground">The raw answer above is unaffected — evidence is always saved before it&apos;s read.</p>
               </div>
             )}
 
-            {response.observation && (
-              <div>
-                <p className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-subtle-foreground mb-2">
-                  Extracted observation
-                </p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border border-border p-4">
-                  <Field label="Brand mentioned">{response.observation.brandMentioned ? "Yes" : "No"}</Field>
-                  <Field label="Mention count">{response.observation.brandMentionCount}</Field>
-                  <Field label="First position">
-                    {response.observation.brandFirstPosition !== null
-                      ? `${Math.round(response.observation.brandFirstPosition * 100)}% into the response`
-                      : "—"}
-                  </Field>
-                  <Field label="Sentiment">
-                    {response.observation.brandSentiment ? (
-                      <Badge variant={SENTIMENT_BADGE_VARIANT[response.observation.brandSentiment]} size="sm">
-                        {SENTIMENT_LABEL[response.observation.brandSentiment]}
-                      </Badge>
-                    ) : (
-                      "—"
-                    )}
-                  </Field>
-                  <Field label="Recommended">
-                    {response.observation.brandRecommended
-                      ? response.observation.brandRecommendationStrength
-                        ? RECOMMENDATION_STRENGTH_LABEL[response.observation.brandRecommendationStrength]
-                        : "Yes"
-                      : "No"}
-                  </Field>
-                  <Field label="Extraction confidence">{response.observation.extractionConfidence}</Field>
-                  {response.observation.brandContext && (
-                    <div className="col-span-2">
-                      <Field label="Context">
-                        <span className="text-muted-foreground italic">&ldquo;{response.observation.brandContext}&rdquo;</span>
-                      </Field>
-                    </div>
-                  )}
-                  {response.observation.competitorsMentioned.length > 0 && (
-                    <div className="col-span-2">
-                      <Field label="Competitors mentioned">{response.observation.competitorsMentioned.join(", ")}</Field>
-                    </div>
-                  )}
-                  {response.observation.citedDomains.length > 0 && (
-                    <div className="col-span-2">
-                      <Field label="Cited sources">{response.observation.citedDomains.join(", ")}</Field>
-                    </div>
-                  )}
+            {obs && (
+              <section aria-label="What we read from it">
+                <p className={`${typography.eyebrow} mb-2`}>What we read from it</p>
+                <div className="rounded-lg border border-border p-4">
+                  <PropertyList
+                    items={[
+                      { label: "Mentioned", value: obs.brandMentioned ? `Yes · ${obs.brandMentionCount}×` : "No" },
+                      {
+                        label: "First mention",
+                        value: obs.brandFirstPosition !== null ? `${Math.round(obs.brandFirstPosition * 100)}% into the answer` : null,
+                      },
+                      {
+                        label: "Recommended",
+                        value: obs.brandRecommended
+                          ? obs.brandRecommendationStrength
+                            ? `Yes · ${RECOMMENDATION_STRENGTH_LABEL[obs.brandRecommendationStrength]}`
+                            : "Yes"
+                          : "No",
+                      },
+                      { label: "Tone", value: obs.brandSentiment ? <SentimentBadge sentiment={obs.brandSentiment} /> : null },
+                      {
+                        label: "Context",
+                        value: obs.brandContext ? <span className="italic text-muted-foreground">&ldquo;{obs.brandContext}&rdquo;</span> : null,
+                      },
+                      { label: "Competitors", value: obs.competitorsMentioned.length > 0 ? obs.competitorsMentioned.join(", ") : null },
+                      {
+                        label: "Cited sources",
+                        value: obs.citedDomains.length > 0 ? <span className="font-mono text-[12px]">{obs.citedDomains.join(", ")}</span> : null,
+                      },
+                      { label: "Confidence", value: obs.extractionConfidence.charAt(0).toUpperCase() + obs.extractionConfidence.slice(1) },
+                    ]}
+                  />
                 </div>
-              </div>
+              </section>
             )}
           </div>
         </DialogContent>
