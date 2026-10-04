@@ -58,3 +58,26 @@ export function formatRelativeTime(iso: string, now: number = Date.now()): strin
   }
   return formatDate(iso);
 }
+
+/** Integer/decimal with thousands separators: 12,480 · 3.4 */
+export function formatNumber(value: number, maximumFractionDigits = 0): string {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits }).format(value);
+}
+
+/** Compact count for tiles and chips: 1.2K · 34M. Use `formatNumber` in tables. */
+export function formatCompactNumber(value: number): string {
+  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+/** A 0–100 value (not a 0–1 ratio) as a percentage: 42% · 42.5% */
+export function formatPercent(value: number, decimals = 0): string {
+  return `${value.toFixed(decimals)}%`;
+}
+
+/** Signed change with a true minus sign: +4 · −2.5 · 0. Pass `unit` for "pts"/"%". */
+export function formatDelta(value: number, decimals = 0, unit = ""): string {
+  const rounded = Number(value.toFixed(decimals));
+  if (rounded === 0) return `0${unit}`;
+  const sign = rounded > 0 ? "+" : "−";
+  return `${sign}${Math.abs(rounded).toFixed(decimals)}${unit}`;
+}

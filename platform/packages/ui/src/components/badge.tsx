@@ -12,6 +12,8 @@ const badgeVariants = cva(
         success: "bg-success-muted text-success border-transparent",
         warning: "bg-warning-muted text-warning border-transparent",
         danger: "bg-danger-muted text-danger border-transparent",
+        /** In flight / informational — running, contacted, scheduled. */
+        info: "bg-info-muted text-info border-transparent",
         outline: "bg-transparent text-foreground border-border-strong",
       },
       size: {

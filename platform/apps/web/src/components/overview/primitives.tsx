@@ -6,6 +6,7 @@ import { animate, motion, useInView, useMotionValue, useReducedMotion, useTransf
 import { AlertTriangle, ArrowUpRight, RotateCw } from "lucide-react";
 import { Button, Card, Skeleton, cn, easings } from "@bebest/ui";
 import { useAsyncData } from "@/lib/use-async-data";
+import { revealVariants, stackVariants } from "@/components/patterns/motion";
 
 /**
  * The Overview command center's shared building blocks. Every widget on the
@@ -25,15 +26,10 @@ import { useAsyncData } from "@/lib/use-async-data";
  * query), and nothing animates layout — only transform/opacity/stroke.
  */
 
-export const panelVariants: Variants = {
-  hidden: { opacity: 0, y: 10 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: easings.emphasized } },
-};
-
-export const staggerVariants: Variants = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.07, delayChildren: 0.05 } },
-};
+// The app-wide entrance lives in `patterns/motion.tsx`; the Overview uses
+// the same variants under its original names.
+export const panelVariants: Variants = revealVariants;
+export const staggerVariants: Variants = stackVariants;
 
 // ---------------------------------------------------------------------------
 // Panel chrome
