@@ -18,6 +18,60 @@
 
 ---
 
+## ▶ NEXT PHASES — handoff brief (written 2026-10-05 for any session picking this up)
+
+Epic 22 has four phases; **0, 1, 2 are done** (see above). Spec with the numbered end-to-end flows: `platform/docs/epics/22-workspace-views.md`. Status row: `platform/EPICS.md` row 22. Decisions already locked with the user (do not re-ask): staff access = explicit `users.platform_role` flag; support "view as org" = read-only + audited; agencies can **create OR link** client orgs.
+
+### Phase 3 — Agency view (`/agency/*`) — NEXT
+**Goal:** an agency manages its whole client portfolio from one place, and steps into any client's Organization view.
+
+What already exists (reuse, don't rebuild):
+- `agency_clients` table (`agency_org_id`, `client_org_id`, `status` pending|active|paused|terminated|revoked, `access_level` full|limited|read_only, `relationship_type`, `monthly_fee`, `contract_start/end`, `invited_by`, `consented_at`, `revoked_at`). RLS names BOTH parties (migration 0022).
+- `apps/api/src/routes/agency.ts`: invite a client by slug, list clients, incoming invitations (client side), accept, revoke; `client_accounts` plan limit enforced. `lib/agency-access.ts` resolves agency → client access (`viaAgencyOrgId` on the token).
+- Web: `/agency` page (`components/agency/agency-clients-view.tsx`, `invite-client-dialog.tsx`); the view switcher (Phase 0) already lists "Agency portfolio" + "Clients via <agency>"; `switchOrg(slug)` already re-mints the token into a client and back.
+- `apps/api/src/lib/white-label.ts` `resolveWhiteLabelBranding()` + `routes/white-label.ts` (settings saved, plan-gated) — **nothing renders with them yet**.
+
+To build (from the spec):
+1. `GET /api/agency/portfolio` — one row per ACTIVE client: latest AVS + delta vs previous completed run, open opportunities, pending approvals (actions pending + agent pending actions), last run time, plan, `monthly_fee`, contract dates, access level. Compute **per client under that client's own `withOrgContext`** (never `platformDb`, never bypass RLS); run clients in parallel with a cap; target one request for the whole page.
+2. `POST /api/agency/clients/create` — create a client org (`kind='customer'`, unique slug via `lib/org-slug.ts`), an ACTIVE `agency_clients` link created by the agency, optional owner invite email (reuse the invitation flow from `routes/orgs.ts`); counts against `client_accounts`. Keep link-by-invite; the invited client gets email + in-app notification.
+3. **Set `organizations.kind='agency'`** when an org first creates/links a client (or on agency-plan upgrade) — Phase 0's backfill was one-off; nothing sets it today, so new agencies never see the Agency view.
+4. Step-in banner: when the active org is reached via an agency link, a persistent banner "Managing <client> · Back to portfolio". Enforce `access_level` **server-side**: `read_only` blocks every mutation, `limited` blocks billing/team/integrations/org settings. (Check `requireOrgFromToken` / RBAC for where `viaAgencyOrgId` is available.) Also: `/auth/me` doesn't return the agency-link role, so after reload `org.role` is undefined while acting as a client — return it.
+5. `GET /api/agency/queue` — pending approvals + drafts across all clients; `POST /api/agency/runs` — start AI visibility runs for selected clients (respect each client's quota/entitlements); bulk report generation.
+6. Apply white label: client reports, report emails and client invite emails use the agency's `white_label_configs`.
+7. `agency_client_assignments` (new table): which agency staff can access which clients; enforce in `lib/agency-access.ts`.
+8. Web: portfolio dashboard at `/agency` (sortable, at-risk highlighting), create/link client flows, banner, cross-client queue page.
+
+End-to-end flow to verify (spec §Phase 3): create client with owner invite → portfolio shows it → run → score appears → step in, approve a draft (audit attributes the agency user + `viaAgencyOrgId`) → client revokes → agency's next request 403 + client gone from portfolio → `read_only` link: approve 403 and mutating UI hidden.
+
+### Phase 4 — Platform admin actions (after Phase 3)
+1. Comp a plan / override a limit for an org (staff admin), all audited.
+2. Suspend / reactivate an org: **`organizations.status` CHECK is only `('active','cancelled')` (migration 0009)** — add `'suspended'` in a new migration; suspended orgs get **423** on mutating routes (central middleware), read-only otherwise; cancelled-org status is also never enforced today (audit finding) — decide together.
+3. Grant/revoke `platform_role` from the UI (admin only; can't demote yourself below admin if you're the last admin).
+4. Read-only "view as org" via the existing `support_sessions` table (schema from 0023, **no RLS policy yet** — the request role can't touch it): staff starts a session with a reason, gets a read-only org-scoped token (banner, auto-expire 60 min), every request audited, ALL mutations rejected server-side.
+5. `bebest_platform` role grants are deliberately minimal (`scripts/create-platform-role.sql`: SELECT all, INSERT `platform_access_events`, column-level UPDATE on job status). Phase 4 must add exactly the writes it needs (subscriptions, organizations.status, users.platform_role, support_sessions) — update the script AND GO_LIVE.md.
+6. Revenue tile on the Platform overview only once real Stripe exists (billing is still `NullPaymentProvider`).
+
+### How this work has been run (keep doing it this way)
+- **Backend first, then frontend wires to the real routes** (standing rule in EPICS.md). Agents used: `backend-architect` → `frontend-engineer`; the orchestrator spot-checks the riskiest claims in code and **re-runs every smoke + browser walk itself** before committing.
+- Every phase gets: migration(s) applied to dev **and** to a throwaway fresh DB (create → `db:apply` → verify → `DROP DATABASE … WITH (FORCE)`); unit tests; a committed real-HTTP smoke script (`apps/api/scripts/*-smoke.ts`, `pnpm --filter @bebest/api run smoke:<name>`); a real-browser walk on a **production build** (`next build` + `next start`) against the dev API + DB with real magic-link sessions.
+- Existing smokes that must stay green: `smoke:workspaces` (26), `smoke:platform` (98), `smoke:org` (98), `smoke:crm` (59; first-request cold-Neon flake — retry once).
+- Feature tracker rows (`feature-test-tracker.xlsx`) for every feature, tested before marking PASS (CLAUDE.md rule).
+- Agents get explicit **no git / no production / no Vercel** instructions; the orchestrator commits. Remind them to print only `.env` key NAMES (two agents leaked the dev JWT keys).
+
+### Environment gotchas
+- Migrations: `pnpm --filter @bebest/database run db:apply` (NOT `prisma migrate deploy`). The runner **refuses edited, already-applied files** — add a new numbered folder instead (that's why 0025 exists). Latest is **0025**.
+- `apps/api/.env` holds `DATABASE_URL` (role `bebest_app`, no BYPASSRLS) and `PLATFORM_DATABASE_URL` (`bebest_platform`); `packages/database/.env` is the owner URL used by db:apply and smoke scripts. RLS policies use `NULLIF(current_setting(...),'')::uuid`; writes to INSERT-only-policy tables must use `createMany` (no RETURNING).
+- Dev Neon is ~260 ms/round trip; the auth+role chain alone is ~1.9 s; a page can take 2–7 s in dev. Optimistic UI where the server already confirmed.
+- Next.js 16: middleware is `src/proxy.ts`; read `apps/web/node_modules/next/dist/docs/` before Next-specific work.
+- Another Claude session has been committing into this same working copy (Overview, sidebar, Google sign-in, rate limits). Re-read files right before editing, keep diffs scoped, `git fetch` before committing.
+- Browser-walk scripts (puppeteer-core) from Phases 0–2 lived in a session scratchpad and are **not in the repo** — new sessions write their own walk (pattern: mint a magic-link token row directly in the DB for a test email, open `/auth/magic-link/verify?token=…`, drive the UI, assert DB rows).
+- Pushing to `main` deploys to production (Vercel) and is blocked by the auto-mode classifier — the user pushes or explicitly approves. Production also needs the migrations applied FIRST (see "Before deploying" above).
+
+### Also open beyond Epic 22 (from the 2026-10-03 audit, ranked)
+1) durable jobs + cron on Vercel (in-memory queue / setTimeout re-measurement are unreliable on serverless); 2) AI runs where every provider fails still finish "completed" with AVS 0 (`lib/ai-visibility/pipeline.ts`); 3) real Stripe (any owner can self-upgrade for free today); 4) real publish target (execute only writes a row); 5) SEO analyses not readable back / SEO Health tile; 6) notification link `/agent-runs/:id` 404s, org-wide notifications can't be marked read; 7) Google OAuth state + token-in-URL hardening, plaintext integration tokens; 8) missing reject/edit screens.
+
+---
+
 **Also 2026-10-03 (another session, same working copy): UI pass on the platform app — sign-in, shell, and the Overview dashboard.** See the 2026-10-03 entry at the bottom. Short version: the auth screens share the snapshot split-panel hero (with Google sign-in kept); the sidebar is theme-aware, tinted, 240px, collapsible to a 72px rail, with ⌘K "Jump to…"; the topbar has a breadcrumb, a search trigger and refined org/account controls; `/overview` was rebuilt as an animated command center on real data only, with a confirmed "Run scan" button. Everything is on `main` (Vercel deploys web and API from `main` on push). **None of it has been opened in a browser** — the Chrome extension wasn't connected all session.
 
 **Note:** this log had a gap from 2026-09-10 to 2026-10-02. The work in that window is only in git history: Vercel request-body fixes for magic-link, Resend email, default-org on first login, Connectors (Google OAuth + GSC/GA4), CREDENTIALS.md, the new logo/favicon, the login and snapshot redesigns, and Google OAuth login on `main`.
