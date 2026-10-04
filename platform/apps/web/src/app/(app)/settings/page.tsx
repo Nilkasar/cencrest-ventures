@@ -2,27 +2,44 @@
 
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Bell, SlidersHorizontal } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@bebest/ui";
 import { PageHeader } from "@/components/patterns/page-header";
-import { ComingSoon } from "@/components/patterns/coming-soon";
+import { SectionSkeleton } from "@/components/patterns/states";
 import { BrandProfilePanel } from "@/components/settings/brand-profile-panel";
-import { BillingPanel } from "@/components/settings/billing-panel";
-import { WhiteLabelPanel } from "@/components/settings/white-label-panel";
-import { IntegrationsPanel } from "@/components/settings/integrations-panel";
 import { TeamPanel } from "@/components/settings/team-panel";
+import { BillingPanel } from "@/components/settings/billing-panel";
+import { IntegrationsPanel } from "@/components/settings/integrations-panel";
+import { WhiteLabelPanel } from "@/components/settings/white-label-panel";
+import { NotificationsPanel } from "@/components/settings/notifications-panel";
+import { AutonomyPanel } from "@/components/settings/autonomy-panel";
 
-const TAB_VALUES = ["brand", "team", "notifications", "billing", "white-label", "integrations", "autonomy"] as const;
-type TabValue = (typeof TAB_VALUES)[number];
+/** Tab order: who you are → who's here → what you pay → what's connected →
+ *  how you present → how you hear → how the agents act. `?tab=` deep links
+ *  (e.g. `/settings?tab=billing` from the white-label upsell) keep working. */
+const TABS = [
+  { value: "brand", label: "Brand profile" },
+  { value: "team", label: "Team" },
+  { value: "billing", label: "Billing" },
+  { value: "integrations", label: "Integrations" },
+  { value: "white-label", label: "White label" },
+  { value: "notifications", label: "Notifications" },
+  { value: "autonomy", label: "Autonomy" },
+] as const;
+
+type TabValue = (typeof TABS)[number]["value"];
 
 function isTabValue(value: string | null): value is TabValue {
-  return !!value && (TAB_VALUES as readonly string[]).includes(value);
+  return !!value && TABS.some((tab) => tab.value === value);
 }
+
+const TITLE = "Settings";
+const DESCRIPTION = "Your brand profile, team, plan, and how BeBest works for your organization.";
 
 function SettingsTabs() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const activeTab = isTabValue(searchParams.get("tab")) ? searchParams.get("tab")! : "brand";
+  const requested = searchParams.get("tab");
+  const activeTab: TabValue = isTabValue(requested) ? requested : "brand";
 
   function handleTabChange(value: string) {
     const params = new URLSearchParams(searchParams);
@@ -32,70 +49,64 @@ function SettingsTabs() {
 
   return (
     <Tabs value={activeTab} onValueChange={handleTabChange}>
-      <TabsList>
-        <TabsTrigger value="brand">Brand profile</TabsTrigger>
-        <TabsTrigger value="team">Team</TabsTrigger>
-        <TabsTrigger value="notifications">Notifications</TabsTrigger>
-        <TabsTrigger value="billing">Billing</TabsTrigger>
-        <TabsTrigger value="white-label">White label</TabsTrigger>
-        <TabsTrigger value="integrations">Integrations</TabsTrigger>
-        <TabsTrigger value="autonomy">Autonomy</TabsTrigger>
-      </TabsList>
+      <PageHeader
+        title={TITLE}
+        description={DESCRIPTION}
+        tabs={
+          <TabsList variant="underline" aria-label="Settings sections">
+            {TABS.map((tab) => (
+              <TabsTrigger key={tab.value} value={tab.value}>
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        }
+      />
 
-      <TabsContent value="brand">
+      <TabsContent value="brand" className="mt-0">
         <BrandProfilePanel />
       </TabsContent>
-
-      <TabsContent value="team">
+      <TabsContent value="team" className="mt-0">
         <TeamPanel />
       </TabsContent>
-
-      <TabsContent value="notifications">
-        <ComingSoon
-          icon={<Bell size={20} />}
-          eyebrow="Notifications"
-          title="Nothing to notify you about yet"
-          description="Weekly digests, competitor movement alerts, and action outcomes will have per-channel preferences here (email first, others later)."
-          epic={15}
-        />
-      </TabsContent>
-
-      <TabsContent value="billing">
+      <TabsContent value="billing" className="mt-0">
         <BillingPanel />
       </TabsContent>
-
-      <TabsContent value="white-label">
-        <WhiteLabelPanel />
-      </TabsContent>
-
-      <TabsContent value="integrations">
+      <TabsContent value="integrations" className="mt-0">
         <IntegrationsPanel />
       </TabsContent>
-
-      <TabsContent value="autonomy">
-        <ComingSoon
-          icon={<SlidersHorizontal size={20} />}
-          eyebrow="Autonomy"
-          title="Autonomy level: 1 — Recommend"
-          description="Every organization starts at Level 1: the system recommends, a human decides and implements. Levels 3–4 (approve-and-execute, autonomous) require explicit opt-in once the Action Center's audit trail exists — never for billing, security, or account changes."
-          epic={12}
-        />
+      <TabsContent value="white-label" className="mt-0">
+        <WhiteLabelPanel />
+      </TabsContent>
+      <TabsContent value="notifications" className="mt-0">
+        <NotificationsPanel />
+      </TabsContent>
+      <TabsContent value="autonomy" className="mt-0">
+        <AutonomyPanel />
       </TabsContent>
     </Tabs>
   );
 }
 
-export default function SettingsPage() {
+/** Shown while `useSearchParams` resolves: the real title (so the page
+ *  never renders without its `<h1>`) over the brand tab's shape. */
+function SettingsFallback() {
   return (
     <>
-      <PageHeader
-        eyebrow="Organization"
-        title="Settings"
-        description="Brand profile, competitors, integrations, team, notifications, billing, and autonomy."
-      />
-      <Suspense fallback={null}>
-        <SettingsTabs />
-      </Suspense>
+      <PageHeader title={TITLE} description={DESCRIPTION} />
+      <div aria-busy="true" className="flex flex-col gap-5">
+        <span className="sr-only">Loading settings…</span>
+        <SectionSkeleton lines={4} titleWidth="w-36" />
+        <SectionSkeleton lines={3} titleWidth="w-28" />
+      </div>
     </>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<SettingsFallback />}>
+      <SettingsTabs />
+    </Suspense>
   );
 }

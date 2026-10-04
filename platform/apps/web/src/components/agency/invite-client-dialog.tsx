@@ -106,7 +106,7 @@ export function InviteClientDialog({ onInvited }: { onInvited: (link: AgencyClie
           <DialogHeader>
             <DialogTitle>Invite a client organization</DialogTitle>
             <DialogDescription>
-              They&apos;ll need to accept from their own Settings before you can view or act on their data — this
+              They&apos;ll need to accept the invitation before you can view or act on their data — this
               never grants access unilaterally.
             </DialogDescription>
           </DialogHeader>

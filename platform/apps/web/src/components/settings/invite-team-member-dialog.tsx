@@ -31,7 +31,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Mirrors SECURITY.md's per-role permission matrix in plain language — the
 // same "pick a role, see what it grants" pattern `InviteClientDialog`
 // (Epic 18) established for agency-client roles.
-const ROLE_DESCRIPTIONS: Record<AssignableRole, string> = {
+export const ROLE_DESCRIPTIONS: Record<AssignableRole, string> = {
   admin: "Full access to this organization, including team, billing, and integrations.",
   analyst: "Can act on opportunities, content, and measurement — not billing or settings.",
   editor: "Can create and edit content and briefs — not billing or settings.",
@@ -104,8 +104,8 @@ export function InviteTeamMemberDialog({
   }
 
   const trigger = (
-    <Button variant="secondary" size="sm" disabled={disabled}>
-      <UserPlus size={14} /> Invite team member
+    <Button variant="primary" size="sm" disabled={disabled}>
+      <UserPlus size={14} aria-hidden="true" /> Invite member
     </Button>
   );
 

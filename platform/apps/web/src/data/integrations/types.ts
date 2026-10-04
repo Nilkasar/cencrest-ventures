@@ -38,7 +38,7 @@ export const SUPPORTED_PROVIDERS: ProviderInfo[] = [
   {
     slug: "google_search_console",
     label: "Google Search Console",
-    description: "Connects real-shaped keyword rankings and impressions into SEO Intelligence, preferred over the built-in estimate once connected.",
+    description: "Keyword rankings, clicks and impressions for SEO Intelligence, used in place of BeBest estimates once connected.",
   },
   {
     slug: "google_analytics_4",

@@ -7,54 +7,55 @@ import {
   Badge,
   Button,
   EmptyState,
+  RefreshOverlay,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Skeleton,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
   getInitials,
   useToast,
 } from "@bebest/ui";
 import { ErrorPanel } from "@/components/patterns/error-panel";
+import { PageStack, Reveal } from "@/components/patterns/motion";
+import { PropertyList, Section } from "@/components/patterns/section";
+import { TableSkeleton, type SkeletonColumn } from "@/components/patterns/data-table";
+import { typography } from "@/components/patterns/typography";
 import { useAsyncData } from "@/lib/use-async-data";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatRelativeTime } from "@/lib/format";
 import { useSession } from "@/lib/session-context";
 import { OwnerProtectedError, TeamForbiddenError, changeMemberRole, loadTeamData, removeMember } from "@/data/team/client";
 import { ASSIGNABLE_ROLES, ROLE_LABELS, isAssignableRole, type AssignableRole, type TeamMember } from "@/data/team/types";
-import { InviteTeamMemberDialog } from "./invite-team-member-dialog";
+import { ConfirmDialog } from "./confirm-dialog";
+import { Notice } from "./form-controls";
+import { InviteTeamMemberDialog, ROLE_DESCRIPTIONS } from "./invite-team-member-dialog";
+
+const COLUMNS: SkeletonColumn[] = [
+  { header: "Member", cell: "entity" },
+  { header: "Role", cell: "badge" },
+  { header: "Joined", cell: "meta" },
+  { header: "", cell: "meta" },
+];
 
 /**
- * Settings > Team. Wires the real Epic 0 org/membership routes
- * (`data/team/client.ts`) — replaces the "invites are stubbed until Epic
- * 0's auth backend ships" fixture note a route-wiring audit flagged, even
- * though that backend has been real, tested, and VERIFIED since Wave 1.
- *
- * `currentOrganization` (fixture) still supplies the name/plan label in
- * the header line — the same decorative-only use `BillingPanel`/
- * `IntegrationsPanel` already make of `currentUser.role`. The org this
- * screen actually reads and writes is `state.data.slug`, resolved for real
- * by `loadTeamData` (see `data/team/client.ts`'s header comment for why
- * there's no wired "home org" session to read this from instead yet).
- * `currentUser.role` gates the mutating controls the same fixture-backed
- * way every other Settings panel does — real enforcement is the backend's
- * `manage_team` 403, which `handleRoleChange`/`handleRemove` below also
- * catch and surface, so the UI stays honest even if this client-side gate
- * is ever bypassed.
+ * Settings > Team — the real Epic 0 org/membership routes
+ * (`data/team/client.ts`). The org this screen reads and writes is
+ * `state.data.slug`, resolved by `loadTeamData`. The session role gates the
+ * controls client-side so a non-admin sees *why* they're unavailable; the
+ * backend's `manage_team` 403 is still the real enforcement, and both
+ * mutations surface it if this gate is ever bypassed.
  */
 export function TeamPanel() {
-  const { org } = useSession();
+  const { org, user } = useSession();
   const { reload, ...state } = useAsyncData(loadTeamData, []);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const [pendingRemove, setPendingRemove] = useState<TeamMember | null>(null);
   const { toast } = useToast();
 
   const myRole = org?.role ?? "member";
@@ -69,168 +70,176 @@ export function TeamPanel() {
     setBusyUserId(member.userId);
     try {
       await changeMemberRole(slug, member.userId, role);
-      toast({ title: `${memberLabel(member)}'s role is now ${ROLE_LABELS[role]}`, variant: "success" });
+      toast({ title: `${memberLabel(member)} is now ${ROLE_LABELS[role]}`, variant: "success" });
       reload();
     } catch (err) {
-      if (err instanceof OwnerProtectedError || err instanceof TeamForbiddenError) {
-        toast({ title: "Couldn't change role", description: err.message, variant: "danger" });
-      } else {
-        toast({ title: "Couldn't change role", description: "Try again in a moment.", variant: "danger" });
-      }
+      const description = err instanceof OwnerProtectedError || err instanceof TeamForbiddenError ? err.message : "Try again in a moment.";
+      toast({ title: "Couldn't change role", description, variant: "danger" });
     } finally {
       setBusyUserId(null);
     }
   }
 
   async function handleRemove(slug: string, member: TeamMember) {
-    const confirmed = window.confirm(`Remove ${memberLabel(member)} from this organization? They'll immediately lose access.`);
-    if (!confirmed) return;
     setBusyUserId(member.userId);
     try {
       await removeMember(slug, member.userId);
       toast({ title: "Member removed", description: `${memberLabel(member)} no longer has access.`, variant: "success" });
       reload();
     } catch (err) {
-      if (err instanceof OwnerProtectedError || err instanceof TeamForbiddenError) {
-        toast({ title: "Couldn't remove member", description: err.message, variant: "danger" });
-      } else {
-        toast({ title: "Couldn't remove member", description: "Try again in a moment.", variant: "danger" });
-      }
+      const description = err instanceof OwnerProtectedError || err instanceof TeamForbiddenError ? err.message : "Try again in a moment.";
+      toast({ title: "Couldn't remove member", description, variant: "danger" });
     } finally {
       setBusyUserId(null);
     }
   }
 
-  if (state.status === "loading") {
-    return (
-      <div className="flex flex-col gap-4">
-        <Skeleton className="h-5 w-64" />
-        <Skeleton className="h-48 w-full rounded-xl" />
-      </div>
-    );
-  }
-
   if (state.status === "error") {
-    return <ErrorPanel message={state.error.message} onRetry={reload} />;
+    return <ErrorPanel title="Your team didn't load" message={state.error.message} onRetry={reload} />;
   }
 
-  const { slug, members } = state.data;
+  const data = state.status === "success" ? state.data : null;
+  const members = data ? sortMembers(data.members, user?.id) : [];
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[13px] text-muted-foreground">
-          {org?.name ?? "Your organization"} · {members.length} member{members.length === 1 ? "" : "s"}
-        </p>
-        <InviteTeamMemberDialog slug={slug} disabled={!canManageTeam} onInvited={reload} />
-      </div>
-
+    <PageStack>
       {!canManageTeam && (
-        <p className="text-[12.5px] text-subtle-foreground">
-          You&apos;re viewing the team as {myRole}. Only an organization owner or admin can invite, change
-          roles, or remove members.
-        </p>
+        <Reveal>
+          <Notice tone="locked" title="View only">
+            You&apos;re signed in as {ROLE_LABELS[myRole as keyof typeof ROLE_LABELS] ?? myRole}. Only an owner or admin can invite people, change roles, or remove members.
+          </Notice>
+        </Reveal>
       )}
 
-      {members.length === 0 ? (
-        <EmptyState
-          compact
-          icon={<Users size={18} />}
-          eyebrow="Team"
-          title="No members found"
-          description="This shouldn't normally happen — you're a member of this organization yourself. Try reloading."
-          action={
-            <Button variant="outline" size="sm" onClick={reload}>
-              Reload
-            </Button>
-          }
-        />
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Member</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Joined</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {members.map((member) => {
-              const isOwner = member.role === "owner";
-              const isBusy = busyUserId === member.userId;
-              const rowDisabled = !canManageTeam || (busyUserId !== null && !isBusy);
+      <Section
+        title="Members"
+        description={
+          data
+            ? `${members.length} ${members.length === 1 ? "person has" : "people have"} access to ${org?.name ?? "this organization"}`
+            : "People with access to this organization"
+        }
+        actions={data ? <InviteTeamMemberDialog slug={data.slug} disabled={!canManageTeam} onInvited={reload} /> : undefined}
+        flush
+      >
+        {!data && <TableSkeleton columns={COLUMNS} rows={3} framed={false} label="Loading team…" />}
 
-              return (
-                <TableRow key={member.userId}>
-                  <TableCell>
-                    <div className="flex items-center gap-2.5">
-                      <Avatar fallback={getInitials(memberLabel(member))} size="sm" />
-                      <span className="font-medium">{member.name || "—"}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{member.email}</TableCell>
-                  <TableCell>
-                    {isOwner ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span tabIndex={0} className="inline-flex">
-                            <Badge variant="accent" size="sm">
-                              Owner
-                            </Badge>
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent>The owner&apos;s role can&apos;t be changed here.</TooltipContent>
-                      </Tooltip>
-                    ) : isAssignableRole(member.role) ? (
-                      <Select
-                        value={member.role}
-                        onValueChange={(value) => handleRoleChange(slug, member, value as AssignableRole)}
-                        disabled={rowDisabled}
-                      >
-                        <SelectTrigger className="w-[130px]" aria-label={`Role for ${memberLabel(member)}`}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ASSIGNABLE_ROLES.map((role) => (
-                            <SelectItem key={role} value={role}>
-                              {ROLE_LABELS[role]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Badge variant="neutral" size="sm">
-                        {ROLE_LABELS[member.role]}
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{formatDate(member.joinedAt)}</TableCell>
-                  <TableCell className="text-right">
-                    {isOwner ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span tabIndex={0} className="inline-flex">
-                            <Button variant="outline" size="sm" disabled>
-                              Remove
-                            </Button>
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent>The owner can&apos;t be removed.</TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <Button variant="outline" size="sm" onClick={() => handleRemove(slug, member)} loading={isBusy} disabled={rowDisabled}>
-                        Remove
-                      </Button>
-                    )}
-                  </TableCell>
+        {data && members.length === 0 && (
+          <EmptyState
+            compact
+            icon={<Users size={18} />}
+            title="No members found"
+            description="You're a member of this organization yourself, so this list shouldn't be empty — reload to try again."
+            action={
+              <Button variant="secondary" size="sm" onClick={reload}>
+                Reload
+              </Button>
+            }
+            className="m-5"
+          />
+        )}
+
+        {data && members.length > 0 && (
+          <RefreshOverlay active={state.status === "success" && state.isRefreshing}>
+            <Table framed={false}>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Member</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Joined</TableHead>
+                  <TableHead>
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
                 </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      )}
-    </div>
+              </TableHeader>
+              <TableBody>
+                {members.map((member) => {
+                  const isOwner = member.role === "owner";
+                  const isYou = member.userId === user?.id;
+                  const isBusy = busyUserId === member.userId;
+                  const rowDisabled = !canManageTeam || (busyUserId !== null && !isBusy);
+                  const label = memberLabel(member);
+
+                  return (
+                    <TableRow key={member.userId}>
+                      <TableCell>
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <Avatar fallback={getInitials(label)} size="sm" />
+                          <div className="min-w-0">
+                            <p className="flex items-center gap-2 truncate text-[13px] font-medium text-foreground">
+                              <span className="truncate">{member.name || member.email}</span>
+                              {isYou && (
+                                <Badge variant="accent" size="sm">
+                                  You
+                                </Badge>
+                              )}
+                            </p>
+                            {member.name && <p className="truncate text-[12px] text-muted-foreground">{member.email}</p>}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {!isOwner && isAssignableRole(member.role) && canManageTeam ? (
+                          <Select
+                            value={member.role}
+                            onValueChange={(value) => handleRoleChange(data.slug, member, value as AssignableRole)}
+                            disabled={rowDisabled}
+                          >
+                            <SelectTrigger className="h-8 w-[132px]" aria-label={`Role for ${label}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {ASSIGNABLE_ROLES.map((role) => (
+                                <SelectItem key={role} value={role}>
+                                  {ROLE_LABELS[role]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge variant="outline" size="sm" title={isOwner ? "Ownership can't be changed here" : undefined}>
+                            {ROLE_LABELS[member.role]}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <time dateTime={member.joinedAt} title={formatDate(member.joinedAt)} className={typography.meta}>
+                          {formatRelativeTime(member.joinedAt)}
+                        </time>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {!isOwner && canManageTeam && (
+                          <Button variant="ghost" size="sm" onClick={() => setPendingRemove(member)} loading={isBusy} disabled={rowDisabled}>
+                            Remove<span className="sr-only"> {label}</span>
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </RefreshOverlay>
+        )}
+      </Section>
+
+      <Section title="What each role can do" description="Owners have full control, including billing. There is one owner per organization.">
+        <PropertyList items={ASSIGNABLE_ROLES.map((role) => ({ label: ROLE_LABELS[role], value: ROLE_DESCRIPTIONS[role] }))} />
+      </Section>
+
+      <ConfirmDialog
+        open={pendingRemove !== null}
+        onOpenChange={(open) => !open && setPendingRemove(null)}
+        title={`Remove ${pendingRemove ? memberLabel(pendingRemove) : "this member"}?`}
+        description="They lose access to this organization immediately. Anything they created stays. You can invite them again later."
+        confirmLabel="Remove member"
+        onConfirm={() => (pendingRemove && data ? handleRemove(data.slug, pendingRemove) : undefined)}
+      />
+    </PageStack>
   );
+}
+
+/** You first, then the owner, then everyone else by join date. */
+function sortMembers(members: TeamMember[], myId: string | undefined): TeamMember[] {
+  const rank = (m: TeamMember) => (m.userId === myId ? 0 : m.role === "owner" ? 1 : 2);
+  return [...members].sort((a, b) => rank(a) - rank(b) || a.joinedAt.localeCompare(b.joinedAt));
 }

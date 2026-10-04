@@ -1,139 +1,131 @@
 "use client";
 
-import { Card, CardContent, Skeleton } from "@bebest/ui";
-import { ErrorPanel } from "@/components/patterns/error-panel";
+import { useState } from "react";
+import { Search } from "lucide-react";
+import { RefreshOverlay } from "@bebest/ui";
+import { Section } from "@/components/patterns/section";
+import { SplitLayout } from "@/components/patterns/layout";
+import { TrendChart } from "@/components/overview/trend-chart";
+import { SrTable } from "@/components/overview/primitives";
 import { useAsyncData } from "@/lib/use-async-data";
+import { formatCompactNumber, formatNumber } from "@/lib/format";
 import { getGSCStats } from "@/data/connectors/client";
+import {
+  MetricStrip,
+  MetricSwitch,
+  PERIOD_DAYS,
+  StatsError,
+  StatsSkeleton,
+  TopTable,
+  TruncatedLabel,
+  displayPath,
+  formatPosition,
+  ratioPercent,
+  toTime,
+} from "./stats-blocks";
 
-function fmtShort(n: number): string {
-  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n);
-}
+type TrendKey = "clicks" | "impressions";
 
-function fmtPct(n: number): string {
-  return new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1 }).format(n);
-}
+const TREND_OPTIONS: { key: TrendKey; label: string }[] = [
+  { key: "clicks", label: "Clicks" },
+  { key: "impressions", label: "Impressions" },
+];
 
-function fmtPos(n: number): string {
-  return n.toFixed(1);
-}
+/**
+ * "Where do I stand in search?" from the brand's own Search Console:
+ * period totals, a daily trend (one measure at a time — clicks and
+ * impressions differ by orders of magnitude and never share an axis), and
+ * the queries and pages that earn the clicks.
+ */
+export function GSCStatsPanel({ onReconnect, canManage }: { onReconnect: () => void; canManage: boolean }) {
+  const { reload, ...state } = useAsyncData(() => getGSCStats(PERIOD_DAYS), []);
+  const [trendKey, setTrendKey] = useState<TrendKey>("clicks");
 
-function MetricCard({ label, value }: { label: string; value: string }) {
+  const data = state.status === "success" ? state.data : null;
+
   return (
-    <div className="flex flex-col gap-1 rounded-lg border border-border bg-surface px-4 py-3">
-      <p className="font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-subtle-foreground">{label}</p>
-      <p className="font-mono text-[22px] font-semibold text-foreground tabular-nums">{value}</p>
-    </div>
+    <>
+      <Section
+        title="Search performance"
+        description={`Google Search Console · last ${PERIOD_DAYS} days`}
+        icon={<Search size={14} />}
+        actions={data && data.trend.length > 0 ? <MetricSwitch value={trendKey} onChange={setTrendKey} options={TREND_OPTIONS} label="Trend metric" /> : undefined}
+      >
+        {state.status === "loading" && <StatsSkeleton label="Loading Search Console data…" />}
+        {state.status === "error" && (
+          <StatsError error={state.error} source="Search Console" onRetry={reload} onReconnect={onReconnect} canManage={canManage} />
+        )}
+        {data && (
+          <RefreshOverlay active={state.isRefreshing} className="flex flex-col gap-5">
+            <MetricStrip
+              metrics={[
+                { label: "Clicks", value: formatNumber(data.summary.totalClicks), hint: "From Google Search" },
+                { label: "Impressions", value: formatCompactNumber(data.summary.totalImpressions), hint: "Times you appeared" },
+                { label: "Avg CTR", value: ratioPercent(data.summary.avgCtr), hint: "Clicks ÷ impressions" },
+                { label: "Avg position", value: formatPosition(data.summary.avgPosition), hint: "Lower is better" },
+              ]}
+            />
+            <GscTrend trend={data.trend} metric={trendKey} />
+          </RefreshOverlay>
+        )}
+      </Section>
+
+      {data && (
+        <SplitLayout>
+          <TopTable
+            title="Top queries"
+            description="What people searched before clicking through"
+            rows={data.topQueries}
+            rowKey={(row) => row.query}
+            emptyLabel="No queries recorded in this period."
+            columns={[
+              { header: "Query", cell: (row) => <TruncatedLabel text={row.query} /> },
+              { header: "Clicks", numeric: true, cell: (row) => formatNumber(row.clicks) },
+              { header: "CTR", numeric: true, cell: (row) => ratioPercent(row.ctr) },
+              { header: "Pos.", numeric: true, cell: (row) => formatPosition(row.position) },
+            ]}
+          />
+          <TopTable
+            title="Top pages"
+            description="Your pages that earned the most clicks"
+            rows={data.topPages}
+            rowKey={(row) => row.page}
+            emptyLabel="No pages recorded in this period."
+            columns={[
+              { header: "Page", cell: (row) => <TruncatedLabel text={displayPath(row.page)} full={row.page} /> },
+              { header: "Clicks", numeric: true, cell: (row) => formatNumber(row.clicks) },
+              { header: "CTR", numeric: true, cell: (row) => ratioPercent(row.ctr) },
+              { header: "Pos.", numeric: true, cell: (row) => formatPosition(row.position) },
+            ]}
+          />
+        </SplitLayout>
+      )}
+    </>
   );
 }
 
-function TableSection<T extends Record<string, string | number>>({
-  title,
-  rows,
-  columns,
-}: {
-  title: string;
-  rows: T[];
-  columns: { key: keyof T; label: string; format?: (v: T[keyof T]) => string }[];
-}) {
+function GscTrend({ trend, metric }: { trend: { date: string; clicks: number; impressions: number }[]; metric: TrendKey }) {
+  const label = metric === "clicks" ? "Clicks" : "Impressions";
+  const points = trend.map((d) => ({ t: toTime(d.date), v: d[metric] })).sort((a, b) => a.t - b.t);
+
+  if (points.length === 0) {
+    return <p className="py-10 text-center text-[12.5px] text-muted-foreground">Google hasn&apos;t returned daily data for this period yet.</p>;
+  }
+
   return (
-    <div className="flex flex-col gap-2">
-      <p className="text-[12px] font-semibold font-mono uppercase tracking-[0.1em] text-subtle-foreground">{title}</p>
-      <div className="rounded-lg border border-border overflow-hidden">
-        <table className="w-full text-[12.5px]">
-          <thead>
-            <tr className="border-b border-border bg-surface">
-              {columns.map((col) => (
-                <th
-                  key={String(col.key)}
-                  className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap"
-                >
-                  {col.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.slice(0, 5).map((row, i) => (
-              <tr key={i} className="border-b border-border last:border-0 hover:bg-surface transition-colors">
-                {columns.map((col) => (
-                  <td key={String(col.key)} className="px-3 py-2 text-foreground font-mono tabular-nums truncate max-w-[200px]">
-                    {col.format ? col.format(row[col.key]) : String(row[col.key])}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <div>
+      <TrendChart
+        key={metric}
+        points={points}
+        height={200}
+        formatValue={(v) => formatCompactNumber(v)}
+        ariaSummary={`Daily ${label.toLowerCase()} from Google Search over the last ${PERIOD_DAYS} days, ${points.length} days of data.`}
+      />
+      <SrTable
+        caption={`Daily ${label.toLowerCase()}`}
+        head={["Date", label]}
+        rows={points.map((p) => [new Date(p.t).toLocaleDateString("en-US"), formatNumber(p.v)])}
+      />
     </div>
-  );
-}
-
-export function GSCStatsPanel() {
-  const { reload, ...state } = useAsyncData(() => getGSCStats(28), []);
-
-  if (state.status === "loading") {
-    return (
-      <Card>
-        <CardContent className="p-5 flex flex-col gap-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 rounded-lg" />
-            ))}
-          </div>
-          <Skeleton className="h-40 rounded-lg" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (state.status === "error") {
-    return (
-      <Card>
-        <CardContent className="p-5">
-          <ErrorPanel message={state.error.message} onRetry={reload} compact />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const { summary, topQueries, topPages } = state.data;
-
-  return (
-    <Card>
-      <CardContent className="p-5 flex flex-col gap-5">
-        <p className="text-[11px] font-mono font-medium uppercase tracking-[0.1em] text-subtle-foreground">
-          Last 28 days · Google Search Console
-        </p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <MetricCard label="Clicks" value={fmtShort(summary.totalClicks)} />
-          <MetricCard label="Impressions" value={fmtShort(summary.totalImpressions)} />
-          <MetricCard label="Avg CTR" value={fmtPct(summary.avgCtr)} />
-          <MetricCard label="Avg Position" value={fmtPos(summary.avgPosition)} />
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <TableSection
-            title="Top Queries"
-            rows={topQueries}
-            columns={[
-              { key: "query", label: "Query" },
-              { key: "clicks", label: "Clicks", format: (v) => fmtShort(v as number) },
-              { key: "ctr", label: "CTR", format: (v) => fmtPct(v as number) },
-              { key: "position", label: "Pos", format: (v) => fmtPos(v as number) },
-            ]}
-          />
-          <TableSection
-            title="Top Pages"
-            rows={topPages}
-            columns={[
-              { key: "page", label: "Page" },
-              { key: "clicks", label: "Clicks", format: (v) => fmtShort(v as number) },
-              { key: "ctr", label: "CTR", format: (v) => fmtPct(v as number) },
-              { key: "position", label: "Pos", format: (v) => fmtPos(v as number) },
-            ]}
-          />
-        </div>
-      </CardContent>
-    </Card>
   );
 }
