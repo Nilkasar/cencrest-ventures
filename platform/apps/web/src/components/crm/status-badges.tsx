@@ -1,5 +1,5 @@
 import { Badge, type BadgeProps } from "@bebest/ui";
-import type { DealStage, LeadSource, LeadStatus } from "@/data/crm/types";
+import type { AccountPlan, DealStage, LeadSource, LeadStatus } from "@/data/crm/types";
 import { DEAL_STAGE_LABEL } from "@/data/crm/types";
 
 const LEAD_STATUS_VARIANT: Record<LeadStatus, BadgeProps["variant"]> = {
@@ -66,4 +66,23 @@ export function LeadScore({ score }: { score: number | null }) {
   }
   const tone = score >= 70 ? "text-success" : score >= 40 ? "text-foreground" : "text-muted-foreground";
   return <span className={`font-mono text-[12.5px] font-medium ${tone}`}>{score}</span>;
+}
+
+const ACCOUNT_PLAN_LABEL: Record<NonNullable<AccountPlan>, string> = {
+  free: "Free",
+  starter: "Starter",
+  growth: "Growth",
+  pro: "Pro",
+  agency: "Agency",
+  managed: "Managed",
+  enterprise: "Enterprise",
+};
+
+/** Plan is a category, not a status — an outline tag with no dot. */
+export function AccountPlanBadge({ plan, size = "sm" }: { plan: NonNullable<AccountPlan>; size?: BadgeProps["size"] }) {
+  return (
+    <Badge variant="outline" size={size}>
+      {ACCOUNT_PLAN_LABEL[plan]}
+    </Badge>
+  );
 }

@@ -2,58 +2,41 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Building2, Globe, Handshake, Mail, Phone } from "lucide-react";
+import { Building2, Calendar, Hash, Mail, Phone, UserRound } from "lucide-react";
 import {
+  Avatar,
   Badge,
   Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
   EmptyState,
-  Skeleton,
-  SkeletonText,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
+  cn,
+  getInitials,
 } from "@bebest/ui";
 import { ErrorPanel } from "@/components/patterns/error-panel";
+import { DetailHeader } from "@/components/patterns/page-header";
+import { DetailLayout } from "@/components/patterns/layout";
+import { PageStack } from "@/components/patterns/motion";
+import { PropertyList, Section } from "@/components/patterns/section";
+import { CellLink, ClickableRow } from "@/components/patterns/data-table";
+import { DetailSkeleton } from "@/components/patterns/states";
+import { typography } from "@/components/patterns/typography";
 import { ActivityTimeline } from "@/components/crm/activity-timeline";
+import { AddDealDialog } from "@/components/crm/add-deal-dialog";
 import { LogActivityDialog } from "@/components/crm/log-activity-dialog";
-import { DealStageBadge } from "@/components/crm/status-badges";
+import { DealCloseDate, pipelineTotals } from "@/components/crm/deal-utils";
+import { AccountPlanBadge, DealStageBadge, LeadSourceBadge, LeadStatusBadge } from "@/components/crm/status-badges";
 import { fetchAccount, fetchActivitiesForAccount, fetchDealsForAccount, fetchLead } from "@/data/crm/client";
-import type { Account } from "@/data/crm/types";
 import { useAsyncData } from "@/lib/use-async-data";
-import { formatCurrency, formatDate } from "@/lib/format";
-
-const PLAN_LABEL: Record<NonNullable<Account["plan"]>, string> = {
-  free: "Free",
-  starter: "Starter",
-  growth: "Growth",
-  pro: "Pro",
-  agency: "Agency",
-  managed: "Managed",
-  enterprise: "Enterprise",
-};
-
-function AccountDetailSkeleton() {
-  return (
-    <div className="flex flex-col gap-6">
-      <Skeleton className="h-6 w-56" />
-      <Skeleton className="h-9 w-72 rounded-lg" />
-      <SkeletonText lines={5} />
-    </div>
-  );
-}
+import { useCrmBasePath } from "@/components/crm/crm-base-path";
+import { formatCurrency, formatDate, formatRelativeTime } from "@/lib/format";
 
 export function AccountDetailView({ accountId }: { accountId: string }) {
+  const crm = useCrmBasePath();
   const router = useRouter();
 
   const { reload, ...state } = useAsyncData(async () => {
@@ -67,197 +50,248 @@ export function AccountDetailView({ accountId }: { accountId: string }) {
     return { account, deals: dealsForAccount, activities: activitiesForAccount, sourceLead };
   }, [accountId]);
 
+  if (state.status === "loading") return <DetailSkeleton withLeading label="Loading account…" />;
+
+  if (state.status === "error") {
+    return (
+      <>
+        <DetailHeader backHref={`${crm}/accounts`} backLabel="Accounts" title="Account" />
+        <ErrorPanel title="This account didn't load" message={state.error.message} onRetry={reload} />
+      </>
+    );
+  }
+
+  const { account } = state.data;
+  if (account === null) {
+    return (
+      <EmptyState
+        icon={<Building2 size={20} />}
+        title="Account not found"
+        description="This account may have been removed, or the link is out of date."
+        action={
+          <Button variant="secondary" size="sm" onClick={() => router.push(`${crm}/accounts`)}>
+            Back to accounts
+          </Button>
+        }
+      />
+    );
+  }
+
+  const { deals, activities, sourceLead } = state.data;
+  const totals = pipelineTotals(deals);
+  const primary = account.contacts.find((c) => c.primary) ?? account.contacts[0] ?? null;
+  const lastActivity = activities[0] ?? null;
+
+  const addDeal = (variant: "primary" | "secondary") => (
+    <AddDealDialog
+      onCreated={reload}
+      defaultLink={{ kind: "account", id: account.id, name: account.name }}
+      triggerLabel="Add a deal"
+      triggerVariant={variant}
+    />
+  );
+
   return (
-    <div className="flex flex-col gap-5">
-      <Link href="/crm/accounts" className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground w-fit">
-        <ArrowLeft size={14} /> Accounts
-      </Link>
-
-      {state.status === "loading" && <AccountDetailSkeleton />}
-
-      {state.status === "error" && <ErrorPanel message={state.error.message} onRetry={reload} />}
-
-      {state.status === "success" && state.data.account === null && (
-        <EmptyState
-          icon={<Building2 size={20} />}
-          title="Account not found"
-          description="This account may have been removed, or the link is out of date."
-          action={
-            <Button variant="secondary" size="sm" onClick={() => router.push("/crm/accounts")}>
-              Back to accounts
-            </Button>
-          }
-        />
-      )}
-
-      {state.status === "success" && state.data.account && (
-        <>
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <span className="flex size-11 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground shrink-0">
-                <Building2 size={18} />
+    <>
+      <DetailHeader
+        backHref={`${crm}/accounts`}
+        backLabel="Accounts"
+        leading={
+          <span
+            className="flex size-12 items-center justify-center rounded-xl border border-border bg-surface font-display text-[18px] font-semibold text-muted-foreground"
+            aria-hidden="true"
+          >
+            {account.name.trim().charAt(0).toUpperCase() || <Building2 size={20} />}
+          </span>
+        }
+        title={account.name}
+        badges={account.plan ? <AccountPlanBadge plan={account.plan} size="md" /> : undefined}
+        subtitle={
+          sourceLead ? (
+            <>
+              Customer since {formatDate(account.createdAt)} · Converted from{" "}
+              <Link href={`${crm}/leads/${sourceLead.id}`} className="rounded-sm text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                {sourceLead.name}
+              </Link>
+            </>
+          ) : (
+            `Customer since ${formatDate(account.createdAt)} · Signed up directly`
+          )
+        }
+        meta={[
+          { label: "Primary contact", value: primary ? primary.name : <span className="text-subtle-foreground">&mdash;</span> },
+          {
+            label: "Open pipeline",
+            value: (
+              <span className={typography.numeric}>
+                {totals.openCount > 0 ? `${formatCurrency(totals.openValue)} · ${totals.openCount}` : "—"}
               </span>
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="font-display text-[22px] font-semibold text-foreground tracking-[-0.01em]">{state.data.account.name}</h1>
-                  {state.data.account.plan && (
-                    <Badge variant="outline" size="sm">{PLAN_LABEL[state.data.account.plan]}</Badge>
-                  )}
-                </div>
-                {state.data.account.domain && (
-                  <a
-                    href={`https://${state.data.account.domain}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-accent mt-0.5"
-                  >
-                    <Globe size={12} /> {state.data.account.domain}
-                  </a>
-                )}
-              </div>
-            </div>
-            <LogActivityDialog organizationId={state.data.account.id} onLogged={reload} />
-          </div>
+            ),
+          },
+          {
+            label: "Weighted",
+            value: <span className={typography.numeric}>{totals.openCount > 0 ? formatCurrency(totals.weightedValue) : "—"}</span>,
+          },
+          { label: "Won", value: <span className={typography.numeric}>{totals.wonCount > 0 ? formatCurrency(totals.wonValue) : "—"}</span> },
+          {
+            label: "Last activity",
+            value: lastActivity ? (
+              <span title={formatDate(lastActivity.createdAt)}>{formatRelativeTime(lastActivity.createdAt)}</span>
+            ) : (
+              <span className="text-subtle-foreground">None yet</span>
+            ),
+          },
+        ]}
+        actions={
+          <>
+            <LogActivityDialog organizationId={account.id} onLogged={reload} />
+            {addDeal("primary")}
+          </>
+        }
+      />
 
-          <Tabs defaultValue="overview">
-            <TabsList>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="contacts">Contacts ({state.data.account.contacts.length})</TabsTrigger>
-              <TabsTrigger value="deals">Deals ({state.data.deals.length})</TabsTrigger>
-              <TabsTrigger value="activity">Activity</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="overview">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <Card>
-                  <CardHeader><CardTitle>Origin</CardTitle></CardHeader>
-                  <CardContent className="text-[13px]">
-                    {state.data.sourceLead ? (
-                      <>
-                        <p className="text-muted-foreground">Converted from lead</p>
-                        <Link href={`/crm/leads/${state.data.sourceLead.id}`} className="text-accent hover:underline font-medium">
-                          {state.data.sourceLead.name}
-                        </Link>
-                      </>
-                    ) : (
-                      <p className="text-muted-foreground">Signed up directly — no prior lead record.</p>
-                    )}
-                    <p className="text-[12px] text-subtle-foreground mt-2">Customer since {formatDate(state.data.account.createdAt)}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader><CardTitle>Primary contact</CardTitle></CardHeader>
-                  <CardContent className="text-[13px]">
-                    {(() => {
-                      const primary = state.data.account.contacts.find((c) => c.primary) ?? state.data.account.contacts[0];
-                      return primary ? (
-                        <div className="flex flex-col gap-1">
-                          <p className="font-medium text-foreground">{primary.name}</p>
-                          {primary.role && <p className="text-muted-foreground">{primary.role}</p>}
-                          <a href={`mailto:${primary.email}`} className="text-accent hover:underline">{primary.email}</a>
-                        </div>
-                      ) : (
-                        <p className="text-muted-foreground">No contacts on file.</p>
-                      );
-                    })()}
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader><CardTitle>Deal value</CardTitle></CardHeader>
-                  <CardContent>
-                    <p className="font-mono text-[22px] font-semibold text-foreground">
-                      {formatCurrency(state.data.deals.reduce((sum, d) => sum + d.valueCents, 0))}
-                    </p>
-                    <p className="text-[12px] text-muted-foreground mt-1">across {state.data.deals.length} deal{state.data.deals.length === 1 ? "" : "s"}</p>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="contacts">
-              {state.data.account.contacts.length === 0 ? (
-                <EmptyState compact icon={<Mail size={18} />} title="No contacts on file" description="Log an activity to start capturing who you talk to here." />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Role</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Phone</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {state.data.account.contacts.map((contact) => (
-                      <TableRow key={contact.id}>
-                        <TableCell>
-                          <span className="text-[13px] font-medium text-foreground">{contact.name}</span>
-                          {contact.primary && <Badge variant="outline" size="sm" className="ml-2">Primary</Badge>}
-                        </TableCell>
-                        <TableCell><span className="text-[13px] text-muted-foreground">{contact.role ?? "—"}</span></TableCell>
-                        <TableCell>
-                          <a href={`mailto:${contact.email}`} className="text-[13px] text-accent hover:underline">{contact.email}</a>
-                        </TableCell>
-                        <TableCell>
-                          {contact.phone ? (
-                            <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground"><Phone size={12} />{contact.phone}</span>
-                          ) : (
-                            <span className="text-[13px] text-subtle-foreground">—</span>
+      <PageStack>
+        <DetailLayout
+          aside={
+            <>
+              <Section title="Contacts" description={account.contacts.length === 1 ? "1 person on file" : `${account.contacts.length} people on file`} flush>
+                {account.contacts.length === 0 ? (
+                  <p className={cn(typography.secondary, "px-5 py-4")}>
+                    No contacts on file yet. The person who converted from a lead appears here automatically.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-border">
+                    {account.contacts.map((contact) => (
+                      <li key={contact.id} className="flex items-start gap-3 px-5 py-3.5">
+                        <Avatar fallback={getInitials(contact.name)} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="truncate text-[13px] font-medium text-foreground">{contact.name}</p>
+                            {contact.primary && (
+                              <Badge variant="outline" size="sm">
+                                Primary
+                              </Badge>
+                            )}
+                          </div>
+                          {contact.role && <p className={typography.meta}>{contact.role}</p>}
+                          <a
+                            href={`mailto:${contact.email}`}
+                            className="mt-1 flex w-fit max-w-full items-center gap-1.5 rounded-sm text-[12.5px] text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <Mail size={12} className="shrink-0" aria-hidden="true" />
+                            <span className="break-all">{contact.email}</span>
+                          </a>
+                          {contact.phone && (
+                            <a
+                              href={`tel:${contact.phone}`}
+                              className="mt-0.5 flex w-fit items-center gap-1.5 rounded-sm text-[12.5px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              <Phone size={12} className="shrink-0" aria-hidden="true" />
+                              {contact.phone}
+                            </a>
                           )}
-                        </TableCell>
-                      </TableRow>
+                        </div>
+                      </li>
                     ))}
-                  </TableBody>
-                </Table>
-              )}
-            </TabsContent>
+                  </ul>
+                )}
+              </Section>
 
-            <TabsContent value="deals">
-              {state.data.deals.length === 0 ? (
-                <EmptyState
-                  compact
-                  icon={<Handshake size={18} />}
-                  title="No deals for this account yet"
-                  description="Deals for an upsell or renewal will show up here once created."
+              <Section title="Details">
+                <PropertyList
+                  items={[
+                    { label: "Workspace", icon: <Hash size={13} />, value: account.slug ? <span className={typography.numeric}>{account.slug}</span> : null },
+                    { label: "Customer since", icon: <Calendar size={13} />, value: formatDate(account.createdAt) },
+                    {
+                      label: "Origin",
+                      icon: <UserRound size={13} />,
+                      value: sourceLead ? (
+                        <span className="flex flex-col items-start gap-1.5">
+                          <Link
+                            href={`${crm}/leads/${sourceLead.id}`}
+                            className="rounded-sm text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {sourceLead.name}
+                          </Link>
+                          <span className="flex flex-wrap gap-1.5">
+                            <LeadSourceBadge source={sourceLead.source} size="sm" />
+                            <LeadStatusBadge status={sourceLead.status} size="sm" />
+                          </span>
+                        </span>
+                      ) : (
+                        "Signed up directly"
+                      ),
+                    },
+                  ]}
                 />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Deal</TableHead>
-                      <TableHead>Stage</TableHead>
-                      <TableHead>Value</TableHead>
-                      <TableHead>Owner</TableHead>
-                      <TableHead>Expected close</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {state.data.deals.map((deal) => (
-                      <TableRow key={deal.id} className="cursor-pointer" onClick={() => router.push(`/crm/deals/${deal.id}`)}>
-                        <TableCell><span className="text-[13px] font-medium text-foreground">{deal.title}</span></TableCell>
-                        <TableCell><DealStageBadge stage={deal.stage} size="sm" /></TableCell>
-                        <TableCell><span className="font-mono text-[13px] text-foreground">{formatCurrency(deal.valueCents, deal.currency)}</span></TableCell>
-                        <TableCell><span className="text-[13px] text-muted-foreground">{deal.owner.name}</span></TableCell>
+              </Section>
+            </>
+          }
+        >
+          <Section
+            title="Deals"
+            description={
+              deals.length === 0
+                ? "Upsells, renewals and new engagements with this account."
+                : `${deals.length} ${deals.length === 1 ? "deal" : "deals"} · ${totals.openCount} open`
+            }
+            actions={deals.length > 0 ? addDeal("secondary") : undefined}
+            flush={deals.length > 0}
+          >
+            {deals.length === 0 ? (
+              <EmptyState
+                compact
+                icon={<Building2 size={18} />}
+                title="No deals with this account yet"
+                description="Start a deal for an upsell, renewal or new engagement. It will be linked here and counted in the account's pipeline."
+                action={addDeal("secondary")}
+              />
+            ) : (
+              <Table framed={false}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Deal</TableHead>
+                    <TableHead>Stage</TableHead>
+                    <TableHead className="text-right">Value</TableHead>
+                    <TableHead>Owner</TableHead>
+                    <TableHead>Expected close</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {deals.map((deal) => {
+                    const href = `${crm}/deals/${deal.id}`;
+                    return (
+                      <ClickableRow key={deal.id} href={href}>
                         <TableCell>
-                          <span className="text-[12.5px] text-muted-foreground">{deal.expectedCloseDate ? formatDate(deal.expectedCloseDate) : "—"}</span>
+                          <CellLink href={href} className="block max-w-[260px] truncate text-[13px]">
+                            {deal.title}
+                          </CellLink>
                         </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </TabsContent>
+                        <TableCell>
+                          <DealStageBadge stage={deal.stage} size="sm" />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span className={typography.numeric}>{formatCurrency(deal.valueCents, deal.currency)}</span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="truncate text-[13px] text-muted-foreground">{deal.owner.name}</span>
+                        </TableCell>
+                        <TableCell>
+                          <DealCloseDate deal={deal} emptyLabel="—" className="text-[12px]" />
+                        </TableCell>
+                      </ClickableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </Section>
 
-            <TabsContent value="activity">
-              <Card>
-                <CardContent className="pt-5">
-                  <ActivityTimeline activities={state.data.activities} emptyHint="Nothing logged against this account yet." />
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-        </>
-      )}
-    </div>
+          <Section title="Activity" description="Calls, emails, notes and system events with this account, newest first.">
+            <ActivityTimeline activities={activities} emptyHint="Nothing logged against this account yet — log a call, email, or note to start its history." />
+          </Section>
+        </DetailLayout>
+      </PageStack>
+    </>
   );
 }
