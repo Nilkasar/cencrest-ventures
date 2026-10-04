@@ -2232,3 +2232,113 @@ Under `bebest_app` every platform-level audit event — `auth.login`,
 `auth.logout`, `billing.webhook_rejected`, `lead.created` from `/apply`, and
 the new `platform.*` events — failed with 42501 and was swallowed. Now
 `createMany` (no RETURNING), the same fix `platform_access_events` uses.
+
+## 32. Epic 22 (Workspace Views) Phase 2 — Organization view — migration 0024
+
+`prisma/migrations/0024_organization_view/`. Spec:
+`platform/docs/epics/22-workspace-views.md` (Phase 2).
+
+### Unique org slugs: ON CONFLICT DO NOTHING, not "catch 23505 and retry"
+
+Every org is now created by `apps/api/src/lib/org-slug.ts`
+(`createOrganizationWithUniqueSlug`) — `POST /api/orgs` and lead conversion.
+A collision becomes `base-2`, `base-3`… instead of the old 409 that stranded
+the second "john@…" user on first login. The insert is
+`createMany({ skipDuplicates: true })` = `INSERT … ON CONFLICT DO NOTHING`:
+the unique index (`organizations_slug_unique`) still decides every race, but
+a loser gets `count: 0` and retries with a fresh read instead of raising
+23505. That matters because both callers create the org inside a larger
+interactive transaction (owner membership; lead conversion), and a raised
+23505 aborts the whole Postgres transaction — no retry is possible inside it.
+Bounded at 5 attempts. `strictSlug: true` keeps "exactly this slug or 409".
+`me`, `invitations`, `new` are reserved (they would shadow
+`/api/orgs/me/*`, `/api/orgs/invitations/*`, the web's `/orgs/new`).
+
+### Slug is immutable in Phase 2
+
+`PATCH /api/orgs/:slug` renames only; a different `slug` in the body is 422
+`slug_immutable`. The slug is the address in every `:slug` route, in the web's
+persisted selection and in `/refresh`; changing it safely needs an alias /
+redirect story that does not exist yet.
+
+### Onboarding state: `brands.onboarding_completed_at`
+
+On `brands`, not `organizations`: onboarding IS the brand wizard, and every
+brand-scoped route already resolves "the" brand per org. The server re-checks
+the wizard's own minimums (non-blank name, ≥1 industry, ≥1 live competitor,
+≥3 live use cases; claims optional) — exactly `deriveCompletedSteps` in
+`apps/web/src/lib/onboarding-client.ts`. Completion is claimed with a
+conditional UPDATE (`IS NULL`); only the winner starts the first crawl
+(`lib/crawler/start-crawl.ts`, shared with `POST /brands/me/crawl`) and the
+first active query set (`ensureActiveQuerySet` → `lib/query-sets/generate.ts`).
+Repeat or concurrent calls start nothing. If a kickoff throws, the claim is
+released so a retry redoes it. A brand already crawled before completing is
+not crawled again (`already_crawled`). The 0024 backfill marks existing brands
+that already meet the minimums as completed (`updated_at`), so existing
+customers are not pushed back into the wizard. `/auth/me` gains per-membership
+`hasBrand`, `onboardingCompletedAt`, `needsOnboarding` (customer orgs only;
+agency/internal orgs are never routed to the brand wizard).
+
+### Notification preferences: the existing table, not `users.settings`
+
+`notification_preferences` already existed (0000, never written, no RLS,
+unique per user/type/channel). It was widened rather than replaced, and
+chosen over `users.settings` JSON because preferences are per ORG (a person
+in two orgs chooses separately), `notify()` reads them inside
+`withOrgContext`, and a table gets the standard `tenant_isolation` RLS — JSON
+on `users` (no RLS) would have put tenant-specific data outside the tenant
+boundary. Changes: `organization_id` (NOT NULL; any legacy org-less row would
+be copied to each of the user's orgs — there were none), unique
+`uq_notif_prefs_org_user_type_channel`, ENABLE + FORCE RLS. One row per
+(type, channel); no row = enabled (= `notify()`'s behaviour before
+preferences, so nothing changes for anyone until they change a setting).
+Offered types are only those something emits: `run_complete`, `report_ready`,
+`weekly_digest`, `competitor_alert`, `invitation_accepted` (new enum value,
+sent to the inviter on accept).
+
+How they are honoured: a per-user notification skips the in-app row and/or
+the email per the recipient's preference. An org-wide notification is still
+ONE shared row, not fanned out (unchanged — `notify()` never fanned out);
+a member who switched that type off in-app does not see it in
+`GET /notifications` (read-time filter). Org-wide notifications are still
+never emailed, so the email toggle is reported as `emailApplicable: false`
+for `competitor_alert`. `GET /notifications` now also lists only `in_app`
+rows (it used to return each emailed notification twice — the web filtered
+client-side).
+
+### Org autonomy ceiling: `organizations.autonomy_level_max`, default 3
+
+A column (no org-settings table exists; one scalar does not justify one).
+CHECK 1–3, so level 4 is unrepresentable on top of the hard block in
+`lib/agents/autonomy.ts`. Default **3** (orchestrator decision, 2026-10-04):
+behaviour before Phase 2 is preserved — the effective ceiling is
+min(org setting, plan `autonomy_level_max`), reported as `effectiveMax` by
+`GET /api/orgs/me/autonomy` — and an org is held below its plan only when an
+owner/admin lowers it, after which a higher trigger is 422
+`above_org_autonomy_limit`.
+
+0024 first shipped the column with DEFAULT 1 and was applied to the dev
+database before that decision. It was NOT edited: `apply-sql.mjs` reports an
+already-applied file whose checksum changed as `EDITED … add a new migration
+instead` and exits 1. `0025_autonomy_default_3/ddl.sql` instead sets DEFAULT 3
+and moves rows still at 1 to 3 — but only rows nobody chose: a deliberate
+choice is always audited by `PUT /orgs/me/autonomy` as `settings.changed`
+with `details.setting = 'autonomy_level_max'`, and an org with such a row
+keeps its value. On dev that moved 138 rows and kept 1 (the smoke's audited,
+since-deleted org). A fresh database gets DEFAULT 3 from the rendered
+schema.prisma; both paths converge. The runner's fallback for an unreadable
+org row stays the conservative 1 (impossible for a resolved org context). The runner reads
+it fresh on every trigger and passes it into `resolveRequestedAutonomyLevel`,
+which consults it only after `assertAutonomyLevelAllowed`, so it can only
+lower the ceiling. `PUT /api/orgs/me/autonomy` is owner/admin and capped by
+the plan's `autonomy_level_max` (null = no plan cap, still ≤ 3).
+
+### Org deletion
+
+Soft delete with typed confirmation (`confirmName` = current name). Memberships
+kept; every read path already filtered deleted orgs except `GET /api/orgs`
+(fixed). Pending invitations are revoked in the same transaction. Sessions
+are user-level and untouched; a token minted for the org 403s on its next
+request. The `internal` org cannot be deleted (409). Subscriptions are not
+touched — billing is still `NullPaymentProvider`; a real provider must cancel
+on org deletion (open).

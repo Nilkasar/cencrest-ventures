@@ -5,6 +5,9 @@ import { generateKeyPair } from 'jose';
 function matches(row: Record<string, unknown>, where: Record<string, unknown>): boolean {
   return Object.entries(where).every(([key, value]) => {
     if (key === 'OR') return true; // handled separately below
+    if (value && typeof value === 'object' && 'notIn' in value) {
+      return !(value as { notIn: unknown[] }).notIn.includes(row[key]);
+    }
     return value === undefined ? true : row[key] === value;
   });
 }
@@ -16,6 +19,8 @@ const db = {
   organizations: { findUnique: vi.fn() },
   memberships: { findFirst: vi.fn() },
   users: { findUnique: vi.fn() },
+  // Epic 22 Phase 2 — the list hides org-wide types the caller switched off in-app.
+  notification_preferences: { findMany: vi.fn().mockResolvedValue([]) },
   notifications: {
     findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
       const or = where.OR as Array<Record<string, unknown>> | undefined;
@@ -128,6 +133,40 @@ describe('GET /notifications', () => {
     const res = await app.request('/notifications', { headers: await authHeader('user-1', 'org-1') });
     const body = (await res.json()) as { items: Array<{ id: string }> };
     expect(body.items).toHaveLength(0);
+  });
+
+  // Epic 22 Phase 2
+  it('lists only in_app rows — an emailed notification no longer appears twice', async () => {
+    notificationRows = [
+      makeNotification({ id: 'notif-inapp', channel: 'in_app' }),
+      makeNotification({ id: 'notif-email', channel: 'email' }),
+    ];
+    const app = await buildApp();
+    const body = (await (await app.request('/notifications', { headers: await authHeader('user-1', 'org-1') })).json()) as {
+      items: Array<{ id: string }>;
+      total: number;
+    };
+    expect(body.items.map((i) => i.id)).toEqual(['notif-inapp']);
+    expect(body.total).toBe(1);
+  });
+
+  it('hides org-wide rows of a type the caller switched off in-app, keeps the rest', async () => {
+    db.notification_preferences.findMany.mockResolvedValueOnce([{ notification_type: 'competitor_alert' }]);
+    notificationRows = [
+      makeNotification({ id: 'orgwide-alert', user_id: null, type: 'competitor_alert' }),
+      makeNotification({ id: 'orgwide-run', user_id: null, type: 'run_complete' }),
+      makeNotification({ id: 'mine', user_id: 'user-1', type: 'report_ready' }),
+    ];
+    const app = await buildApp();
+    const body = (await (await app.request('/notifications', { headers: await authHeader('user-1', 'org-1') })).json()) as {
+      items: Array<{ id: string }>;
+    };
+    expect(body.items.map((i) => i.id).sort()).toEqual(['mine', 'orgwide-run']);
+    expect(db.notification_preferences.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { organization_id: 'org-1', user_id: 'user-1', channel: 'in_app', enabled: false },
+      }),
+    );
   });
 });
 

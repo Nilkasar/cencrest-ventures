@@ -6,7 +6,12 @@ const db = {
   agent_events: { create: vi.fn() },
   agent_pending_actions: { create: vi.fn() },
 };
+// Epic 22 Phase 2 — the runner reads the org's own autonomy ceiling
+// (organizations.autonomy_level_max). Defaults to 3 here so the pre-existing
+// tests keep exercising only the plan cap / hard block.
+const orgFindUnique = vi.fn();
 vi.mock('@bebest/database', () => ({
+  db: { organizations: { findUnique: (...args: unknown[]) => orgFindUnique(...args) } },
   withOrgContext: vi.fn(async (_org: string, fn: (tx: unknown) => unknown) => fn(db)),
 }));
 
@@ -58,6 +63,7 @@ beforeEach(() => {
   resolvePlanLimits.mockResolvedValue({ plan: 'growth', limits: { agents: true, agent_runs_per_month: 10, autonomy_level_max: null } });
   checkUsageLimit.mockResolvedValue(undefined);
   countAgentRunsThisMonth.mockResolvedValue(0);
+  orgFindUnique.mockResolvedValue({ autonomy_level_max: 3 });
   db.agent_runs.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'run-1', ...data }));
   db.agent_runs.update.mockResolvedValue({});
   db.agent_events.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: `event-${Math.random()}`, ...data }));
@@ -154,6 +160,53 @@ describe('triggerAgentRun — entitlement and autonomy checks BEFORE the run sta
   it('throws when triggeredBy is "user" with no triggeredById — never silently proceeds with an unattributed run', async () => {
     const { triggerAgentRun } = await import('./runner.js');
     await expect(triggerAgentRun({ ...BASE_PARAMS, triggeredById: undefined })).rejects.toThrow();
+  });
+});
+
+describe('triggerAgentRun — organization autonomy ceiling (Epic 22 Phase 2)', () => {
+  it('rejects a level above the org ceiling with OrgAutonomyCapError (a 422 at the route), no row created', async () => {
+    orgFindUnique.mockResolvedValue({ autonomy_level_max: 1 });
+    const { triggerAgentRun } = await import('./runner.js');
+    const { OrgAutonomyCapError, AutonomyLevelRejectedError } = await import('./autonomy.js');
+
+    const err = await triggerAgentRun({ ...BASE_PARAMS, requestedAutonomyLevel: 2 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(OrgAutonomyCapError);
+    expect(err).toBeInstanceOf(AutonomyLevelRejectedError);
+    expect(err).toMatchObject({ cap: 1 });
+    expect(db.agent_runs.create).not.toHaveBeenCalled();
+    expect(orgFindUnique).toHaveBeenCalledWith({
+      where: { id: BASE_PARAMS.organizationId },
+      select: { autonomy_level_max: true },
+    });
+  });
+
+  it('allows a level at the org ceiling', async () => {
+    orgFindUnique.mockResolvedValue({ autonomy_level_max: 2 });
+    const { triggerAgentRun } = await import('./runner.js');
+    const result = await triggerAgentRun({ ...BASE_PARAMS, requestedAutonomyLevel: 2 });
+    expect('run' in result && result.run.autonomy_level).toBe(2);
+  });
+
+  it('the plan cap still applies under a higher org ceiling', async () => {
+    resolvePlanLimits.mockResolvedValue({
+      plan: 'starter',
+      limits: { agents: true, agent_runs_per_month: null, autonomy_level_max: 2 },
+    });
+    const { triggerAgentRun } = await import('./runner.js');
+    const { OrgAutonomyCapError, AutonomyLevelRejectedError } = await import('./autonomy.js');
+    const err = await triggerAgentRun({ ...BASE_PARAMS, requestedAutonomyLevel: 3 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AutonomyLevelRejectedError);
+    expect(err).not.toBeInstanceOf(OrgAutonomyCapError);
+  });
+
+  it('an unreadable org row falls back to the most conservative ceiling (1), never to none', async () => {
+    orgFindUnique.mockResolvedValue(null);
+    const { triggerAgentRun } = await import('./runner.js');
+    const { OrgAutonomyCapError } = await import('./autonomy.js');
+    const err = await triggerAgentRun({ ...BASE_PARAMS, requestedAutonomyLevel: 2 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(OrgAutonomyCapError);
+    const ok = await triggerAgentRun({ ...BASE_PARAMS });
+    expect('run' in ok && ok.run.autonomy_level).toBe(1);
   });
 });
 

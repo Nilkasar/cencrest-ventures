@@ -138,6 +138,21 @@ describe('POST /brands/me/agents/:agentName/run', () => {
     expect(body.error).toBe('autonomy_level_rejected');
   });
 
+  it('422s with code above_org_autonomy_limit and the limit when the level exceeds the org ceiling (Epic 22 Phase 2)', async () => {
+    const { OrgAutonomyCapError } = await import('../lib/agents/autonomy.js');
+    triggerAgentRun.mockRejectedValue(new OrgAutonomyCapError(3, 1));
+    const app = await buildApp();
+    const res = await app.request('/agents/geo_agent/run', {
+      method: 'POST',
+      headers: { ...(await authHeader('user-1', 'org-1')), 'content-type': 'application/json' },
+      body: JSON.stringify({ autonomyLevel: 3 }),
+    });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ error: 'autonomy_level_rejected', code: 'above_org_autonomy_limit', limit: 1 });
+    expect(String(body.message)).toContain('Settings > Autonomy');
+  });
+
   it('202s, passes triggeredBy=user + the caller\'s id, and writes an audit event, on success', async () => {
     const app = await buildApp();
     const res = await app.request('/agents/geo_agent/run', {

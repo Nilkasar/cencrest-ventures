@@ -76,6 +76,8 @@ const db = {
     update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'notif-1', ...data })),
   },
   audit_events: { create: vi.fn().mockResolvedValue({}) },
+  // Epic 22 Phase 2 — notify() reads the recipient's preferences (none = defaults).
+  notification_preferences: { findMany: vi.fn().mockResolvedValue([]) },
   reports: {
     create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
       const row = { id: 'report-1', ...data };

@@ -8,12 +8,17 @@ function fakeEmailSender(sendNotification: EmailSender['sendNotification'] = vi.
 const db = {
   users: { findUnique: vi.fn() },
   notifications: { create: vi.fn(), update: vi.fn() },
+  notification_preferences: { findMany: vi.fn() },
   audit_events: { create: vi.fn() },
 };
 
 // writeAuditEvent runs org-attributed writes inside withOrgContext now
 // (see lib/audit.ts), so the transaction client exposes audit_events.
-const tx = { notifications: db.notifications, audit_events: db.audit_events };
+const tx = {
+  notifications: db.notifications,
+  audit_events: db.audit_events,
+  notification_preferences: db.notification_preferences,
+};
 
 vi.mock('@bebest/database', () => ({
   db,
@@ -26,6 +31,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   rowsById = {};
   db.audit_events.create.mockResolvedValue({});
+  db.notification_preferences.findMany.mockResolvedValue([]); // no rows = defaults (both channels on)
   let seq = 0;
   db.notifications.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
     const row = { id: `notif-${++seq}`, ...data };
@@ -46,7 +52,7 @@ describe('notify()', () => {
     const result = await notify({ organizationId: 'org-1', userId: 'user-1', type: 'report_ready', title: 'Your report is ready', email: false });
 
     expect(result.inApp).toMatchObject({ organization_id: 'org-1', user_id: 'user-1', type: 'report_ready', channel: 'in_app' });
-    expect(result.inApp.sent_at).toBeInstanceOf(Date);
+    expect(result.inApp!.sent_at).toBeInstanceOf(Date);
     expect(db.audit_events.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ action: 'notification.sent', result: 'success' }) }),
     );
@@ -57,7 +63,7 @@ describe('notify()', () => {
 
     const result = await notify({ organizationId: 'org-1', type: 'competitor_alert', title: 'CompetitorA moved' });
 
-    expect(result.inApp.user_id).toBeNull();
+    expect(result.inApp!.user_id).toBeNull();
     expect(result.email).toBeNull();
     expect(db.users.findUnique).not.toHaveBeenCalled();
   });
@@ -115,5 +121,83 @@ describe('notify()', () => {
     const { notify } = await import('./notify.js');
 
     await expect(notify({ organizationId: 'org-1', userId: 'user-1', type: 'report_ready', title: 'Ready' })).resolves.toBeDefined();
+  });
+
+  // ── Epic 22 Phase 2: per-user, per-org preferences ─────────────────────
+  describe('preferences', () => {
+    it('a disabled EMAIL preference: no email row, no send — the in-app row is still written', async () => {
+      db.notification_preferences.findMany.mockResolvedValue([{ channel: 'email', enabled: false }]);
+      db.users.findUnique.mockResolvedValue({ id: 'user-1', email: 'ada@example.com' });
+      const emailSender = fakeEmailSender();
+      const { notify } = await import('./notify.js');
+
+      const result = await notify({ organizationId: 'org-1', userId: 'user-1', type: 'report_ready', title: 'Ready' }, { emailSender });
+
+      expect(emailSender.sendNotification).not.toHaveBeenCalled();
+      expect(result.email).toBeNull();
+      expect(result.inApp).toMatchObject({ channel: 'in_app' });
+      expect(result.suppressed).toEqual(['email']);
+      expect(db.notifications.create).toHaveBeenCalledTimes(1);
+      expect(db.users.findUnique).not.toHaveBeenCalled();
+      // The preference read is scoped to this org, this user, this type.
+      expect(db.notification_preferences.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { organization_id: 'org-1', user_id: 'user-1', notification_type: 'report_ready' } }),
+      );
+    });
+
+    it('a disabled IN-APP preference: no in-app row; email still goes out', async () => {
+      db.notification_preferences.findMany.mockResolvedValue([{ channel: 'in_app', enabled: false }]);
+      db.users.findUnique.mockResolvedValue({ id: 'user-1', email: 'ada@example.com' });
+      const emailSender = fakeEmailSender(vi.fn().mockResolvedValue(undefined));
+      const { notify } = await import('./notify.js');
+
+      const result = await notify({ organizationId: 'org-1', userId: 'user-1', type: 'run_complete', title: 'Done' }, { emailSender });
+
+      expect(result.inApp).toBeNull();
+      expect(result.suppressed).toEqual(['in_app']);
+      expect(emailSender.sendNotification).toHaveBeenCalledTimes(1);
+      expect(db.notifications.create).toHaveBeenCalledTimes(1);
+      expect(db.notifications.create.mock.calls[0]![0].data.channel).toBe('email');
+    });
+
+    it('both channels off: nothing written, nothing sent, no audit row', async () => {
+      db.notification_preferences.findMany.mockResolvedValue([
+        { channel: 'in_app', enabled: false },
+        { channel: 'email', enabled: false },
+      ]);
+      const emailSender = fakeEmailSender();
+      const { notify } = await import('./notify.js');
+
+      const result = await notify({ organizationId: 'org-1', userId: 'user-1', type: 'invitation_accepted', title: 'Joined' }, { emailSender });
+
+      expect(result).toEqual({ inApp: null, email: null, suppressed: ['in_app', 'email'] });
+      expect(db.notifications.create).not.toHaveBeenCalled();
+      expect(emailSender.sendNotification).not.toHaveBeenCalled();
+      expect(db.audit_events.create).not.toHaveBeenCalled();
+    });
+
+    it('an explicit enabled row behaves like the default', async () => {
+      db.notification_preferences.findMany.mockResolvedValue([{ channel: 'email', enabled: true }]);
+      db.users.findUnique.mockResolvedValue({ id: 'user-1', email: 'ada@example.com' });
+      const emailSender = fakeEmailSender(vi.fn().mockResolvedValue(undefined));
+      const { notify } = await import('./notify.js');
+      const result = await notify({ organizationId: 'org-1', userId: 'user-1', type: 'weekly_digest', title: 'Digest' }, { emailSender });
+      expect(result.suppressed).toEqual([]);
+      expect(emailSender.sendNotification).toHaveBeenCalledTimes(1);
+    });
+
+    it('org-wide notifications do not read any single member preferences — the shared row is written (filtered per member at read time)', async () => {
+      const { notify } = await import('./notify.js');
+      const result = await notify({ organizationId: 'org-1', type: 'competitor_alert', title: 'Moved' });
+      expect(result.inApp).toMatchObject({ user_id: null });
+      expect(db.notification_preferences.findMany).not.toHaveBeenCalled();
+    });
+
+    it('a type with no offered toggle (no emitter) always uses the defaults', async () => {
+      db.users.findUnique.mockResolvedValue({ id: 'user-1', email: 'ada@example.com' });
+      const { notify } = await import('./notify.js');
+      await notify({ organizationId: 'org-1', userId: 'user-1', type: 'billing_alert', title: 'x', email: false });
+      expect(db.notification_preferences.findMany).not.toHaveBeenCalled();
+    });
   });
 });

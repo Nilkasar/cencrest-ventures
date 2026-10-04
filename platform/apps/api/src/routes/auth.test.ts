@@ -16,6 +16,8 @@ const db = {
   // "no membership -> 403" outcome unchanged.
   memberships: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
   agency_clients: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
+  // Epic 22 Phase 2 — /me reads each org's brand onboarding state.
+  brands: { findFirst: vi.fn().mockResolvedValue(null) },
   organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
   audit_events: { create: vi.fn().mockResolvedValue({}) },
 };
@@ -26,7 +28,7 @@ vi.mock('@bebest/database', () => ({
     fn({ memberships: db.memberships, users: db.users }),
   ),
   withOrgContext: vi.fn(async (_orgId: string, fn: (tx: unknown) => unknown) =>
-    fn({ agency_clients: db.agency_clients }),
+    fn({ agency_clients: db.agency_clients, brands: db.brands }),
   ),
 }));
 
@@ -497,11 +499,55 @@ describe('GET /auth/me', () => {
       email: 'a@example.com',
       name: 'Ada',
       platformRole: 'none',
-      organizations: [{ id: 'org-1', name: 'ACME', slug: 'acme', role: 'owner', kind: 'customer' }],
+      organizations: [
+        {
+          id: 'org-1',
+          name: 'ACME',
+          slug: 'acme',
+          role: 'owner',
+          kind: 'customer',
+          // Epic 22 Phase 2 additions (additive — nothing above changed).
+          hasBrand: false,
+          onboardingCompletedAt: null,
+          needsOnboarding: true,
+        },
+      ],
       agencyClients: [],
     });
     // No agency membership → no agency_clients read at all.
     expect(db.agency_clients.findMany).not.toHaveBeenCalled();
+  });
+
+  it('first-login routing contract: needsOnboarding per membership (Epic 22 Phase 2)', async () => {
+    const done = new Date('2026-10-01T00:00:00.000Z');
+    db.memberships.findMany.mockResolvedValue([
+      membership({ id: 'org-done', slug: 'done', kind: 'customer' }),
+      membership({ id: 'org-brand-unfinished', slug: 'half', kind: 'customer' }),
+      membership({ id: 'org-no-brand', slug: 'empty', kind: 'customer' }),
+      membership({ id: 'org-agency', slug: 'agency', kind: 'agency' }),
+      membership({ id: 'org-internal', slug: 'ops', kind: 'internal' }),
+    ]);
+    db.brands.findFirst.mockImplementation(async ({ where }: { where: { organization_id: string } }) => {
+      if (where.organization_id === 'org-done') return { onboarding_completed_at: done };
+      if (where.organization_id === 'org-brand-unfinished') return { onboarding_completed_at: null };
+      return null;
+    });
+
+    const body = (await (await getMe('none')).json()) as {
+      organizations: Array<{ slug: string; hasBrand: boolean; onboardingCompletedAt: string | null; needsOnboarding: boolean }>;
+    };
+    const bySlug = Object.fromEntries(body.organizations.map((o) => [o.slug, o]));
+    expect(bySlug.done).toMatchObject({ hasBrand: true, onboardingCompletedAt: done.toISOString(), needsOnboarding: false });
+    expect(bySlug.half).toMatchObject({ hasBrand: true, onboardingCompletedAt: null, needsOnboarding: true });
+    expect(bySlug.empty).toMatchObject({ hasBrand: false, needsOnboarding: true });
+    // Agency and internal orgs are never routed into the brand wizard.
+    expect(bySlug.agency!.needsOnboarding).toBe(false);
+    expect(bySlug.ops!.needsOnboarding).toBe(false);
+    // Each org's brand is read under that org's own context (RLS).
+    const { withOrgContext } = await import('@bebest/database');
+    for (const id of ['org-done', 'org-brand-unfinished', 'org-no-brand']) {
+      expect(withOrgContext).toHaveBeenCalledWith(id, expect.any(Function));
+    }
   });
 
   it('reads platformRole from the database, and fails closed to none for an unknown value', async () => {

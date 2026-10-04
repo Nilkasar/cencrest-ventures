@@ -66,6 +66,25 @@ export class AutonomyLevelRejectedError extends Error {
   }
 }
 
+/** Epic 22 Phase 2 — a valid level (1–3) above the ORGANIZATION's own
+ * ceiling (`organizations.autonomy_level_max`). A subclass so every existing
+ * `instanceof AutonomyLevelRejectedError` catch (and its 422) still applies;
+ * `cap` lets the route tell the caller what the limit is, and the message is
+ * the plain-language one a user sees (the parent's mentions Level 4, which
+ * is beside the point here). */
+export class OrgAutonomyCapError extends AutonomyLevelRejectedError {
+  constructor(
+    requested: number,
+    public readonly cap: number,
+  ) {
+    super(requested, `exceeds this organization's autonomy limit (${cap})`);
+    this.message =
+      `Autonomy level ${requested} is above this organization's autonomy limit (${cap}). ` +
+      'An owner or admin can raise it in Settings > Autonomy.';
+    this.name = 'OrgAutonomyCapError';
+  }
+}
+
 /**
  * The hard block. `requested` is deliberately typed `unknown` (not
  * `number`) — this function is the FIRST thing any external input touches,
@@ -108,6 +127,12 @@ export function assertAutonomyLevelAllowed(requested: unknown): AutonomyLevel {
 export function resolveRequestedAutonomyLevel(
   requested: unknown,
   planAutonomyLevelMax: number | null,
+  /** Epic 22 Phase 2 — the organization's own ceiling
+   * (`organizations.autonomy_level_max`, set in Settings > Autonomy).
+   * Like the plan cap it can only LOWER the ceiling: it is consulted after
+   * `assertAutonomyLevelAllowed`, so no value here can admit level 4.
+   * `undefined` (a caller that has no org setting to pass) means no org cap. */
+  orgAutonomyLevelMax?: number,
 ): AutonomyLevel {
   const level = assertAutonomyLevelAllowed(requested ?? MIN_AUTONOMY_LEVEL);
 
@@ -118,6 +143,10 @@ export function resolveRequestedAutonomyLevel(
   // ceiling regardless of this value.
   if (planAutonomyLevelMax !== null && level > planAutonomyLevelMax) {
     throw new AutonomyLevelRejectedError(level, `exceeds this plan's autonomy_level_max (${planAutonomyLevelMax})`);
+  }
+
+  if (orgAutonomyLevelMax !== undefined && level > orgAutonomyLevelMax) {
+    throw new OrgAutonomyCapError(level, orgAutonomyLevelMax);
   }
 
   return level;

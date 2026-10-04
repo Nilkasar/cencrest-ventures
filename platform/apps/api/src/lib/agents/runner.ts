@@ -25,13 +25,13 @@
  * behaviorally unchanged from the `setImmediate` it replaces since the
  * default queue is `InMemoryJobQueue`.
  */
-import { withOrgContext, type agent_runs, type Prisma } from '@bebest/database';
+import { db, withOrgContext, type agent_runs, type Prisma } from '@bebest/database';
 import { checkUsageLimit, resolvePlanLimits } from '../entitlements.js';
 import { getDefaultAiProviderRegistry } from '../ai-visibility/provider-registry.js';
 import { notify } from '../notifications/notify.js';
 import { getDefaultJobQueue } from '../queue/default-job-queue.js';
 import { countAgentRunsThisMonth } from './usage.js';
-import { resolveRequestedAutonomyLevel } from './autonomy.js';
+import { MIN_AUTONOMY_LEVEL, resolveRequestedAutonomyLevel } from './autonomy.js';
 import { createAgent } from './registry.js';
 import { GEO_AGENT_VERSION } from './geo-agent.js';
 import { SEO_AGENT_VERSION } from './seo-agent.js';
@@ -75,7 +75,19 @@ export async function triggerAgentRun(params: TriggerAgentRunParams): Promise<Tr
 
   await checkUsageLimit(params.organizationId, 'agent_runs_per_month', () => countAgentRunsThisMonth(params.organizationId), 1);
 
-  const autonomyLevel = resolveRequestedAutonomyLevel(params.requestedAutonomyLevel, limits.autonomy_level_max);
+  // Epic 22 Phase 2 — the organization's own ceiling (Settings > Autonomy),
+  // read fresh on every trigger. `organizations` has no RLS. A missing row
+  // can't happen for a resolved org context; if it somehow did, the most
+  // conservative ceiling (1) applies rather than none.
+  const orgRow = await db.organizations.findUnique({
+    where: { id: params.organizationId },
+    select: { autonomy_level_max: true },
+  });
+  const autonomyLevel = resolveRequestedAutonomyLevel(
+    params.requestedAutonomyLevel,
+    limits.autonomy_level_max,
+    orgRow?.autonomy_level_max ?? MIN_AUTONOMY_LEVEL,
+  );
 
   if (params.triggeredBy === 'user' && !params.triggeredById) {
     throw new Error('triggeredById is required when triggeredBy is "user".');

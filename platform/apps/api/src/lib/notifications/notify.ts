@@ -38,10 +38,12 @@
  *
  * ── Design ────────────────────────────────────────────────────────────
  * One row is written per channel actually attempted:
- *   - `in_app` — ALWAYS written, immediately "sent" (a bell-icon row has no
- *     real delivery step).
- *   - `email` — written and delivery attempted ONLY when `userId` is set
- *     AND that user has a real email on file. Org-wide notifications
+ *   - `in_app` — written, immediately "sent" (a bell-icon row has no
+ *     real delivery step), unless the per-user recipient switched this type's
+ *     in-app channel off (Epic 22 Phase 2 — `preferences.ts`).
+ *   - `email` — written and delivery attempted ONLY when `userId` is set,
+ *     that user has a real email on file, and has not switched this type's
+ *     email channel off (`preferences.ts`). Org-wide notifications
  *     (`userId` omitted/null) are in-app only in this build — email
  *     fan-out to "every member of an org" has no single natural recipient
  *     and is left as a documented, honest gap (this epic's backend doc),
@@ -63,6 +65,7 @@
 import { withOrgContext, db, type notifications, type notification_type } from '@bebest/database';
 import { ConsoleEmailSender, type EmailSender } from '../email.js';
 import { writeAuditEvent } from '../audit.js';
+import { DEFAULT_CHANNEL_PREFERENCE, getChannelPreference } from './preferences.js';
 
 export interface NotifyParams {
   organizationId: string;
@@ -81,7 +84,11 @@ export interface NotifyParams {
 }
 
 export interface NotifyResult {
-  inApp: notifications;
+  /** `null` when the recipient switched this type's in-app channel off
+   * (Epic 22 Phase 2 preferences — per-user notifications only). */
+  inApp: notifications | null;
+  /** Channels skipped because of the recipient's preferences. */
+  suppressed: ('in_app' | 'email')[];
   /** `null` when no email was attempted (org-wide, `email: false`, or no
    * resolvable recipient) — NOT the same as "attempted and failed," which
    * is still a real row with `sent_at: null` (see the audit trail's own
@@ -97,8 +104,18 @@ export async function notify(params: NotifyParams, deps: NotifyDeps = {}): Promi
   const emailSender = deps.emailSender ?? new ConsoleEmailSender();
   const userId = params.userId ?? null;
 
-  const inApp = await withOrgContext(params.organizationId, (tx) =>
-    tx.notifications.create({
+  // Epic 22 Phase 2 — the recipient's preferences (lib/notifications/
+  // preferences.ts) decide which channels are attempted for a per-user
+  // notification. Read in the same transaction as the in-app insert (one
+  // round trip). An org-wide notification keeps its single shared in-app
+  // row; per-member in-app preferences for it are applied when the list is
+  // read (routes/notifications.ts), and it is never emailed (unchanged).
+  const { inApp, preference } = await withOrgContext(params.organizationId, async (tx) => {
+    const pref = userId
+      ? await getChannelPreference(tx, params.organizationId, userId, params.type)
+      : { ...DEFAULT_CHANNEL_PREFERENCE };
+    if (!pref.inApp) return { inApp: null, preference: pref };
+    const row = await tx.notifications.create({
       data: {
         organization_id: params.organizationId,
         user_id: userId,
@@ -109,23 +126,31 @@ export async function notify(params: NotifyParams, deps: NotifyDeps = {}): Promi
         action_url: params.actionUrl ?? null,
         sent_at: new Date(),
       },
-    }),
-  );
-
-  await writeAuditEvent({
-    userId: null,
-    organizationId: params.organizationId,
-    actorType: 'system',
-    action: 'notification.sent',
-    entityType: 'notification',
-    entityId: inApp.id,
-    result: 'success',
-    details: { type: params.type, channel: 'in_app', targetUserId: userId },
+    });
+    return { inApp: row, preference: pref };
   });
+
+  const suppressed: NotifyResult['suppressed'] = [];
+  if (!inApp) suppressed.push('in_app');
+
+  if (inApp) {
+    await writeAuditEvent({
+      userId: null,
+      organizationId: params.organizationId,
+      actorType: 'system',
+      action: 'notification.sent',
+      entityType: 'notification',
+      entityId: inApp.id,
+      result: 'success',
+      details: { type: params.type, channel: 'in_app', targetUserId: userId },
+    });
+  }
 
   let emailRow: notifications | null = null;
 
-  if (params.email !== false && userId) {
+  if (params.email !== false && userId && !preference.email) suppressed.push('email');
+
+  if (params.email !== false && userId && preference.email) {
     const user = await db.users.findUnique({ where: { id: userId } });
 
     if (user?.email) {
@@ -178,5 +203,5 @@ export async function notify(params: NotifyParams, deps: NotifyDeps = {}): Promi
     }
   }
 
-  return { inApp, email: emailRow };
+  return { inApp, email: emailRow, suppressed };
 }

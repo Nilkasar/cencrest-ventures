@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { withOrgContext, type PrismaTransactionClient } from '@bebest/database';
+import { withOrgContext } from '@bebest/database';
 import { requireAuth } from '../middleware/auth.js';
 import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireCrmAccess } from '../middleware/crm-access.js';
@@ -9,7 +9,8 @@ import { auditLog } from '../middleware/audit-log.js';
 import { getInternalOrgId } from '../lib/internal-org.js';
 import { loadUserRefs, userRef, type UserRef } from '../lib/crm-users.js';
 import { uuidParam } from '../lib/http-params.js';
-import { isSluggable, toSlug } from '../lib/slug.js';
+import { isSluggable } from '../lib/slug.js';
+import { createOrganizationWithUniqueSlug } from '../lib/org-slug.js';
 import {
   LIMITS,
   containsInsensitive,
@@ -347,12 +348,11 @@ leads.post(
       // whole conversion atomic.
       const organization = parsed.data.organizationId
         ? await tx.organizations.findUniqueOrThrow({ where: { id: parsed.data.organizationId } })
-        : await tx.organizations.create({
-            data: {
-              name: parsed.data.organizationName as string,
-              slug: await uniqueSlugFor(tx, parsed.data.organizationName as string),
-              created_by: user.id,
-            },
+        : // Epic 22 Phase 2 — the shared, race-safe unique-slug creator
+          // (lib/org-slug.ts); replaces this file's check-then-insert loop.
+          await createOrganizationWithUniqueSlug(tx, {
+            name: parsed.data.organizationName as string,
+            createdBy: user.id,
           });
 
       const updatedLead = await tx.leads.update({
@@ -404,23 +404,6 @@ leads.post(
     });
   },
 );
-
-async function uniqueSlugFor(tx: PrismaTransactionClient, name: string): Promise<string> {
-  // `convertLeadSchema` already rejected a name that slugifies to nothing,
-  // so `base` is non-empty here.
-  const base = toSlug(name);
-  let slug = base;
-  let n = 1;
-  // organizations has no RLS, so this lookup works regardless of tenant
-  // context — same reasoning as routes/orgs.ts's create-org slug check.
-  // Bounded: a pathological run of collisions must not spin forever inside
-  // a transaction that has a timeout.
-  while (n < 100 && (await tx.organizations.findUnique({ where: { slug }, select: { id: true } }))) {
-    n += 1;
-    slug = `${base}-${n}`;
-  }
-  return slug;
-}
 
 function serializeLead(lead: {
   id: string;

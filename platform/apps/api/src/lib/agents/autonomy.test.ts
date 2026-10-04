@@ -5,6 +5,7 @@ import {
   AutonomyLevelRejectedError,
   MAX_AUTONOMY_LEVEL,
   MIN_AUTONOMY_LEVEL,
+  OrgAutonomyCapError,
 } from './autonomy.js';
 
 /**
@@ -128,5 +129,34 @@ describe('resolveRequestedAutonomyLevel — combining a request with a plan cap'
     }
     expect(thrown).toBeInstanceOf(AutonomyLevelRejectedError);
     expect((thrown as AutonomyLevelRejectedError).requested).toBe(4);
+  });
+});
+
+describe('resolveRequestedAutonomyLevel — organization ceiling (Epic 22 Phase 2)', () => {
+  it('rejects a valid level above the org ceiling with OrgAutonomyCapError', () => {
+    expect(() => resolveRequestedAutonomyLevel(2, null, 1)).toThrow(OrgAutonomyCapError);
+    expect(() => resolveRequestedAutonomyLevel(3, 3, 2)).toThrow(OrgAutonomyCapError);
+  });
+
+  it('allows levels at or below it', () => {
+    expect(resolveRequestedAutonomyLevel(2, null, 2)).toBe(2);
+    expect(resolveRequestedAutonomyLevel(undefined, null, 1)).toBe(1);
+  });
+
+  it('can only LOWER the ceiling: a corrupted org value of 4+ never admits level 4', () => {
+    for (const orgMax of [4, 5, 100, Infinity]) {
+      let thrown: unknown;
+      try {
+        resolveRequestedAutonomyLevel(4, null, orgMax);
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(AutonomyLevelRejectedError);
+      expect(thrown).not.toBeInstanceOf(OrgAutonomyCapError);
+    }
+  });
+
+  it('no org value passed = no org cap (backward compatible)', () => {
+    expect(resolveRequestedAutonomyLevel(3, null)).toBe(3);
   });
 });

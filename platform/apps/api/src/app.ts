@@ -47,6 +47,7 @@ import reportDetails from './routes/report-details.js';
 import notifications from './routes/notifications.js';
 import plans from './routes/plans.js';
 import subscription from './routes/subscription.js';
+import orgSettings from './routes/org-settings.js';
 import billingWebhooks from './routes/billing-webhooks.js';
 import { createSnapshotRoutes } from './routes/snapshot.js';
 import apply from './routes/apply.js';
@@ -303,6 +304,8 @@ app.route('/api/notifications', notifications);
 // authentication (see routes/billing-webhooks.ts).
 app.route('/api/plans', plans);
 app.route('/api/orgs/me/subscription', subscription);
+// Epic 22 Phase 2 — Settings > Notifications and Settings > Autonomy.
+app.route('/api/orgs/me', orgSettings);
 app.route('/api/webhooks/billing', billingWebhooks);
 
 // Epic 17 — Free AI + SEO Growth Snapshot. Public, unauthenticated by

@@ -21,7 +21,7 @@ import { requirePermission } from '../middleware/rbac.js';
 import { writeManualAuditEvent } from '../middleware/audit-log.js';
 import { getBrandForOrg, NO_BRAND_ERROR } from '../lib/brand-context.js';
 import { EntitlementLimitError } from '../lib/entitlements.js';
-import { AutonomyLevelRejectedError } from '../lib/agents/autonomy.js';
+import { AutonomyLevelRejectedError, OrgAutonomyCapError } from '../lib/agents/autonomy.js';
 import { triggerAgentRun } from '../lib/agents/runner.js';
 import { serializeAgentRun } from '../lib/agents/serialize.js';
 import { AGENT_NAMES, type AgentName } from '../lib/agents/types.js';
@@ -105,6 +105,14 @@ agentsRoute.post('/:agentName/run', requireAuth, authenticatedRateLimit, require
           upgradeTo: err.upgradeTo,
         },
         402,
+      );
+    }
+    // Epic 22 Phase 2 — above the org's own ceiling (Settings > Autonomy).
+    // Same 422 and `error` as every other rejected level, plus the limit.
+    if (err instanceof OrgAutonomyCapError) {
+      return c.json(
+        { error: 'autonomy_level_rejected', code: 'above_org_autonomy_limit', message: err.message, limit: err.cap },
+        422,
       );
     }
     if (err instanceof AutonomyLevelRejectedError) {

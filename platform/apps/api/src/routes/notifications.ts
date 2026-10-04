@@ -26,6 +26,7 @@ import { authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { requireOrgFromToken } from '../middleware/tenant-context.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { serializeNotification } from '../lib/notifications/serialize.js';
+import { inAppDisabledTypes } from '../lib/notifications/preferences.js';
 import type { AppEnv } from '../types/context.js';
 
 const notificationsRoute = new Hono<AppEnv>();
@@ -40,14 +41,30 @@ notificationsRoute.get('/', requireAuth, authenticatedRateLimit, requireOrgFromT
   const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') ?? 25) || 25));
   const offset = Math.max(0, Number(c.req.query('offset') ?? 0) || 0);
 
-  const where = { organization_id: org.organizationId, OR: [{ user_id: user.id }, { user_id: null }] };
-
-  const [rows, total] = await withOrgContext(org.organizationId, (tx) =>
-    Promise.all([
+  // Epic 22 Phase 2:
+  //   - `channel: 'in_app'` — this is the in-app (bell) list. Before, the
+  //     `email` audit-trail row of every emailed notification was listed
+  //     too, so each one appeared twice, and an email row would have shown
+  //     in the bell even with the in-app channel switched off.
+  //   - an ORG-WIDE row of a type this member switched off in-app is hidden
+  //     (per-user rows are never written in that case — notify.ts).
+  const [rows, total] = await withOrgContext(org.organizationId, async (tx) => {
+    const hiddenOrgWideTypes = await inAppDisabledTypes(tx, org.organizationId, user.id);
+    const where = {
+      organization_id: org.organizationId,
+      channel: 'in_app' as const,
+      OR: [
+        { user_id: user.id },
+        hiddenOrgWideTypes.length > 0
+          ? { user_id: null, type: { notIn: hiddenOrgWideTypes } }
+          : { user_id: null },
+      ],
+    };
+    return Promise.all([
       tx.notifications.findMany({ where, orderBy: { created_at: 'desc' }, skip: offset, take: limit }),
       tx.notifications.count({ where }),
-    ]),
-  );
+    ]);
+  });
 
   return c.json({ items: rows.map(serializeNotification), total, limit, offset });
 });

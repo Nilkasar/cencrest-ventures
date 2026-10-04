@@ -8,6 +8,7 @@ import { requirePermission } from '../middleware/rbac.js';
 import { writeManualAuditEvent } from '../middleware/audit-log.js';
 import { getBrandForOrg } from '../lib/brand-context.js';
 import { httpUrlSchema } from '../lib/validation.js';
+import { completeOnboarding } from '../lib/onboarding/complete.js';
 import type { AppEnv } from '../types/context.js';
 import type { brands } from '@bebest/database';
 
@@ -27,6 +28,8 @@ function serializeBrand(brand: brands) {
     positioning: brand.positioning,
     valueProposition: brand.value_proposition,
     differentiators: brand.differentiators,
+    // Epic 22 Phase 2 — null until `POST /brands/me/onboarding/complete`.
+    onboardingCompletedAt: brand.onboarding_completed_at,
     createdAt: brand.created_at,
     updatedAt: brand.updated_at,
   };
@@ -154,6 +157,60 @@ brandsRoute.patch(
     });
 
     return c.json(serializeBrand(brand), existing ? 200 : 201);
+  },
+);
+
+// ── POST /brands/me/onboarding/complete (Epic 22 Phase 2) ──────────────────
+// Validates the wizard's minimums server-side, records completion once, and
+// — on that first completion only — starts the first crawl and the first
+// active query set. Idempotent: a repeat call starts nothing and answers 200
+// with `alreadyCompleted: true`. See lib/onboarding/complete.ts.
+brandsRoute.post(
+  '/me/onboarding/complete',
+  requireAuth,
+  authenticatedRateLimit,
+  requireOrgFromToken('viewer'),
+  requirePermission('create_brand_profile'),
+  async (c) => {
+    const org = c.get('org');
+    const user = c.get('user');
+
+    const result = await completeOnboarding({ organizationId: org.organizationId, userId: user.id });
+
+    if ('error' in result) {
+      if (result.error === 'no_brand') {
+        return c.json(
+          { error: 'Brand profile not found', message: 'Create the brand profile before completing onboarding.' },
+          404,
+        );
+      }
+      return c.json(
+        {
+          error: 'onboarding_incomplete',
+          message: `Finish the remaining step${result.missing.length > 1 ? 's' : ''} before completing setup: ${result.missing.join(', ')}.`,
+          missing: result.missing,
+        },
+        422,
+      );
+    }
+
+    if (!result.alreadyCompleted) {
+      await writeManualAuditEvent(c, { action: 'onboarding.completed', entityType: 'brand', entityId: result.brandId });
+      if (result.crawl.status === 'started') {
+        await writeManualAuditEvent(c, { action: 'crawl_job.created', entityType: 'crawl_job', entityId: result.crawl.jobId });
+      }
+      if (result.querySet.status === 'created') {
+        await writeManualAuditEvent(c, { action: 'query_set.generated', entityType: 'query_set', entityId: result.querySet.id });
+        await writeManualAuditEvent(c, { action: 'query_set.activated', entityType: 'query_set', entityId: result.querySet.id });
+      }
+    }
+
+    return c.json({
+      completedAt: result.completedAt,
+      alreadyCompleted: result.alreadyCompleted,
+      crawl: result.crawl,
+      querySet: result.querySet,
+    });
   },
 );
 

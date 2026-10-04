@@ -291,7 +291,7 @@ export function createAuthRoutes(emailSender: EmailSender) {
     const agencyOrgIds = liveMemberships
       .filter((m) => m.organizations.kind === 'agency')
       .map((m) => m.organizations.id);
-    const agencyLinks = await Promise.all(
+    const agencyLinksPromise = Promise.all(
       agencyOrgIds.map((agencyOrgId) =>
         withOrgContext(agencyOrgId, (tx) =>
           tx.agency_clients.findMany({
@@ -306,17 +306,42 @@ export function createAuthRoutes(emailSender: EmailSender) {
       ),
     );
 
+    // Epic 22 Phase 2 — the first-login routing contract: per membership,
+    // has this org finished onboarding (`brands.onboarding_completed_at`)?
+    // `brands` is RLS'd, so each org is read under its own context — in
+    // parallel, one round trip in wall-clock terms. `needsOnboarding` is
+    // true only for a `customer` org with no brand or an incomplete one;
+    // agency and internal orgs are not routed to the brand wizard (the raw
+    // `onboardingCompletedAt` is there if the web wants a different rule).
+    const [agencyLinks, onboarding] = await Promise.all([
+      agencyLinksPromise,
+      Promise.all(
+        liveMemberships.map((m) =>
+          withOrgContext(m.organizations.id, (tx) =>
+            tx.brands.findFirst({
+              where: { organization_id: m.organizations.id, deleted_at: null },
+              orderBy: { created_at: 'asc' },
+              select: { onboarding_completed_at: true },
+            }),
+          ),
+        ),
+      ),
+    ]);
+
     return c.json({
       id: authUser.id,
       email: authUser.email,
       name: authUser.name,
       platformRole: parsePlatformRole(userRow?.platform_role),
-      organizations: liveMemberships.map((m) => ({
+      organizations: liveMemberships.map((m, i) => ({
         id: m.organizations.id,
         name: m.organizations.name,
         slug: m.organizations.slug,
         role: m.role,
         kind: m.organizations.kind,
+        hasBrand: onboarding[i] != null,
+        onboardingCompletedAt: onboarding[i]?.onboarding_completed_at ?? null,
+        needsOnboarding: m.organizations.kind === 'customer' && !onboarding[i]?.onboarding_completed_at,
       })),
       agencyClients: agencyLinks
         .flat()

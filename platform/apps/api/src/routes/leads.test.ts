@@ -10,7 +10,14 @@ const UNKNOWN_LEAD_ID = '99999999-9999-4999-8999-999999999999';
 
 const db = {
   organization_rate_limits: { upsert: vi.fn().mockResolvedValue({ count: 1 }) },
-  organizations: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), create: vi.fn() },
+  organizations: {
+    findUnique: vi.fn(),
+    findUniqueOrThrow: vi.fn(),
+    create: vi.fn(),
+    // Epic 22 Phase 2 — lib/org-slug.ts: read taken slugs, then INSERT … ON CONFLICT DO NOTHING.
+    findMany: vi.fn().mockResolvedValue([]),
+    createMany: vi.fn(),
+  },
   memberships: { findFirst: vi.fn() },
   users: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
   leads: { create: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn(), update: vi.fn(), groupBy: vi.fn().mockResolvedValue([]) },
@@ -305,7 +312,8 @@ describe('POST /leads/:id/convert', () => {
     // — two orgs for one lead. The FOR UPDATE select serialises them.
     lockReturns(null);
     db.leads.findFirst.mockResolvedValue({ id: LEAD_ID, converted_organization_id: null });
-    db.organizations.create.mockResolvedValue({ id: 'org-new', name: 'Acme Corp', slug: 'acme-corp' });
+    db.organizations.createMany.mockResolvedValue({ count: 1 });
+    db.organizations.findUniqueOrThrow.mockResolvedValue({ id: 'org-new', name: 'Acme Corp', slug: 'acme-corp' });
     // The internal org must still resolve for requireCrmAccess; only the
     // slug-uniqueness lookup should come back empty.
     db.organizations.findUnique.mockImplementation(async ({ where }: { where: { id?: string; slug?: string } }) =>
@@ -354,7 +362,8 @@ describe('POST /leads/:id/convert', () => {
   it('creates a new organization, converts the lead, and audits it', async () => {
     lockReturns(null);
     db.leads.findFirst.mockResolvedValue({ id: LEAD_ID, converted_organization_id: null });
-    db.organizations.create.mockResolvedValue({ id: 'org-new', name: 'Acme Corp', slug: 'acme-corp' });
+    db.organizations.createMany.mockResolvedValue({ count: 1 });
+    db.organizations.findUniqueOrThrow.mockResolvedValue({ id: 'org-new', name: 'Acme Corp', slug: 'acme-corp' });
     db.organizations.findUnique.mockImplementation(async ({ where }: { where: { id?: string; slug?: string } }) => {
       if (where.id === INTERNAL_ORG_ID) {
         return { id: INTERNAL_ORG_ID, slug: 'bebest-internal', name: 'BeBest Internal', deleted_at: null };

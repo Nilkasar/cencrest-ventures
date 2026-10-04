@@ -38,6 +38,32 @@ Nothing here is a code change. Everything below is configuration, infrastructure
 > This was verified end to end on 2026-09-09: all 20 folders applied
 > cleanly to a fresh Postgres, 128 tables, zero failures.
 
+**Production migration order (Epic 22).** Folders apply in name order, so a
+database that already has 0000–0022 receives `0023_workspace_views` and then
+`0024_organization_view` from the same `db:apply` run. Nothing in 0024 needs a
+manual step:
+
+| Folder | Adds | Notes |
+|---|---|---|
+| `0023_workspace_views` | `users.platform_role`, `organizations.kind`, `platform_access_events`, `support_sessions` | then run `set-internal-org.sql` (§1.4) |
+| `0024_organization_view` | `brands.onboarding_completed_at` (backfilled for brands that already meet the wizard minimums), `organizations.autonomy_level_max` (CHECK 1–3; 0024 declares DEFAULT 1, 0025 corrects it to 3), enum value `notification_type.invitation_accepted`, `notification_preferences.organization_id` + unique `(org, user, type, channel)` + `tenant_isolation` RLS | uses `ALTER TYPE … ADD VALUE` inside a transaction — needs PostgreSQL 12+. Must run as the owner (BYPASSRLS) role, or the onboarding backfill sees no rows |
+
+Verified 2026-10-04: applied to the dev database (4 files, 0 failures,
+objects and policy confirmed through `information_schema`/`pg_policies`), and
+the full `db:apply` was run on a throwaway fresh database (50 files, 131
+tables, 0 failures, an immediate re-run applied 0) and that database was
+dropped.
+
+| `0025_autonomy_default_3` | `organizations.autonomy_level_max` DEFAULT 3; rows still at the old default (no audited owner/admin choice) moved 1 → 3 | ship together with 0024; reads `audit_events`, so it must also run as the owner (BYPASSRLS) role |
+
+No behaviour change for agents: with 0024 + 0025 every organization's autonomy
+ceiling is 3, so the effective ceiling is the plan's `autonomy_level_max`
+exactly as before. Owners/admins can now lower it in Settings > Autonomy
+(`PUT /api/orgs/me/autonomy`). 0025 verified 2026-10-04 on dev (1 file; a
+following dry run reports 0 pending, nothing EDITED) and on a throwaway fresh
+database (51 files, 0 failures, column default 3, a new org gets 3, level 4
+refused by the CHECK; database dropped).
+
 ### 1.2 Create the two required Postgres roles
 
 RLS is `FORCE`d on every tenant table — a role with `BYPASSRLS` or table ownership silently defeats it. Two roles are required (see `packages/database/src/client.ts`'s header comment):

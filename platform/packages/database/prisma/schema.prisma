@@ -72,6 +72,17 @@ model organizations {
   // is set by scripts/set-internal-org.sql (the id is deployment config, not
   // something static SQL can know).
   kind       String    @default("customer") @db.VarChar(20)
+  // Epic 22 (Workspace Views) Phase 2 addition — the highest agent autonomy
+  // level (1–3) this organization allows any agent run to use. Set by an
+  // owner/admin in Settings > Autonomy (`PUT /api/orgs/me/autonomy`),
+  // capped there by the plan's `autonomy_level_max` entitlement, and
+  // enforced on every trigger by `lib/agents/runner.ts` (422 above it).
+  // Default 3 (0025_autonomy_default_3): preserves pre-Phase-2 behaviour —
+  // the effective ceiling is min(this, plan autonomy_level_max), so an org
+  // only gets less than its plan allows if an owner/admin lowers it. Level 4
+  // is not representable — CHECK 1..3 (0024_organization_view/checks.sql) on
+  // top of the hard block in `lib/agents/autonomy.ts`.
+  autonomy_level_max Int  @default(3) @db.SmallInt
   created_by String    @db.Uuid
   created_at DateTime  @default(now()) @db.Timestamptz(6)
   updated_at DateTime  @default(now()) @db.Timestamptz(6)
@@ -179,6 +190,8 @@ model organizations {
   mention_extractions       mention_extractions[]
   mentions                  mentions[]
   notifications             notifications[]
+  // Epic 22 Phase 2 — per-user, per-org notification preferences.
+  notification_preferences  notification_preferences[]
   opportunities             opportunities[]
   org_ai_providers          org_ai_providers[]
   page_issues               page_issues[]
@@ -1378,6 +1391,10 @@ model brands {
   // name (`differentiators TEXT[]`) — same array type, name-only fix, see
   // DECISIONS.md §15.
   differentiators     String[]
+  // Epic 22 (Workspace Views) Phase 2 — when the onboarding wizard was
+  // completed (`POST /api/brands/me/onboarding/complete`). Server-side so a
+  // second device sees the same state; NULL routes members to /onboarding.
+  onboarding_completed_at DateTime? @db.Timestamptz(6)
   created_by          String    @db.Uuid
   updated_by          String?   @db.Uuid
   created_at          DateTime  @default(now()) @db.Timestamptz(6)
@@ -4677,15 +4694,26 @@ model measurement_annotations {
 // NOTIFICATIONS
 // ============================================================================
 
+// Epic 22 (Workspace Views) Phase 2 widens this ported-but-dormant table
+// (never written before 0024) into the real per-user, PER-ORGANIZATION
+// preference store behind Settings > Notifications: `organization_id` added
+// (a person in two orgs chooses per org), the unique key widened to
+// (organization_id, user_id, notification_type, channel), and the table put
+// under the standard `tenant_isolation` RLS policy (0024/rls.sql) — it is
+// now tenant data. One row per (type, channel); a missing row means the
+// default (enabled). Read by `lib/notifications/preferences.ts`, honoured by
+// `lib/notifications/notify.ts`. See DECISIONS.md §32.
 model notification_preferences {
   id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id   String            @db.Uuid
   user_id           String            @db.Uuid
   notification_type notification_type
   channel           notif_channel
   enabled           Boolean           @default(true)
   users             users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organizations     organizations     @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@unique([user_id, notification_type, channel])
+  @@unique([organization_id, user_id, notification_type, channel], map: "uq_notif_prefs_org_user_type_channel", name: "org_user_type_channel")
   @@index([user_id], map: "idx_notif_prefs_user")
 }
 
@@ -5051,6 +5079,10 @@ enum notification_type {
   // done").
   weekly_digest
   entitlement_warning
+  // Epic 22 (Workspace Views) Phase 2 — sent to the inviter when their
+  // invitation is accepted (`POST /api/orgs/invitations/accept`). Added by
+  // 0024_organization_view/ddl.sql (`ALTER TYPE ... ADD VALUE IF NOT EXISTS`).
+  invitation_accepted
 }
 
 enum opportunity_status {

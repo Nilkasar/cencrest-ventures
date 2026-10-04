@@ -2,6 +2,13 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import { generateKeyPair } from 'jose';
 
+// Response bodies in these tests are asserted structurally.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Json = any;
+async function json(res: Response): Promise<Json> {
+  return res.json();
+}
+
 const db = {
   organizations: { findUnique: vi.fn() },
   memberships: { findFirst: vi.fn() },
@@ -87,7 +94,7 @@ describe('GET /brands/me', () => {
     const app = await buildApp();
     const res = await app.request('/brands/me', { headers: await authHeader('user-1', 'org-1') });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await json(res);
     expect(body).toMatchObject({ id: 'brand-1', name: 'Acme Corp', websiteUrl: 'https://acme.example' });
   });
 });
@@ -211,5 +218,102 @@ describe('PATCH /brands/me', () => {
       body: JSON.stringify({ name: 'Acme', websiteUrl: 'javascript:alert(1)' }),
     });
     expect(res.status).toBe(422);
+  });
+});
+
+// ── Epic 22 Phase 2 — POST /brands/me/onboarding/complete ────────────────────
+// The domain logic (minimums, claim, kickoffs, idempotency) is covered in
+// lib/onboarding/complete.test.ts; this covers the HTTP contract.
+const completeOnboarding = vi.fn();
+vi.mock('../lib/onboarding/complete.js', () => ({
+  completeOnboarding: (...args: unknown[]) => completeOnboarding(...args),
+}));
+
+describe('POST /brands/me/onboarding/complete', () => {
+  async function post(role = 'analyst') {
+    db.memberships.findFirst.mockResolvedValue({ role });
+    const app = await buildApp();
+    return app.request('/brands/me/onboarding/complete', {
+      method: 'POST',
+      headers: await authHeader('user-1', 'org-1'),
+    });
+  }
+
+  it('403s for a viewer and an editor (create_brand_profile)', async () => {
+    expect((await post('viewer')).status).toBe(403);
+    expect((await post('editor')).status).toBe(403);
+    expect(completeOnboarding).not.toHaveBeenCalled();
+  });
+
+  it('404s with no brand, 422s listing the missing steps', async () => {
+    completeOnboarding.mockResolvedValueOnce({ error: 'no_brand' });
+    expect((await post()).status).toBe(404);
+
+    completeOnboarding.mockResolvedValueOnce({ error: 'incomplete', missing: ['competitors', 'use-cases'] });
+    const res = await post();
+    expect(res.status).toBe(422);
+    expect(await json(res)).toMatchObject({ error: 'onboarding_incomplete', missing: ['competitors', 'use-cases'] });
+  });
+
+  it('first completion: 200 with the kickoff report, scoped to the token org + caller, audited', async () => {
+    const completedAt = new Date('2026-10-04T10:00:00.000Z');
+    completeOnboarding.mockResolvedValueOnce({
+      completedAt,
+      alreadyCompleted: false,
+      brandId: 'brand-1',
+      crawl: { status: 'started', jobId: 'crawl-1' },
+      querySet: { status: 'created', id: 'qs-1' },
+    });
+    const res = await post('owner');
+    expect(res.status).toBe(200);
+    expect(await json(res)).toEqual({
+      completedAt: completedAt.toISOString(),
+      alreadyCompleted: false,
+      crawl: { status: 'started', jobId: 'crawl-1' },
+      querySet: { status: 'created', id: 'qs-1' },
+    });
+    expect(completeOnboarding).toHaveBeenCalledWith({ organizationId: 'org-1', userId: 'user-1' });
+    const actions = db.audit_events.create.mock.calls.map((c) => (c[0] as { data: { action: string } }).data.action);
+    expect(actions).toEqual(['onboarding.completed', 'crawl_job.created', 'query_set.generated', 'query_set.activated']);
+  });
+
+  it('repeat call: 200 alreadyCompleted, nothing audited', async () => {
+    completeOnboarding.mockResolvedValueOnce({
+      completedAt: new Date(),
+      alreadyCompleted: true,
+      brandId: 'brand-1',
+      crawl: { status: 'skipped', reason: 'onboarding_already_completed', jobId: 'crawl-1' },
+      querySet: { status: 'skipped', reason: 'onboarding_already_completed', id: 'qs-1' },
+    });
+    const res = await post();
+    expect(res.status).toBe(200);
+    expect((await json(res)).alreadyCompleted).toBe(true);
+    expect(db.audit_events.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /brands/me — onboardingCompletedAt (Epic 22 Phase 2)', () => {
+  it('exposes onboardingCompletedAt (null until completed)', async () => {
+    db.memberships.findFirst.mockResolvedValue({ role: 'viewer' });
+    db.brands.findFirst.mockResolvedValue({
+      id: 'brand-1',
+      name: 'Acme',
+      description: null,
+      website_url: null,
+      industries: [],
+      categories: [],
+      markets: [],
+      logo_url: null,
+      aliases: [],
+      positioning: null,
+      value_proposition: null,
+      differentiators: [],
+      onboarding_completed_at: null,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+    const app = await buildApp();
+    const body = await json(await app.request('/brands/me', { headers: await authHeader('user-1', 'org-1') }));
+    expect(body).toHaveProperty('onboardingCompletedAt', null);
   });
 });
