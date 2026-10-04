@@ -8,9 +8,8 @@ export default function DealsPage() {
   return (
     <>
       <PageHeader
-        eyebrow="CRM"
         title="Deals"
-        description="Diagnostic, Full Rebuild, and Continuous engagements moving through the pipeline, from qualified lead to signed contract."
+        description="Every engagement from first conversation to signed contract. Drag a card, or use its menu, to move it between stages."
       />
       <DealsBoardView />
     </>

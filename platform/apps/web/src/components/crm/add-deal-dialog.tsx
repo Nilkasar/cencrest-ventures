@@ -27,10 +27,22 @@ import { DEAL_STAGE_LABEL, DEAL_STAGE_SEQUENCE, type Account, type CrmUserRef, t
 
 const NONE = "none";
 
-export function AddDealDialog({ onCreated }: { onCreated: (dealId: string) => void }) {
+export function AddDealDialog({
+  onCreated,
+  defaultLink,
+  triggerLabel = "Add a deal",
+  triggerVariant = "primary",
+}: {
+  onCreated: (dealId: string) => void;
+  /** Pre-links the new deal, e.g. "Add a deal" on an account page. */
+  defaultLink?: { kind: "lead" | "account"; id: string; name: string };
+  triggerLabel?: string;
+  triggerVariant?: "primary" | "secondary";
+}) {
+  const initialLink = defaultLink ? `${defaultLink.kind}:${defaultLink.id}` : NONE;
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
-  const [linkTo, setLinkTo] = useState(NONE);
+  const [linkTo, setLinkTo] = useState(initialLink);
   const [value, setValue] = useState("");
   const [stage, setStage] = useState<DealStage>("new");
   const [probability, setProbability] = useState("20");
@@ -59,7 +71,7 @@ export function AddDealDialog({ onCreated }: { onCreated: (dealId: string) => vo
 
   function reset() {
     setTitle("");
-    setLinkTo(NONE);
+    setLinkTo(initialLink);
     setValue("");
     setStage("new");
     setProbability("20");
@@ -104,18 +116,18 @@ export function AddDealDialog({ onCreated }: { onCreated: (dealId: string) => vo
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="primary" size="sm">
-          <Plus size={14} /> Add a deal
+        <Button variant={triggerVariant} size="sm">
+          <Plus size={14} aria-hidden="true" /> {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>Add a deal</DialogTitle>
-            <DialogDescription>Track a Diagnostic, Full Rebuild, or Continuous engagement through the pipeline.</DialogDescription>
+            <DialogDescription>Track an Audit, Monitoring or Strategy engagement through the pipeline.</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            <Input label="Title" placeholder="e.g. Diagnostic — Acme Corp" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus required />
+            <Input label="Title" placeholder="e.g. AI Visibility Audit — Acme Corp" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus required />
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="deal-link">Link to</Label>
@@ -125,6 +137,11 @@ export function AddDealDialog({ onCreated }: { onCreated: (dealId: string) => vo
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NONE}>Not linked</SelectItem>
+                  {/* The pre-linked record may sit outside the first 100 the picker loads. */}
+                  {defaultLink &&
+                    !(defaultLink.kind === "lead" ? leads : accounts).some((item) => item.id === defaultLink.id) && (
+                      <SelectItem value={initialLink}>{defaultLink.name}</SelectItem>
+                    )}
                   {leads.length > 0 && (
                     <SelectGroup>
                       <SelectLabel>Leads</SelectLabel>

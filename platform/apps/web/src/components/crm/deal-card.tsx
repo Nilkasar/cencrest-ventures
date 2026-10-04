@@ -1,21 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { Building2, Calendar, GripVertical, MoreHorizontal, User } from "lucide-react";
-import {
-  Avatar,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  getInitials,
-} from "@bebest/ui";
-import { DEAL_STAGE_LABEL, DEAL_STAGE_SEQUENCE, type Deal, type DealStage } from "@/data/crm/types";
+import { Building2, User } from "lucide-react";
+import { Avatar, cn, getInitials } from "@bebest/ui";
+import { DEAL_STAGE_LABEL, type Deal, type DealStage } from "@/data/crm/types";
 import { useCrmBasePath } from "@/components/crm/crm-base-path";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { DealMoveMenu } from "@/components/crm/deal-move-menu";
+import { DealCloseDate, isOpenStage } from "@/components/crm/deal-utils";
+import { typography } from "@/components/patterns/typography";
+import { formatCurrency } from "@/lib/format";
 
+/**
+ * One deal on the pipeline board. Drag it between columns, or use the
+ * "…" menu — the keyboard and screen-reader path to the same moves.
+ */
 export function DealCard({
   deal,
   linkedName,
@@ -38,8 +36,10 @@ export function DealCard({
   onMoveStage: (dealId: string, stage: DealStage) => void;
 }) {
   const crm = useCrmBasePath();
+  const LinkIcon = deal.linkedTo?.kind === "lead" ? User : Building2;
+
   return (
-    <div
+    <article
       draggable
       onDragStart={(event) => {
         event.dataTransfer.setData("text/plain", deal.id);
@@ -48,68 +48,55 @@ export function DealCard({
       }}
       onDragEnd={() => onDragEnd?.()}
       aria-busy={isPending || undefined}
-      // The card being dragged fades and lifts so it reads as "in hand"
-      // rather than still sitting in its old column; a card whose move is
-      // still in flight stays legible but muted until the server confirms.
-      className={`group rounded-lg border bg-surface-raised p-3 shadow-xs transition-[opacity,box-shadow,border-color] duration-150 motion-reduce:transition-none cursor-grab active:cursor-grabbing ${
-        isDragging
-          ? "opacity-40 border-accent shadow-md"
-          : "border-border hover:border-border-strong"
-      } ${isPending && !isDragging ? "opacity-70" : ""}`}
+      aria-label={`${deal.title}, ${formatCurrency(deal.valueCents, deal.currency)}, ${DEAL_STAGE_LABEL[deal.stage]}`}
+      // The card being dragged fades so it reads as "in hand" rather than
+      // still sitting in its old column; a card whose move is still in
+      // flight stays legible but muted until the server confirms.
+      className={cn(
+        "group relative cursor-grab rounded-xl border bg-surface-raised p-3.5 shadow-xs active:cursor-grabbing",
+        "transition-[opacity,box-shadow,border-color] duration-150 motion-reduce:transition-none",
+        isDragging ? "border-accent opacity-40 shadow-md" : "border-border hover:border-border-strong hover:shadow-sm",
+        isPending && !isDragging && "opacity-70",
+      )}
     >
       <div className="flex items-start justify-between gap-2">
-        <Link href={`${crm}/deals/${deal.id}`} className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium text-foreground leading-snug hover:underline">{deal.title}</p>
+        <Link
+          href={`${crm}/deals/${deal.id}`}
+          draggable={false}
+          className="min-w-0 flex-1 rounded-sm text-[13px] font-medium leading-snug text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {deal.title}
         </Link>
-        <div className="flex items-center gap-0.5 shrink-0 -mr-1 -mt-0.5">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label={`Move ${deal.title} to a different stage`}
-              className="rounded-md p-1 text-subtle-foreground hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <MoreHorizontal size={14} />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Move to</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {DEAL_STAGE_SEQUENCE.filter((s) => s !== deal.stage).map((s) => (
-                <DropdownMenuItem key={s} onSelect={() => onMoveStage(deal.id, s)}>
-                  {DEAL_STAGE_LABEL[s]}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <GripVertical size={14} className="text-subtle-foreground opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true" />
-        </div>
+        <DealMoveMenu deal={deal} onMoveStage={onMoveStage} className="-mr-1.5 -mt-1" />
       </div>
 
       {linkedName && (
         <Link
-          href={linkedHref ?? "#"}
-          className="mt-1.5 flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-foreground w-fit"
+          href={linkedHref ?? `${crm}/deals/${deal.id}`}
+          draggable={false}
+          className="mt-1 flex w-fit max-w-full items-center gap-1.5 rounded-sm text-[12px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Building2 size={12} className="shrink-0" />
-          <span className="truncate max-w-[160px]">{linkedName}</span>
+          <LinkIcon size={12} className="shrink-0" aria-hidden="true" />
+          <span className="truncate">{linkedName}</span>
         </Link>
       )}
 
-      <div className="mt-2.5 flex items-center justify-between">
-        <span className="font-mono text-[13px] font-semibold text-foreground">{formatCurrency(deal.valueCents, deal.currency)}</span>
-        <span className="font-mono text-[11px] text-muted-foreground">{deal.probability}%</span>
-      </div>
-
-      <div className="mt-2 flex items-center justify-between">
-        {deal.expectedCloseDate ? (
-          <span className="flex items-center gap-1 text-[11px] text-subtle-foreground">
-            <Calendar size={11} /> {formatDate(deal.expectedCloseDate)}
-          </span>
-        ) : (
-          <span className="flex items-center gap-1 text-[11px] text-subtle-foreground">
-            <User size={11} /> No close date
+      <div className="mt-3 flex items-baseline justify-between gap-2">
+        <span className={cn(typography.numeric, "text-[13px] font-semibold")}>{formatCurrency(deal.valueCents, deal.currency)}</span>
+        {isOpenStage(deal.stage) && (
+          <span className="font-mono text-[11.5px] tabular-nums text-muted-foreground" title="Win probability">
+            {deal.probability}%<span className="sr-only"> probability</span>
           </span>
         )}
-        <Avatar fallback={getInitials(deal.owner.name)} size="sm" className="size-6 text-[10px]" />
       </div>
-    </div>
+
+      <div className="mt-2 flex items-center justify-between gap-2 border-t border-border pt-2">
+        <DealCloseDate deal={deal} className="min-w-0 truncate text-[11.5px]" />
+        <span title={`Owner: ${deal.owner.name}`} className="shrink-0">
+          <Avatar fallback={getInitials(deal.owner.name)} size="sm" className="size-6 text-[10px]" />
+          <span className="sr-only">Owner: {deal.owner.name}</span>
+        </span>
+      </div>
+    </article>
   );
 }
