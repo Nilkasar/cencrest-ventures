@@ -20,7 +20,7 @@ const SESSION_PRESENCE_COOKIE = "bb_session";
 /** Reachable without a session. Everything else the matcher lets through is
  *  an app route (the `(app)`, `(platform)` and `(onboarding)` groups — the
  *  onboarding wizard is only ever entered right after sign-in). */
-const PUBLIC_PREFIXES = ["/login", "/auth", "/snapshot"];
+const PUBLIC_PREFIXES = ["/login", "/auth", "/snapshot", "/invitations"];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));

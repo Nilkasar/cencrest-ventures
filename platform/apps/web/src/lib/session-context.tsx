@@ -27,6 +27,12 @@ export interface SessionMembership {
   slug: string;
   role: string;
   kind: OrgKind;
+  /** Epic 22 Phase 2 — whether the org has a brand row yet. */
+  hasBrand?: boolean;
+  /** Server-side onboarding completion (`brands.onboarding_completed_at`). */
+  onboardingCompletedAt?: string | null;
+  /** True only for a `customer` org whose brand onboarding isn't complete. */
+  needsOnboarding?: boolean;
 }
 
 /** An ACTIVE agency → client link the user reaches through one of their
@@ -57,6 +63,8 @@ export interface SessionOrg {
   kind: OrgKind;
   /** Set when this org is reached through an agency link, not a membership. */
   viaAgency?: { agencyOrganizationId: string; accessLevel: string };
+  /** From the membership (`/auth/me`); undefined for an agency client. */
+  needsOnboarding?: boolean;
 }
 
 /**
@@ -107,6 +115,10 @@ interface SessionContextValue extends ResolvedSession {
    *  (own org or agency client alike), persists the choice, then reloads
    *  the session. Throws on 403/404/network failure. */
   switchOrg: (slug: string) => Promise<SessionOrg>;
+  /** Apply a rename the API already confirmed to the held session at once,
+   *  so the switcher/header don't wait on a `/auth/me` round trip. Callers
+   *  still `refresh()` afterwards to reconcile with the server. */
+  applyOrgRename: (orgId: string, name: string) => void;
 }
 
 const SIGNED_OUT: ResolvedSession = {
@@ -124,12 +136,20 @@ const SessionContext = createContext<SessionContextValue>({
   orgEpoch: 0,
   refresh: () => undefined,
   switchOrg: () => Promise.reject(new Error("SessionProvider is not mounted")),
+  applyOrgRename: () => undefined,
 });
 
 function toSessionOrg(me: MeResponse, orgId: string): SessionOrg | null {
   const membership = me.organizations.find((m) => m.id === orgId);
   if (membership) {
-    return { id: membership.id, slug: membership.slug, name: membership.name, role: membership.role, kind: membership.kind };
+    return {
+      id: membership.id,
+      slug: membership.slug,
+      name: membership.name,
+      role: membership.role,
+      kind: membership.kind,
+      needsOnboarding: membership.needsOnboarding,
+    };
   }
   const client = me.agencyClients.find((c) => c.organizationId === orgId);
   if (client) {
@@ -265,6 +285,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const applyOrgRename = useCallback((orgId: string, name: string) => {
+    setResolved((prev) => ({
+      ...prev,
+      org: prev.org?.id === orgId ? { ...prev.org, name } : prev.org,
+      memberships: prev.memberships.map((m) => (m.id === orgId ? { ...m, name } : m)),
+      agencyClients: prev.agencyClients.map((c) => (c.organizationId === orgId ? { ...c, name } : c)),
+    }));
+  }, []);
+
   const views = useMemo(
     () => deriveViews(resolved.platformRole, resolved.memberships, resolved.agencyClients),
     [resolved.platformRole, resolved.memberships, resolved.agencyClients],
@@ -282,8 +311,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       orgEpoch,
       refresh,
       switchOrg,
+      applyOrgRename,
     }),
-    [resolved, loading, views, orgEpoch, refresh, switchOrg],
+    [resolved, loading, views, orgEpoch, refresh, switchOrg, applyOrgRename],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

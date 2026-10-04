@@ -20,7 +20,9 @@ export type NotificationType =
   | "action_assigned"
   | "billing_alert"
   | "weekly_digest"
-  | "entitlement_warning";
+  | "entitlement_warning"
+  // Epic 22 Phase 2 — sent to the inviter when an invitation is accepted.
+  | "invitation_accepted";
 
 export type NotificationChannel = "email" | "in_app";
 

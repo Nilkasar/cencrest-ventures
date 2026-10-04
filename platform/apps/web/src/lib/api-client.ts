@@ -135,5 +135,12 @@ export const apiClient = {
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined, ...options }),
   patch: <T>(path: string, body?: unknown, options?: RequestOptions) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined, ...options }),
-  delete: <T>(path: string, options?: RequestOptions) => request<T>(path, { method: "DELETE", ...options }),
+  put: <T>(path: string, body?: unknown, options?: RequestOptions) =>
+    request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined, ...options }),
+  /** `body` is optional — most DELETEs carry none; a confirmation-gated one
+   *  (`DELETE /orgs/:slug { confirmName }`) does. */
+  delete: <T>(path: string, options?: RequestOptions & { body?: unknown }) => {
+    const { body, ...rest } = options ?? {};
+    return request<T>(path, { method: "DELETE", body: body !== undefined ? JSON.stringify(body) : undefined, ...rest });
+  },
 };

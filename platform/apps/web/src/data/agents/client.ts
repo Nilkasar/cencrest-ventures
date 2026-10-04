@@ -84,6 +84,19 @@ export class AutonomyLevelRejectedError extends Error {
   }
 }
 
+/** Epic 22 Phase 2 — the requested level is above the organization's own
+ *  ceiling (Settings › Autonomy): 422 `above_org_autonomy_limit`. Reachable
+ *  when the limit was lowered after the Agents page loaded. */
+export class OrgAutonomyLimitError extends Error {
+  constructor(
+    public readonly limit: number,
+    message?: string,
+  ) {
+    super(message ?? `Your organization limits agents to Level ${limit}.`);
+    this.name = "OrgAutonomyLimitError";
+  }
+}
+
 /** Thrown when an agent-run id doesn't resolve for this org — deleted,
  *  never existed, or another org's row. Never a 403 that would confirm
  *  existence (tenant isolation), per `agent-run-details.ts`'s own
@@ -115,6 +128,10 @@ function translateRunError(err: unknown): never {
       throw new AgentsNotAvailableError(errorMessage(err));
     }
     if (err.status === 422 && errorCode(err) === "autonomy_level_rejected") {
+      const extra = err.body as { code?: string; limit?: number } | undefined;
+      if (extra?.code === "above_org_autonomy_limit" && typeof extra.limit === "number") {
+        throw new OrgAutonomyLimitError(extra.limit, errorMessage(err));
+      }
       throw new AutonomyLevelRejectedError(errorMessage(err));
     }
     if (err.status === 404) {

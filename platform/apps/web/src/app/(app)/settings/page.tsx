@@ -12,11 +12,13 @@ import { IntegrationsPanel } from "@/components/settings/integrations-panel";
 import { WhiteLabelPanel } from "@/components/settings/white-label-panel";
 import { NotificationsPanel } from "@/components/settings/notifications-panel";
 import { AutonomyPanel } from "@/components/settings/autonomy-panel";
+import { OrganizationPanel } from "@/components/settings/organization-panel";
 
-/** Tab order: who you are → who's here → what you pay → what's connected →
+/** Tab order: which workspace → who you are → who's here → what you pay → what's connected →
  *  how you present → how you hear → how the agents act. `?tab=` deep links
  *  (e.g. `/settings?tab=billing` from the white-label upsell) keep working. */
 const TABS = [
+  { value: "organization", label: "Organization" },
   { value: "brand", label: "Brand profile" },
   { value: "team", label: "Team" },
   { value: "billing", label: "Billing" },
@@ -33,13 +35,13 @@ function isTabValue(value: string | null): value is TabValue {
 }
 
 const TITLE = "Settings";
-const DESCRIPTION = "Your brand profile, team, plan, and how BeBest works for your organization.";
+const DESCRIPTION = "Your organization, brand profile, team, plan, and how BeBest works for you.";
 
 function SettingsTabs() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requested = searchParams.get("tab");
-  const activeTab: TabValue = isTabValue(requested) ? requested : "brand";
+  const activeTab: TabValue = isTabValue(requested) ? requested : "organization";
 
   function handleTabChange(value: string) {
     const params = new URLSearchParams(searchParams);
@@ -63,6 +65,9 @@ function SettingsTabs() {
         }
       />
 
+      <TabsContent value="organization" className="mt-0">
+        <OrganizationPanel />
+      </TabsContent>
       <TabsContent value="brand" className="mt-0">
         <BrandProfilePanel />
       </TabsContent>

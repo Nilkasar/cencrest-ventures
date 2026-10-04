@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BrandProfile } from "@/data/types";
 import { getBrandProfile } from "@/lib/onboarding-client";
+import { useSession } from "@/lib/session-context";
 
 interface UseBrandProfileResult {
   profile: BrandProfile | undefined;
@@ -25,17 +26,21 @@ interface UseBrandProfileResult {
  *  clean without losing the "reload shows a fresh loading state" behavior
  *  (that part happens in `reload` itself, a plain event handler). */
 export function useBrandProfile(organizationId: string): UseBrandProfileResult {
+  const { loading: sessionLoading } = useSession();
   const [profile, setProfileState] = useState<BrandProfile | undefined>(undefined);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>(undefined);
   const [reloadToken, setReloadToken] = useState(0);
+  // Which (org, reload) the held profile/error belong to. `loading` is
+  // DERIVED from it rather than stored: an empty org id while the session is
+  // still resolving used to report loading=false with no profile, so callers
+  // briefly rendered "Start onboarding" for fully set-up users.
+  const [settledKey, setSettledKey] = useState<string | null>(null);
   const requestId = useRef(0);
+  const key = `${organizationId}:${reloadToken}`;
+  const loading = organizationId ? settledKey !== key : sessionLoading;
 
   useEffect(() => {
-    if (!organizationId) {
-      setLoading(false);
-      return;
-    }
+    if (!organizationId) return;
     const id = ++requestId.current;
     getBrandProfile(organizationId)
       .then((result) => {
@@ -49,12 +54,11 @@ export function useBrandProfile(organizationId: string): UseBrandProfileResult {
       })
       .finally(() => {
         if (id !== requestId.current) return;
-        setLoading(false);
+        setSettledKey(`${organizationId}:${reloadToken}`);
       });
   }, [organizationId, reloadToken]);
 
   const reload = useCallback(() => {
-    setLoading(true);
     setError(undefined);
     setReloadToken((token) => token + 1);
   }, []);

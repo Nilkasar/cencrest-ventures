@@ -1,4 +1,4 @@
-import { Bot, ClipboardCheck, CreditCard, FileText, Gauge, LineChart, TrendingUp, Users } from "lucide-react";
+import { Bot, ClipboardCheck, CreditCard, FileText, Gauge, LineChart, TrendingUp, UserPlus, Users } from "lucide-react";
 import type { NotificationType } from "./types";
 
 /** Display-only label/icon maps for Epic 15's `notification_type` enum —
@@ -15,6 +15,7 @@ export const NOTIFICATION_TYPE_LABEL: Record<NotificationType, string> = {
   billing_alert: "Billing",
   weekly_digest: "Weekly digest",
   entitlement_warning: "Usage limit",
+  invitation_accepted: "Invitation accepted",
 };
 
 export const NOTIFICATION_TYPE_ICON: Record<NotificationType, typeof Bot> = {
@@ -28,4 +29,5 @@ export const NOTIFICATION_TYPE_ICON: Record<NotificationType, typeof Bot> = {
   billing_alert: CreditCard,
   weekly_digest: FileText,
   entitlement_warning: CreditCard,
+  invitation_accepted: UserPlus,
 };

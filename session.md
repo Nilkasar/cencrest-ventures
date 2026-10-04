@@ -1,16 +1,18 @@
 # Session Log — Cencrest Ventures
 
-## ▶ RESUME HERE (last updated 2026-10-03, evening)
+## ▶ RESUME HERE (last updated 2026-10-05)
 
-**Epic 22 — Workspace Views (Platform · Organization · Agency) — Phases 0 and 1 are built and verified, NOT deployed.** Spec: `platform/docs/epics/22-workspace-views.md`. Full account in the "2026-10-03 — Epic 22" entry at the bottom. On `rebuild/platform`; `main` does not have it yet.
+**Epic 22 — Workspace Views (Platform · Organization · Agency) — Phases 0, 1 and 2 are built and verified, NOT deployed.** Phase 2 (Organization view) landed 2026-10-05 — see "2026-10-05 — Epic 22 Phase 2" at the bottom. Migrations to apply in production before deploying are now **0023, 0024, 0025** (all as the owner role). Next is Phase 3 (Agency view), then Phase 4 (admin actions).
+
+**Phases 0 and 1 (2026-10-03):** Spec: `platform/docs/epics/22-workspace-views.md`. Full account in the "2026-10-03 — Epic 22" entry at the bottom. On `rebuild/platform`; `main` does not have it yet.
 
 - **Phase 0 (foundations):** migration `0023_workspace_views` (`users.platform_role`, `organizations.kind`, `platform_access_events`, `support_sessions`); `/auth/me` returns platform role, membership kinds and agency clients; `requirePlatformRole` (role re-read from DB, every allowed call audited); `proxy.ts` sign-in guard; view switcher; CRM only for the internal org, Agency only for agency orgs; the session finally uses the org on the token (was always `orgs[0]`).
 - **Phase 1 (Platform view, `/platform/*`):** overview KPIs + a live capability matrix, organizations, users, agencies, growth (CRM + snapshot requests), operations (cross-org jobs, stuck detection, admin cancel), audit log. Reads cross-tenant through `platformDb` (`bebest_platform` role).
 - **Verify with:** `pnpm --filter @bebest/api run smoke:workspaces` (26), `smoke:platform` (98), `smoke:crm` (59 — flaky on cold Neon connections, retry once). Browser walks live in the session scratchpad only.
 
-**Before deploying (order matters — code before migration breaks sign-in):** on the production DB run `db:apply` (0023), `scripts/set-internal-org.sql`, `scripts/create-platform-role.sql` and set `PLATFORM_DATABASE_URL` on the bebest-api Vercel project, grant staff `platform_role`; then push `rebuild/platform` → `main`. Steps in `platform/GO_LIVE.md` §1.2/§1.4.
+**Before deploying (order matters — code before migration breaks sign-in):** on the production DB run `db:apply` (0023, 0024, 0025), `scripts/set-internal-org.sql`, `scripts/create-platform-role.sql` and set `PLATFORM_DATABASE_URL` on the bebest-api Vercel project, grant staff `platform_role`; then push `rebuild/platform` → `main`. Steps in `platform/GO_LIVE.md` §1.2/§1.4.
 
-**Next:** Phase 2 (Organization view: settings hub, invite-accept page, unique org slugs + onboarding routing), Phase 3 (Agency view: portfolio, create/link client, step-in banner, cross-client queue, white label applied), Phase 4 (admin actions: comp plans, suspend, grant roles, read-only view-as). Separately, the ranked gap list from the 2026-10-03 feature audit (bottom entry) — durable jobs + cron on Vercel is #1.
+**Next:** Phase 3 (Agency view: portfolio, create/link client, step-in banner, cross-client queue, white label applied), Phase 4 (admin actions: comp plans, suspend, grant roles, read-only view-as). Separately, the ranked gap list from the 2026-10-03 feature audit (bottom entry) — durable jobs + cron on Vercel is #1.
 
 **Action for the user:** rotate the DEV JWT keypair (`apps/api/.env`) — a subagent printed it into its own transcript.
 
@@ -819,3 +821,25 @@ Decisions (user): explicit `users.platform_role` staff flag; read-only audited "
 ### Process notes
 - Another Claude session worked in the same working copy all day (Overview, sidebar, Google sign-in, rate-limit fix) — re-read files before editing, keep diffs scoped.
 - Pushing to `main` is blocked by the auto-mode classifier as a production deploy; the user pushes or approves it explicitly.
+
+---
+
+## Session: 2026-10-05 — Epic 22 Phase 2: Organization view
+
+### What shipped (on `rebuild/platform`, not deployed)
+- **Backend (8db3e96):** unique org slugs on every create path (`lib/org-slug.ts`, shared with lead conversion; race-safe; reserved `me`/`invitations`/`new`); onboarding completion on the server (`brands.onboarding_completed_at`, backfilled for brands already meeting the minimums; `POST /brands/me/onboarding/complete` starts the first crawl and creates/activates the first query set exactly once; `/auth/me` adds `needsOnboarding` per membership, customer orgs only); org rename (slug immutable) + owner-only soft delete with typed confirmation (deleted orgs vanish from /auth/me, /orgs, select-org; pending invitations revoked; internal org undeletable); public `GET /orgs/invitations/preview`, accept with typed error codes, inviter notified (`invitation_accepted`); notification preferences per user/org/event/channel honoured by `notify()` (`/notifications` no longer lists emailed rows twice); org autonomy limit 1–3 capped by plan, agent runs above it 422. Migrations **0024_organization_view** and **0025_autonomy_default_3**.
+- **Autonomy default decision:** the backend agent defaulted it to 1, which would have silently rejected level-2/3 agent runs customers use today. Overridden to 3 via 0025 (0024 had already been applied in dev and the runner refuses edited migrations); orgs that deliberately chose a level (audited `settings.changed`) keep it.
+- **Frontend:** Settings › Organization (rename, danger-zone delete), real Notifications and Autonomy tabs (replacing "Coming soon"), `?tab=` deep links; `/invitations/accept` (public in `proxy.ts`, split hero layout, signed-out → sign in → back to invite, email-mismatch handling); first login relies on server slugs and routes by `needsOnboarding` (`lib/post-login.ts`); onboarding "complete" comes only from the server (localStorage flag removed), Done step shows what started; agent trigger card respects the org limit.
+- **Bugs fixed on the way:** notification bell crashed (React #130) on the new `invitation_accepted` type; Settings › Team always loaded the user's FIRST org, not the active one; `GET /orgs` listed deleted orgs; Overview flashed "Start onboarding" for set-up users while the session loaded (`use-brand-profile` now derives `loading`, which also cleared its old lint error); after a rename the switcher waited on a full `/auth/me` round trip (now `applyOrgRename` updates the session at once, `refresh()` reconciles).
+
+### Verification
+- `smoke:org` 98/98 (real HTTP, dev DB), plus `smoke:workspaces` 26, `smoke:platform` 98, `smoke:crm` 59. Migrations verified on a throwaway fresh database (51 files, 0 failures). 1267 API unit tests.
+- Browser walk on a production build (orchestrator's own run): 48/50. Misses: (5c) rename timing — fixed as above and re-probed; (6h) the autonomy-422 UI path can't be reached on the Free plan (agents → 402 first) — verified separately with a temporary Pro subscription by the frontend agent.
+- web/api typecheck clean; web build clean; no new lint problems (remaining: Google callback setState-in-effect, login `window.location` warning — both pre-existing from the Google sign-in work).
+
+### Known limits / follow-ups
+- Deleting an org does not cancel its subscription (only matters once a real payment provider exists).
+- A name that slugifies to 1 character is rejected (min 2); the web now pads default names, but a user typing a 1-char org name gets a validation error by design.
+- Dev DB holds more test data (`john-*`, `Scratch *`, `race*`, `teammate-*`, `joiner*`, `Northwind Labs *`).
+- Locked Prisma engine files `query_engine-windows.dll.node.locked-*` sit in the pnpm Prisma client folder (held by the long-running :4000 dev API) — delete once that server stops.
+- **Rotate the dev JWT keypair** — two subagents printed it into their own transcripts while listing `.env`.

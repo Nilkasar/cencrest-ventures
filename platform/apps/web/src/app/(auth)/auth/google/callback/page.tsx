@@ -4,49 +4,8 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@bebest/ui";
-import { consumePostLoginPath, setOrgScopedAccessToken, setSession } from "@/lib/auth-state";
-import { apiClient } from "@/lib/api-client";
-
-interface MeResponse {
-  id: string;
-  email: string;
-  name: string;
-  organizations: { id: string; name: string; slug: string; role: string }[];
-}
-
-interface SelectOrgResponse {
-  accessToken: string;
-  organization: { id: string; name: string; slug: string; role: string };
-}
-
-interface CreateOrgResponse {
-  id: string;
-  name: string;
-  slug: string;
-}
-
-async function selectInitialOrg(): Promise<boolean> {
-  try {
-    const me = await apiClient.get<MeResponse>("/auth/me");
-    let first = me.organizations[0];
-
-    if (!first) {
-      const rawName = me.name && me.name.length >= 2 ? me.name : me.email.split("@")[0] ?? "My Organization";
-      try {
-        const newOrg = await apiClient.post<CreateOrgResponse>("/orgs", { name: rawName });
-        first = { id: newOrg.id, name: newOrg.name, slug: newOrg.slug, role: "owner" };
-      } catch {
-        return false;
-      }
-    }
-
-    const selection = await apiClient.post<SelectOrgResponse>("/auth/select-org", { slug: first.slug });
-    setOrgScopedAccessToken(selection.accessToken, selection.organization.slug);
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { setSession } from "@/lib/auth-state";
+import { completeSignIn } from "@/lib/post-login";
 
 type Status = { kind: "processing" } | { kind: "error"; message: string };
 
@@ -82,9 +41,8 @@ function GoogleCallbackContent() {
     }
 
     setSession({ accessToken, refreshToken });
-    selectInitialOrg()
-      .then((hasOrg) => router.replace(hasOrg ? (consumePostLoginPath() ?? "/overview") : "/onboarding"))
-      .catch(() => router.replace("/overview"));
+    // Org selection/bootstrap + where to land: lib/post-login.ts.
+    void completeSignIn().then((destination) => router.replace(destination));
   }, [searchParams, router]);
 
   if (status.kind === "error") {

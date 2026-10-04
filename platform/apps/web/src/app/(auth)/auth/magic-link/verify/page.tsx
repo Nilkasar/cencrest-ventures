@@ -15,81 +15,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@bebest/ui";
 import { apiClient, ApiError } from "@/lib/api-client";
-import { consumePostLoginPath, setOrgScopedAccessToken, setSession } from "@/lib/auth-state";
+import { setSession } from "@/lib/auth-state";
+import { completeSignIn } from "@/lib/post-login";
 
 interface VerifyResponse {
   accessToken: string;
   refreshToken: string;
   user: { id: string; email: string; name: string };
-}
-
-interface MeResponse {
-  id: string;
-  email: string;
-  name: string;
-  organizations: { id: string; name: string; slug: string; role: string }[];
-}
-
-interface SelectOrgResponse {
-  accessToken: string;
-  organization: { id: string; name: string; slug: string; role: string };
-}
-
-interface CreateOrgResponse {
-  id: string;
-  name: string;
-  slug: string;
-}
-
-/**
- * A freshly verified access token carries NO org claim (`auth.ts` mints it
- * with `org: null` and expects the client to choose one). Nothing did — so
- * every screen behind an org-scoped route answered 409 "No organization
- * selected" immediately after a successful login. This selects one before
- * handing the user to the app, and persists the choice so a later token
- * refresh can re-attach it.
- *
- * Picking the first membership is the same interim single-org assumption
- * the Settings > Team panel already documents: correct for a user in one
- * organization, and the org switcher is how a multi-org user changes it.
- *
- * New users (no organizations) get a default org created from their profile
- * name so the onboarding wizard can load immediately — they can rename it in
- * Settings > Organization after setup completes.
- *
- * Returns true when an org was selected, which is also the signal for where
- * to send the user next: a member already has a workspace and belongs in
- * the app, only a user with none needs onboarding.
- */
-async function selectInitialOrg(): Promise<boolean> {
-  try {
-    const me = await apiClient.get<MeResponse>("/auth/me");
-    let first = me.organizations[0];
-
-    if (!first) {
-      // New user — create a default org so the onboarding wizard has something
-      // to load against. The name defaults to their profile name (email prefix);
-      // they can rename it in Settings > Organization.
-      const rawName = me.name && me.name.length >= 2 ? me.name : me.email.split("@")[0] ?? "My Organization";
-      try {
-        const newOrg = await apiClient.post<CreateOrgResponse>("/orgs", { name: rawName });
-        first = { id: newOrg.id, name: newOrg.name, slug: newOrg.slug, role: "owner" };
-      } catch {
-        // Org creation failed (slug collision or validation) — redirect to
-        // onboarding anyway; the wizard handles the no-org state gracefully.
-        return false;
-      }
-    }
-
-    const selection = await apiClient.post<SelectOrgResponse>("/auth/select-org", {
-      slug: first.slug,
-    });
-    setOrgScopedAccessToken(selection.accessToken, selection.organization.slug);
-    return true;
-  } catch {
-    // Leave the session as-is; the user is signed in either way.
-    return false;
-  }
 }
 
 type Status = { kind: "verifying" } | { kind: "success" } | { kind: "error"; message: string };
@@ -137,9 +69,10 @@ function VerifyContent() {
       .post<VerifyResponse>("/auth/magic-link/verify", { token })
       .then(async (data) => {
         setSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
-        const hasOrg = await selectInitialOrg();
+        // Org selection/bootstrap + where to land: lib/post-login.ts.
+        const destination = await completeSignIn();
         setStatus({ kind: "success" });
-        router.replace(hasOrg ? (consumePostLoginPath() ?? "/overview") : "/onboarding");
+        router.replace(destination);
       })
       .catch((err: unknown) => {
         setStatus({ kind: "error", message: messageFor(err) });

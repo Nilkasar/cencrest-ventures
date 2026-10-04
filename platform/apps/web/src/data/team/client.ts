@@ -121,8 +121,10 @@ export interface TeamData {
 /** Loads this org's real member list. Resolves the slug first (see header
  *  comment) — the panel calls this rather than composing `resolveOrgSlug`
  *  and a raw list call itself. */
-export async function loadTeamData(): Promise<TeamData> {
-  const slug = await resolveOrgSlug();
+export async function loadTeamData(activeSlug?: string): Promise<TeamData> {
+  // The session's active org when the caller knows it — a member of several
+  // orgs must manage the one they're in, not their first membership.
+  const slug = activeSlug ?? (await resolveOrgSlug());
   const members = await apiClient.get<TeamMember[]>(`/orgs/${slug}/members`);
   return { slug, members };
 }

@@ -53,7 +53,7 @@ const COLUMNS: SkeletonColumn[] = [
  */
 export function TeamPanel() {
   const { org, user } = useSession();
-  const { reload, ...state } = useAsyncData(loadTeamData, []);
+  const { reload, ...state } = useAsyncData(() => loadTeamData(org?.slug), [org?.slug]);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [pendingRemove, setPendingRemove] = useState<TeamMember | null>(null);
   const { toast } = useToast();

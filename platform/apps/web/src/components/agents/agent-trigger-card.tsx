@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useId, useState } from "react";
-import { Play } from "lucide-react";
+import { Lock, Play } from "lucide-react";
 import { Button, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@bebest/ui";
 import type { AgentName, AgentRun, AutonomyLevel } from "@/data/agents/types";
 import { AUTONOMY_LEVELS } from "@/data/agents/types";
@@ -17,19 +17,36 @@ import { AgentIconTile, RunStatusBadge } from "./agent-meta";
  * lives server-side (`lib/agents/autonomy.ts`). `lastRun` is this agent's
  * most recent run from the history list, linked so "what happened last
  * time" is one click away from "run it again".
+ *
+ * Epic 22 Phase 2: `limit` is the organization's ceiling (Settings ›
+ * Autonomy, `effectiveMax`). Levels above it stay visible but disabled,
+ * with the reason and — for an owner/admin — a link to change it. Unknown
+ * (still loading, or the read failed) means no client-side cap; the server
+ * enforces it either way (422 `above_org_autonomy_limit`).
  */
+export interface AutonomyLimit {
+  effectiveMax: AutonomyLevel;
+  canEdit: boolean;
+}
+
 export function AgentTriggerCard({
   agentName,
   running,
   lastRun,
+  limit,
   onRun,
 }: {
   agentName: AgentName;
   running: boolean;
   lastRun?: AgentRun;
+  limit?: AutonomyLimit;
   onRun: (agentName: AgentName, autonomyLevel: AutonomyLevel) => void;
 }) {
-  const [autonomyLevel, setAutonomyLevel] = useState<AutonomyLevel>(1);
+  const [chosenLevel, setAutonomyLevel] = useState<AutonomyLevel>(1);
+  const maxLevel: AutonomyLevel = limit?.effectiveMax ?? 3;
+  // Clamped at render: if the limit drops below an earlier choice, the
+  // card shows (and runs) the highest level still allowed.
+  const autonomyLevel = Math.min(chosenLevel, maxLevel) as AutonomyLevel;
   const selectId = useId();
   const descId = useId();
 
@@ -53,8 +70,16 @@ export function AgentTriggerCard({
           </SelectTrigger>
           <SelectContent>
             {AUTONOMY_LEVELS.map((level) => (
-              <SelectItem key={level} value={String(level)}>
-                {AUTONOMY_LEVEL_LABEL[level]}
+              <SelectItem key={level} value={String(level)} disabled={level > maxLevel}>
+                <span className="flex items-center gap-1.5">
+                  {AUTONOMY_LEVEL_LABEL[level]}
+                  {level > maxLevel && (
+                    <>
+                      <Lock size={11} aria-hidden="true" className="text-subtle-foreground" />
+                      <span className="sr-only">(above your organization&apos;s limit)</span>
+                    </>
+                  )}
+                </span>
               </SelectItem>
             ))}
           </SelectContent>
@@ -62,6 +87,24 @@ export function AgentTriggerCard({
         <p id={descId} className="min-h-[2lh] text-[12px] leading-snug text-muted-foreground">
           {AUTONOMY_LEVEL_DESCRIPTION[autonomyLevel]}
         </p>
+        {limit && maxLevel < 3 && (
+          <p className="flex items-start gap-1.5 rounded-md bg-surface px-2.5 py-2 text-[12px] leading-snug text-muted-foreground">
+            <Lock size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span>
+              Your organization limits agents to Level {maxLevel}.{" "}
+              {limit.canEdit ? (
+                <Link
+                  href="/settings?tab=autonomy"
+                  className="font-medium text-foreground underline underline-offset-2 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+                >
+                  Change in Settings › Autonomy
+                </Link>
+              ) : (
+                "Ask an owner or admin to raise it."
+              )}
+            </span>
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-2.5 border-t border-border pt-3">

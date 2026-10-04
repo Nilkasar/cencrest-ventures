@@ -11,7 +11,9 @@ import { StatGrid, StatTile } from "@/components/patterns/stat-tile";
 import { CellLink, ClickableRow, TableSkeleton, type SkeletonColumn } from "@/components/patterns/data-table";
 import { typography } from "@/components/patterns/typography";
 import { useAgentRuns } from "@/hooks/use-agent-runs";
-import { triggerAgentRun } from "@/data/agents/client";
+import { OrgAutonomyLimitError, triggerAgentRun } from "@/data/agents/client";
+import { getAutonomy } from "@/data/organization/client";
+import { useAsyncData } from "@/lib/use-async-data";
 import type { AgentName, AgentRun, AutonomyLevel } from "@/data/agents/types";
 import { AGENT_NAME_LABEL, AUTONOMY_LEVEL_LABEL } from "@/data/agents/labels";
 import { formatDateTime, formatNumber, formatPercent, formatRelativeTime } from "@/lib/format";
@@ -42,6 +44,10 @@ export function AgentsView() {
   const { toast } = useToast();
   const { reload, ...state } = useAgentRuns();
   const [runningAgent, setRunningAgent] = useState<AgentName | null>(null);
+  // The org's autonomy ceiling (Settings › Autonomy). If it can't be read,
+  // the cards fall back to no client-side cap — the server still enforces it.
+  const { reload: reloadAutonomy, ...autonomy } = useAsyncData(getAutonomy, []);
+  const limit = autonomy.status === "success" ? { effectiveMax: autonomy.data.effectiveMax, canEdit: autonomy.data.canEdit } : undefined;
 
   async function handleRun(agentName: AgentName, autonomyLevel: AutonomyLevel) {
     setRunningAgent(agentName);
@@ -51,6 +57,17 @@ export function AgentsView() {
       reload();
       router.push(`/agents/${run.id}`);
     } catch (err) {
+      if (err instanceof OrgAutonomyLimitError) {
+        // The limit changed since this page loaded — re-read it so the
+        // cards lock the levels above it, and say what happened.
+        reloadAutonomy();
+        toast({
+          title: `Level ${autonomyLevel} is above your organization’s limit`,
+          description: `Agents here can run up to Level ${err.limit}. Pick a lower level${limit?.canEdit ? ", or raise the limit in Settings › Autonomy" : ""}.`,
+          variant: "danger",
+        });
+        return;
+      }
       // Entitlement / precondition failures (`AgentRunLimitError`,
       // `AgentsNotAvailableError`, …) already carry a user-facing message.
       toast({
@@ -102,6 +119,7 @@ export function AgentsView() {
               agentName={agentName}
               running={runningAgent === agentName}
               lastRun={lastRunByAgent.get(agentName)}
+              limit={limit}
               onRun={handleRun}
             />
           ))}

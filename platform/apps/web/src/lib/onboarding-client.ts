@@ -75,6 +75,8 @@ interface ApiBrand {
   aliases: string[];
   positioning: string | null;
   differentiators: string[];
+  /** Epic 22 Phase 2 — null until `POST /brands/me/onboarding/complete`. */
+  onboardingCompletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -220,8 +222,10 @@ function translateError(err: unknown): never {
 // field for (see the file header). Never read as a substitute for real data
 // that's available; only ever added on top of it. ──────────────────────────
 
+// Completion itself is NOT here: it lives on the server
+// (`brands.onboarding_completed_at`, Epic 22 Phase 2), so a second device
+// sees it too. Only the "visited with zero items" hint stays local.
 const VISITED_PREFIX = "bebest.onboarding-visited.v1.";
-const COMPLETED_AT_PREFIX = "bebest.onboarding-completed-at.v1.";
 
 function hasLocalStorage(): boolean {
   try {
@@ -255,27 +259,6 @@ function markVisited(organizationId: string, step: OnboardingStepKey): void {
   }
 }
 
-function readCompletedAt(organizationId: string): string | undefined {
-  if (!hasLocalStorage()) return undefined;
-  try {
-    return window.localStorage.getItem(`${COMPLETED_AT_PREFIX}${organizationId}`) ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function writeCompletedAt(organizationId: string): string {
-  const now = new Date().toISOString();
-  if (hasLocalStorage()) {
-    try {
-      window.localStorage.setItem(`${COMPLETED_AT_PREFIX}${organizationId}`, now);
-    } catch {
-      // Cosmetic only (the "Setup completed <date>" line) — fine to lose.
-    }
-  }
-  return now;
-}
-
 function deriveCompletedSteps(
   brand: Brand,
   competitors: Competitor[],
@@ -292,11 +275,15 @@ function deriveCompletedSteps(
   };
 }
 
-function deriveStatus(completedSteps: Record<OnboardingStepKey, boolean>): BrandProfile["status"] {
-  const values = ONBOARDING_STEP_KEYS.map((key) => completedSteps[key]);
-  if (values.every(Boolean)) return "completed";
-  if (values.some(Boolean)) return "in_progress";
-  return "not_started";
+/** "completed" comes ONLY from the server's `onboardingCompletedAt` — every
+ *  step being filled in is not the same as having finished (the Done step
+ *  is what starts the first crawl and query set). */
+function deriveStatus(
+  completedSteps: Record<OnboardingStepKey, boolean>,
+  onboardingCompletedAt: string | null | undefined,
+): BrandProfile["status"] {
+  if (onboardingCompletedAt) return "completed";
+  return ONBOARDING_STEP_KEYS.some((key) => completedSteps[key]) ? "in_progress" : "not_started";
 }
 
 /** Fetches the brand + its competitors/use cases/claims and assembles the
@@ -343,7 +330,7 @@ export async function getBrandProfile(organizationId: string): Promise<BrandProf
 
   const visited = readVisitedSteps(organizationId);
   const completedSteps = deriveCompletedSteps(brand, competitors, useCases, brandClaims, visited);
-  const status = deriveStatus(completedSteps);
+  const status = deriveStatus(completedSteps, apiBrand?.onboardingCompletedAt);
 
   return {
     organizationId,
@@ -353,7 +340,7 @@ export async function getBrandProfile(organizationId: string): Promise<BrandProf
     competitors,
     useCases,
     brandClaims,
-    completedAt: status === "completed" ? readCompletedAt(organizationId) : undefined,
+    completedAt: apiBrand?.onboardingCompletedAt ?? undefined,
   };
 }
 
@@ -495,15 +482,62 @@ export async function markStepComplete(organizationId: string, step: OnboardingS
   return getBrandProfile(organizationId);
 }
 
-export async function completeOnboarding(organizationId: string): Promise<BrandProfile> {
-  const profile = await getBrandProfile(organizationId);
-  const incomplete = ONBOARDING_STEP_KEYS.filter((key) => !profile.completedSteps[key]);
-  if (incomplete.length > 0) {
-    throw new ValidationError(
-      `Finish the remaining step${incomplete.length > 1 ? "s" : ""} before completing setup: ${incomplete.join(", ")}.`,
-    );
+/** What the server started (or why it didn't) when onboarding completed —
+ *  `POST /brands/me/onboarding/complete` (`apps/api/src/lib/onboarding/complete.ts`). */
+export type CrawlKickoff =
+  | { status: "started"; jobId: string }
+  | {
+      status: "skipped";
+      jobId?: string;
+      reason: "no_website_url" | "crawl_already_in_progress" | "already_crawled" | "onboarding_already_completed";
+    };
+
+export type QuerySetKickoff =
+  | { status: "created"; id: string }
+  | { status: "skipped"; id?: string; reason: "active_query_set_exists" | "onboarding_already_completed" };
+
+export interface OnboardingCompletion {
+  completedAt: string;
+  alreadyCompleted: boolean;
+  crawl: CrawlKickoff;
+  querySet: QuerySetKickoff;
+}
+
+/** The server's 422 `onboarding_incomplete` — `missing` lists the step keys
+ *  (claims is optional and never listed). */
+export class OnboardingIncompleteError extends Error {
+  constructor(
+    message: string,
+    public readonly missing: OnboardingStepKey[],
+  ) {
+    super(message);
+    this.name = "OnboardingIncompleteError";
   }
-  return { ...profile, status: "completed", completedAt: writeCompletedAt(organizationId) };
+}
+
+/** Completes onboarding ON THE SERVER. Idempotent: a repeat call starts
+ *  nothing and reports `alreadyCompleted: true`. A 404 (no brand yet) is
+ *  reported as every required step missing. */
+export async function completeOnboarding(): Promise<OnboardingCompletion> {
+  try {
+    return await apiClient.post<OnboardingCompletion>("/brands/me/onboarding/complete");
+  } catch (err) {
+    if (err instanceof ApiError) {
+      const body = (err.body ?? {}) as { message?: string; missing?: OnboardingStepKey[] };
+      if (err.status === 422 && Array.isArray(body.missing)) {
+        throw new OnboardingIncompleteError(body.message ?? "Some setup steps still need attention.", body.missing);
+      }
+      if (err.status === 404) {
+        throw new OnboardingIncompleteError(body.message ?? "Create your brand profile first.", [
+          "brand-basics",
+          "competitors",
+          "industry",
+          "use-cases",
+        ]);
+      }
+    }
+    throw err;
+  }
 }
 
 export function resumeStep(profile: BrandProfile): OnboardingStepKey {
