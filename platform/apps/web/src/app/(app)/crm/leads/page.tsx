@@ -8,7 +8,6 @@ export default function LeadsPage() {
   return (
     <>
       <PageHeader
-        eyebrow="CRM"
         title="Leads"
         description="Everyone who's requested a free AI + SEO snapshot, plus anyone founder-led outreach has touched, in one pipeline."
       />

@@ -1,16 +1,32 @@
 import * as React from "react";
 import { cn } from "../lib/utils";
 
-export function Table({ className, ...props }: React.TableHTMLAttributes<HTMLTableElement>) {
+export interface TableProps extends React.TableHTMLAttributes<HTMLTableElement> {
+  /** `true` (default): the table is its own card — raised surface, border,
+   *  radius matching `Card`. `false`: no chrome at all, for a table that
+   *  sits flush inside a `Card`/`Section` which already supplies it. */
+  framed?: boolean;
+  /** Classes for the horizontal-scroll wrapper (e.g. a `max-h-*` +
+   *  `overflow-y-auto` to make a sticky header meaningful). */
+  containerClassName?: string;
+}
+
+export function Table({ className, framed = true, containerClassName, ...props }: TableProps) {
   return (
-    <div className="w-full overflow-x-auto rounded-lg border border-border shadow-xs">
-      <table className={cn("w-full caption-bottom text-[13px]", className)} {...props} />
+    <div
+      className={cn(
+        "w-full overflow-x-auto",
+        framed && "rounded-xl border border-border bg-surface-raised shadow-xs",
+        containerClassName,
+      )}
+    >
+      <table className={cn("w-full caption-bottom text-[13px] tabular-nums", className)} {...props} />
     </div>
   );
 }
 
 export function TableHeader({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
-  return <thead className={cn("bg-surface", className)} {...props} />;
+  return <thead className={cn("bg-surface [&_tr]:hover:bg-transparent", className)} {...props} />;
 }
 
 export function TableBody({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
@@ -37,7 +53,7 @@ export function TableHead({ className, ...props }: React.ThHTMLAttributes<HTMLTa
   return (
     <th
       className={cn(
-        "h-10 px-4 text-left align-middle font-medium text-[11px] uppercase tracking-[0.06em] text-subtle-foreground",
+        "h-10 px-4 text-left align-middle font-medium text-[11px] uppercase tracking-[0.06em] text-subtle-foreground whitespace-nowrap",
         "[&:has([role=checkbox])]:pr-0",
         className,
       )}

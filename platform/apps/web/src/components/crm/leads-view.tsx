@@ -1,24 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Search, UserPlus, X } from "lucide-react";
+import { CheckCircle2, Inbox, Sparkles, UserPlus, Users } from "lucide-react";
 import {
   Avatar,
   Badge,
-  Button,
-  Card,
-  CardContent,
   EmptyState,
-  Input,
   Pagination,
   RefreshOverlay,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -28,12 +17,19 @@ import {
   getInitials,
 } from "@bebest/ui";
 import { ErrorPanel } from "@/components/patterns/error-panel";
+import { PageStack, Reveal } from "@/components/patterns/motion";
+import { StatGrid, StatTile } from "@/components/patterns/stat-tile";
+import { ClearFiltersButton, FilterSelect, ResultCount, Toolbar, ToolbarSearch } from "@/components/patterns/toolbar";
+import { CellLink, ClickableRow, TableSkeleton, type SkeletonColumn } from "@/components/patterns/data-table";
+import { NoResults } from "@/components/patterns/states";
+import { typography } from "@/components/patterns/typography";
 import { AddLeadDialog } from "@/components/crm/add-lead-dialog";
 import { LeadScore, LeadSourceBadge, LeadStatusBadge } from "@/components/crm/status-badges";
 import { DEFAULT_PAGE_SIZE, fetchLeads, type LeadFilters } from "@/data/crm/client";
 import type { Lead, LeadSource, LeadStatus } from "@/data/crm/types";
 import { useAsyncData } from "@/lib/use-async-data";
-import { formatRelativeTime } from "@/lib/format";
+import { useCrmBasePath } from "@/components/crm/crm-base-path";
+import { formatNumber, formatPercent, formatRelativeTime } from "@/lib/format";
 
 const STATUS_OPTIONS: { value: LeadStatus | "all"; label: string }[] = [
   { value: "all", label: "All statuses" },
@@ -52,56 +48,17 @@ const SOURCE_OPTIONS: { value: LeadSource | "all"; label: string }[] = [
   { value: "referral", label: "Referral" },
 ];
 
-function LeadsTableSkeleton() {
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Lead</TableHead>
-          <TableHead>Source</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Score</TableHead>
-          <TableHead>Assigned to</TableHead>
-          <TableHead>Created</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {Array.from({ length: 6 }).map((_, i) => (
-          <TableRow key={i}>
-            <TableCell>
-              <div className="flex items-center gap-2.5">
-                <Skeleton className="size-8 rounded-full shrink-0" />
-                <div className="flex flex-col gap-1.5">
-                  <Skeleton className="h-3 w-32" />
-                  <Skeleton className="h-2.5 w-20" />
-                </div>
-              </div>
-            </TableCell>
-            <TableCell><Skeleton className="h-5 w-24 rounded-full" /></TableCell>
-            <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
-            <TableCell><Skeleton className="h-3 w-6" /></TableCell>
-            <TableCell><Skeleton className="h-3 w-24" /></TableCell>
-            <TableCell><Skeleton className="h-3 w-16" /></TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <p className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-subtle-foreground">{label}</p>
-        <p className="font-mono text-[22px] font-semibold text-foreground mt-1">{value}</p>
-      </CardContent>
-    </Card>
-  );
-}
+const COLUMNS: SkeletonColumn[] = [
+  { header: "Lead", cell: "entity" },
+  { header: "Source", cell: "badge" },
+  { header: "Status", cell: "badge" },
+  { header: "Score", cell: "number", align: "right" },
+  { header: "Assigned to", cell: "text" },
+  { header: "Created", cell: "meta" },
+];
 
 export function LeadsView() {
-  const router = useRouter();
+  const crm = useCrmBasePath();
   const [status, setStatus] = useState<LeadStatus | "all">("all");
   const [source, setSource] = useState<LeadSource | "all">("all");
   const [searchInput, setSearchInput] = useState("");
@@ -136,159 +93,152 @@ export function LeadsView() {
   // Counts come from the API, across every matching row — not from the rows
   // this page happens to hold.
   const counts = leads?.statusCounts;
+  const firstRun = leads !== null && leads.total === 0 && !hasFilters;
 
   return (
-    <div className="flex flex-col gap-6">
-      {leads && counts && leads.total > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <StatCard label="Total leads" value={String(leads.total)} />
-          <StatCard label="Needs a response" value={String(counts.new)} />
-          <StatCard label="Converted" value={String(counts.converted)} />
-        </div>
-      )}
-
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-subtle-foreground" aria-hidden="true" />
-          <Input
-            placeholder="Search name, company, email"
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-            className="pl-8"
-            aria-label="Search leads"
+    <PageStack>
+      {!firstRun && state.status !== "error" && (
+        <StatGrid>
+          <StatTile
+            label="Leads"
+            icon={<Users size={13} />}
+            loading={!counts}
+            value={leads ? formatNumber(leads.total) : "—"}
+            hint={hasFilters ? "Matching these filters" : "In the pipeline"}
           />
-        </div>
-        <Select value={status} onValueChange={(value) => {
-            setStatus(value as LeadStatus | "all");
-            setPage(1);
-          }}>
-          <SelectTrigger className="w-full sm:w-40" aria-label="Filter by status">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={source} onValueChange={(value) => {
-            setSource(value as LeadSource | "all");
-            setPage(1);
-          }}>
-          <SelectTrigger className="w-full sm:w-40" aria-label="Filter by source">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SOURCE_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={clearFilters}>
-            <X size={14} /> Clear
-          </Button>
-        )}
-        <div className="sm:ml-auto">
-          <AddLeadDialog onCreated={() => reload()} />
-        </div>
-      </div>
-
-      {state.status === "loading" && <LeadsTableSkeleton />}
-
-      {state.status === "error" && (
-        <ErrorPanel message={state.error.message} onRetry={reload} />
+          <StatTile
+            label="Needs a response"
+            icon={<Inbox size={13} />}
+            loading={!counts}
+            value={counts ? formatNumber(counts.new) : "—"}
+            hint="Status: New"
+          />
+          <StatTile
+            label="Qualified"
+            icon={<Sparkles size={13} />}
+            loading={!counts}
+            value={counts ? formatNumber(counts.qualified) : "—"}
+            hint="Ready to convert"
+          />
+          <StatTile
+            label="Converted"
+            icon={<CheckCircle2 size={13} />}
+            loading={!counts}
+            value={counts ? formatNumber(counts.converted) : "—"}
+            hint={
+              leads && counts && leads.total > 0
+                ? `${formatPercent((counts.converted / leads.total) * 100)} of leads`
+                : "Became accounts"
+            }
+          />
+        </StatGrid>
       )}
 
-      {leads && leads.items.length === 0 && !hasFilters && (
-        <EmptyState
-          icon={<UserPlus size={20} />}
-          eyebrow="Leads"
-          title="No leads yet"
-          description="Leads will start arriving automatically once the marketing site's apply form is wired to this CRM (Epic 20). Until then, add anyone your team is talking to directly."
-          action={<AddLeadDialog onCreated={() => reload()} />}
-        />
-      )}
-
-      {leads && leads.items.length === 0 && hasFilters && (
-        <EmptyState
-          compact
-          icon={<Search size={18} />}
-          title="No leads match these filters"
-          description="Try a different status, source, or search term."
-          action={
-            <Button variant="secondary" size="sm" onClick={clearFilters}>
-              Clear filters
-            </Button>
+      {!firstRun && (
+        <Toolbar
+          end={
+            <>
+              {leads && <ResultCount count={leads.total} noun="lead" />}
+              <AddLeadDialog onCreated={() => reload()} />
+            </>
           }
-        />
+        >
+          <ToolbarSearch value={searchInput} onChange={setSearchInput} placeholder="Search name, company, email" label="Search leads" />
+          <FilterSelect
+            value={status}
+            onValueChange={(value) => {
+              setStatus(value);
+              setPage(1);
+            }}
+            options={STATUS_OPTIONS}
+            label="Filter by status"
+          />
+          <FilterSelect
+            value={source}
+            onValueChange={(value) => {
+              setSource(value);
+              setPage(1);
+            }}
+            options={SOURCE_OPTIONS}
+            label="Filter by source"
+          />
+          {hasFilters && <ClearFiltersButton onClick={clearFilters} />}
+        </Toolbar>
       )}
 
-      {leads && leads.items.length > 0 && (
-        <RefreshOverlay active={state.isRefreshing} className="flex flex-col gap-3">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Lead</TableHead>
-              <TableHead>Source</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Score</TableHead>
-              <TableHead>Assigned to</TableHead>
-              <TableHead>Created</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {leads.items.map((lead: Lead) => (
-              <TableRow
-                key={lead.id}
-                className="cursor-pointer"
-                tabIndex={0}
-                role="link"
-                onClick={() => router.push(`/crm/leads/${lead.id}`)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") router.push(`/crm/leads/${lead.id}`);
-                }}
-              >
-                <TableCell>
-                  <div className="flex items-center gap-2.5">
-                    <Avatar fallback={getInitials(lead.name)} size="sm" />
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-medium text-foreground truncate">{lead.name}</p>
-                      <p className="text-[12px] text-muted-foreground truncate">{lead.company ?? lead.email}</p>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell><LeadSourceBadge source={lead.source} size="sm" /></TableCell>
-                <TableCell><LeadStatusBadge status={lead.status} size="sm" /></TableCell>
-                <TableCell><LeadScore score={lead.score} /></TableCell>
-                <TableCell>
-                  {lead.assignedTo ? (
-                    <span className="text-[13px] text-foreground">{lead.assignedTo.name}</span>
-                  ) : (
-                    <Badge variant="outline" size="sm">Unassigned</Badge>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <span className="text-[12.5px] text-muted-foreground">{formatRelativeTime(lead.createdAt)}</span>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      <Reveal>
+        {state.status === "loading" && <TableSkeleton columns={COLUMNS} label="Loading leads…" />}
 
-        <Pagination
-          page={leads.page}
-          pageSize={leads.limit}
-          total={leads.total}
-          onPageChange={setPage}
-          itemLabel="leads"
-        />
-        </RefreshOverlay>
-      )}
-    </div>
+        {state.status === "error" && <ErrorPanel title="Leads didn't load" message={state.error.message} onRetry={reload} />}
+
+        {firstRun && (
+          <EmptyState
+            icon={<UserPlus size={20} />}
+            title="No leads yet"
+            description="Leads will start arriving automatically once the marketing site's apply form is wired to this CRM (Epic 20). Until then, add anyone your team is talking to directly."
+            action={<AddLeadDialog onCreated={() => reload()} />}
+          />
+        )}
+
+        {leads && leads.items.length === 0 && hasFilters && <NoResults noun="leads" onClear={clearFilters} hint="Try a different status, source, or search term." />}
+
+        {leads && leads.items.length > 0 && (
+          <RefreshOverlay active={state.isRefreshing} className="flex flex-col gap-3">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Lead</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Score</TableHead>
+                  <TableHead>Assigned to</TableHead>
+                  <TableHead>Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {leads.items.map((lead: Lead) => (
+                  <ClickableRow key={lead.id} href={`${crm}/leads/${lead.id}`}>
+                    <TableCell>
+                      <div className="flex items-center gap-2.5">
+                        <Avatar fallback={getInitials(lead.name)} size="sm" />
+                        <div className="min-w-0">
+                          <CellLink href={`${crm}/leads/${lead.id}`} className="block truncate text-[13px]">
+                            {lead.name}
+                          </CellLink>
+                          <p className="truncate text-[12px] text-muted-foreground">{lead.company ?? lead.email}</p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <LeadSourceBadge source={lead.source} size="sm" />
+                    </TableCell>
+                    <TableCell>
+                      <LeadStatusBadge status={lead.status} size="sm" />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <LeadScore score={lead.score} />
+                    </TableCell>
+                    <TableCell>
+                      {lead.assignedTo ? (
+                        <span className="text-[13px] text-foreground">{lead.assignedTo.name}</span>
+                      ) : (
+                        <Badge variant="outline" size="sm">
+                          Unassigned
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <span className={typography.meta}>{formatRelativeTime(lead.createdAt)}</span>
+                    </TableCell>
+                  </ClickableRow>
+                ))}
+              </TableBody>
+            </Table>
+
+            <Pagination page={leads.page} pageSize={leads.limit} total={leads.total} onPageChange={setPage} itemLabel="leads" />
+          </RefreshOverlay>
+        )}
+      </Reveal>
+    </PageStack>
   );
 }

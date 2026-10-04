@@ -4,7 +4,7 @@ import { DEAL_STAGE_LABEL } from "@/data/crm/types";
 
 const LEAD_STATUS_VARIANT: Record<LeadStatus, BadgeProps["variant"]> = {
   new: "neutral",
-  contacted: "outline",
+  contacted: "info",
   qualified: "warning",
   converted: "success",
   lost: "danger",
@@ -28,9 +28,9 @@ export function LeadStatusBadge({ status, size = "md" }: { status: LeadStatus; s
 
 const DEAL_STAGE_VARIANT: Record<DealStage, BadgeProps["variant"]> = {
   new: "neutral",
-  qualifying: "outline",
-  proposal: "warning",
-  negotiation: "warning",
+  qualifying: "info",
+  proposal: "info",
+  negotiation: "info",
   won: "success",
   lost: "danger",
 };
