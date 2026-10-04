@@ -1,8 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/patterns/page-header";
-import { ConnectorsView } from "@/components/connectors/connectors-view";
-import { Skeleton } from "@bebest/ui";
+import { ConnectorsSkeleton, ConnectorsView } from "@/components/connectors/connectors-view";
 
 export const metadata: Metadata = { title: "Connectors" };
 
@@ -10,11 +9,10 @@ export default function ConnectorsPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Integrations"
         title="Connectors"
-        description="Connect your data sources. See your site's real search performance and traffic analytics in one place."
+        description="Connect your own Google accounts so search and traffic numbers come from first-party data, not estimates."
       />
-      <Suspense fallback={<div className="flex flex-col gap-4"><Skeleton className="h-40 w-full rounded-xl" /><Skeleton className="h-40 w-full rounded-xl" /></div>}>
+      <Suspense fallback={<ConnectorsSkeleton />}>
         <ConnectorsView />
       </Suspense>
     </>

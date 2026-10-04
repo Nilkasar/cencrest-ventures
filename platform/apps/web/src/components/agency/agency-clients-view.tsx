@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Handshake, ShieldOff, Users } from "lucide-react";
+import { Building2, Clock, Handshake, Lightbulb, ShieldCheck, ShieldOff, Users } from "lucide-react";
 import {
-  Badge,
+  Avatar,
   Button,
   EmptyState,
-  Skeleton,
+  RefreshOverlay,
   Table,
   TableBody,
   TableCell,
@@ -17,171 +17,327 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
+  getInitials,
   useToast,
 } from "@bebest/ui";
+import { PageHeader } from "@/components/patterns/page-header";
 import { ErrorPanel } from "@/components/patterns/error-panel";
+import { PageStack, Reveal } from "@/components/patterns/motion";
+import { StatGrid, StatTile } from "@/components/patterns/stat-tile";
+import { ClearFiltersButton, FilterSelect, ResultCount, Toolbar, ToolbarSearch } from "@/components/patterns/toolbar";
+import { TableSkeleton, type SkeletonColumn } from "@/components/patterns/data-table";
+import { NoResults } from "@/components/patterns/states";
+import { typography } from "@/components/patterns/typography";
+import { ConfirmDialog } from "@/components/settings/confirm-dialog";
+import { Notice } from "@/components/settings/form-controls";
 import { InviteClientDialog } from "./invite-client-dialog";
-import { AgencyLinkStatusBadge, AgencyRoleBadge, AvsCell } from "./status-badges";
-import { useAsyncData } from "@/lib/use-async-data";
-import { formatDate } from "@/lib/format";
+import { AgencyLinkStatusBadge, AgencyRoleBadge, AvsCell, LINK_STATUS_LABEL } from "./status-badges";
+import { useAsyncData, type AsyncState } from "@/lib/use-async-data";
+import { formatDate, formatNumber, formatRelativeTime } from "@/lib/format";
 import {
   acceptAgencyClient,
   listAgencyClients,
   listIncomingAgencyLinks,
   revokeAgencyClient,
 } from "@/data/agency/client";
-import type { AgencyClientLink, IncomingAgencyLink } from "@/data/agency/types";
+import type { AgencyClientLink, AgencyLinkStatus, IncomingAgencyLink } from "@/data/agency/types";
 
 /**
- * Settings > Agency (and the `/agency` nav page) — Epic 18's agency
- * dashboard. Two tabs on the SAME `agency_clients` table, one per side of
- * the relationship (see `routes/agency.ts`'s own "two distinct read/write
- * paths on the same table, by design" header comment):
+ * `/agency` — Epic 18's agency dashboard. Two tabs on the SAME
+ * `agency_clients` table, one per side of the relationship (see
+ * `routes/agency.ts`'s "two distinct read/write paths on the same table"):
  *
- *   "My clients"            — orgs THIS org manages (agency side). Invite,
- *                              view real per-client summary, revoke.
- *   "Agencies managing us"  — orgs managing THIS org (client side). Accept
+ *   "Clients"                — orgs THIS org manages (agency side). Invite,
+ *                              see each client's real summary, revoke.
+ *   "Agencies with access"   — orgs managing THIS org (client side). Accept
  *                              a pending invitation (the explicit consent
- *                              step the epic's DoD requires), or revoke.
+ *                              step), decline, or revoke.
  *
- * Every mutating action re-`reload()`s its own list, never mutates local
- * state optimistically — the revoke DoD test this UI exercises depends on
- * the very next read reflecting the server's fresh state, not a client-side
- * guess.
+ * Both lists are fetched here so the tab bar can show counts and flag
+ * invitations waiting on this org. Every mutation `reload()`s its own list
+ * — never an optimistic local edit — so the very next read reflects the
+ * server's state (the revoke DoD depends on it).
  */
+
+const REVOCABLE: AgencyLinkStatus[] = ["active", "pending", "paused"];
+
 export function AgencyClientsView() {
+  const clients = useAsyncData(listAgencyClients, []);
+  const incoming = useAsyncData(listIncomingAgencyLinks, []);
+
+  const clientCount = clients.status === "success" ? clients.data.length : undefined;
+  const awaitingUs = incoming.status === "success" ? incoming.data.filter((l) => l.status === "pending").length : 0;
+  const incomingCount = incoming.status === "success" ? incoming.data.length : undefined;
+
   return (
     <Tabs defaultValue="clients">
-      <TabsList>
-        <TabsTrigger value="clients">My clients</TabsTrigger>
-        <TabsTrigger value="incoming">Agencies managing us</TabsTrigger>
-      </TabsList>
-      <TabsContent value="clients">
-        <ManagedClientsPanel />
+      <PageHeader
+        title="Agency"
+        description="Client organizations you manage, and agencies with access to yours. Every link is an explicit grant the other side accepted."
+        tabs={
+          <TabsList variant="underline" aria-label="Agency relationships">
+            <TabsTrigger value="clients" className="gap-2">
+              Clients
+              {clientCount !== undefined && <TabCount value={clientCount} />}
+            </TabsTrigger>
+            <TabsTrigger value="incoming" className="gap-2">
+              Agencies with access
+              {awaitingUs > 0 ? (
+                <TabCount value={awaitingUs} attention label={`${awaitingUs} awaiting your response`} />
+              ) : (
+                incomingCount !== undefined && <TabCount value={incomingCount} />
+              )}
+            </TabsTrigger>
+          </TabsList>
+        }
+      />
+      <TabsContent value="clients" className="mt-0">
+        <ManagedClientsPanel state={clients} />
       </TabsContent>
-      <TabsContent value="incoming">
-        <IncomingAgenciesPanel />
+      <TabsContent value="incoming" className="mt-0">
+        <IncomingAgenciesPanel state={incoming} />
       </TabsContent>
     </Tabs>
   );
 }
 
-function ManagedClientsPanel() {
-  const { reload, ...state } = useAsyncData(listAgencyClients, []);
-  const [revokingId, setRevokingId] = useState<string | null>(null);
+function TabCount({ value, attention = false, label }: { value: number; attention?: boolean; label?: string }) {
+  return (
+    <span
+      className={
+        attention
+          ? "inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning-muted px-1.5 font-mono text-[11px] font-medium tabular-nums text-warning"
+          : "inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-surface px-1.5 font-mono text-[11px] tabular-nums text-muted-foreground"
+      }
+    >
+      <span aria-hidden={label ? true : undefined}>{value}</span>
+      {label && <span className="sr-only">{label}</span>}
+    </span>
+  );
+}
+
+type ListState<T> = AsyncState<T[]> & { isRefreshing: boolean; reload: () => void };
+
+// ---------------------------------------------------------------------------
+// Agency side — "Clients"
+
+const CLIENT_COLUMNS: SkeletonColumn[] = [
+  { header: "Client", cell: "entity" },
+  { header: "Access", cell: "badge" },
+  { header: "Status", cell: "badge" },
+  { header: "AI Visibility", cell: "number", align: "right" },
+  { header: "Open opps", cell: "number", align: "right" },
+  { header: "Invited", cell: "meta" },
+  { header: "", cell: "meta" },
+];
+
+const STATUS_FILTER: { value: AgencyLinkStatus | "all"; label: string }[] = [
+  { value: "all", label: "All statuses" },
+  ...(["active", "pending", "paused", "revoked", "terminated"] as const).map((s) => ({ value: s, label: LINK_STATUS_LABEL[s] })),
+];
+
+function ManagedClientsPanel({ state }: { state: ListState<AgencyClientLink> }) {
+  const { reload } = state;
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<AgencyLinkStatus | "all">("all");
+  const [pendingRevoke, setPendingRevoke] = useState<AgencyClientLink | null>(null);
   const { toast } = useToast();
 
   async function handleRevoke(link: AgencyClientLink) {
-    const confirmed = window.confirm(
-      `Revoke access to ${link.clientOrgName ?? "this client"}? This takes effect immediately — the very next request "acting as" this client will be rejected.`,
-    );
-    if (!confirmed) return;
-    setRevokingId(link.id);
     try {
       await revokeAgencyClient(link.id);
       toast({ title: "Access revoked", description: `${link.clientOrgName ?? "This client"}'s data is no longer reachable.`, variant: "success" });
       reload();
     } catch {
       toast({ title: "Couldn't revoke access", description: "Try again in a moment.", variant: "danger" });
-    } finally {
-      setRevokingId(null);
     }
   }
 
-  if (state.status === "loading") {
-    return <Skeleton className="h-64 w-full rounded-xl" />;
-  }
+  const links = state.status === "success" ? state.data : null;
+  const firstRun = links !== null && links.length === 0;
+  const hasFilters = search.trim() !== "" || status !== "all";
 
-  if (state.status === "error") {
-    return <ErrorPanel message={state.error.message} onRetry={reload} />;
-  }
+  // The API returns this org's full link list (no pagination), so these
+  // totals are across every link, not a page of them.
+  const active = links?.filter((l) => l.status === "active") ?? [];
+  const pending = links?.filter((l) => l.status === "pending").length ?? 0;
+  const opportunityCounts = active.map((l) => l.summary?.openOpportunities).filter((n): n is number => typeof n === "number");
+  const openOpportunities = opportunityCounts.length > 0 ? opportunityCounts.reduce((a, b) => a + b, 0) : null;
 
-  const links = state.data;
-  const revocable = (status: AgencyClientLink["status"]) => status === "active" || status === "pending" || status === "paused";
+  const q = search.trim().toLowerCase();
+  const visible =
+    links?.filter(
+      (l) =>
+        (status === "all" || l.status === status) &&
+        (!q || (l.clientOrgName ?? "").toLowerCase().includes(q) || (l.clientOrgSlug ?? "").toLowerCase().includes(q)),
+    ) ?? [];
+
+  function clearFilters() {
+    setSearch("");
+    setStatus("all");
+  }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[13px] text-muted-foreground">
-          {links.length === 0 ? "No client organizations yet." : `${links.length} client organization${links.length === 1 ? "" : "s"}.`}
-        </p>
-        <InviteClientDialog onInvited={() => reload()} />
-      </div>
-
-      {links.length === 0 ? (
-        <EmptyState
-          icon={<Handshake size={20} />}
-          eyebrow="Agency"
-          title="No client organizations yet"
-          description="Invite a client by their organization slug. They'll need to accept before you can view or act on their data — nothing here grants access unilaterally."
-          action={<InviteClientDialog onInvited={() => reload()} />}
-        />
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Client</TableHead>
-              <TableHead>Access</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>AI Visibility</TableHead>
-              <TableHead>Open opportunities</TableHead>
-              <TableHead>Invited</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {links.map((link) => (
-              <TableRow key={link.id}>
-                <TableCell>
-                  <p className="text-[13px] font-medium text-foreground">{link.clientOrgName ?? "(deleted org)"}</p>
-                  <p className="text-[12px] text-muted-foreground">{link.clientOrgSlug}</p>
-                </TableCell>
-                <TableCell>
-                  <AgencyRoleBadge role={link.role} size="sm" />
-                </TableCell>
-                <TableCell>
-                  <AgencyLinkStatusBadge status={link.status} size="sm" />
-                </TableCell>
-                <TableCell>
-                  {link.summary ? <AvsCell score={link.summary.aiVisibilityScore} /> : <span className="text-subtle-foreground">—</span>}
-                </TableCell>
-                <TableCell>
-                  {link.summary?.openOpportunities !== null && link.summary?.openOpportunities !== undefined ? (
-                    <span className="font-mono text-[12.5px]">{link.summary.openOpportunities}</span>
-                  ) : (
-                    <span className="text-subtle-foreground">—</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <span className="text-[12.5px] text-muted-foreground">{formatDate(link.invitedAt)}</span>
-                </TableCell>
-                <TableCell className="text-right">
-                  {revocable(link.status) ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleRevoke(link)}
-                      loading={revokingId === link.id}
-                      disabled={revokingId !== null}
-                    >
-                      <ShieldOff size={13} /> Revoke
-                    </Button>
-                  ) : (
-                    <span className="text-[12px] text-subtle-foreground">—</span>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+    <PageStack>
+      {!firstRun && state.status !== "error" && (
+        <StatGrid columns={3}>
+          <StatTile
+            label="Active clients"
+            icon={<Building2 size={13} />}
+            loading={!links}
+            value={formatNumber(active.length)}
+            hint="Accepted, and readable now"
+          />
+          <StatTile
+            label="Awaiting acceptance"
+            icon={<Clock size={13} />}
+            loading={!links}
+            value={formatNumber(pending)}
+            hint="Invitations the client hasn't answered"
+          />
+          <StatTile
+            label="Open opportunities"
+            icon={<Lightbulb size={13} />}
+            loading={!links}
+            value={openOpportunities === null ? "—" : formatNumber(openOpportunities)}
+            muted={openOpportunities === null}
+            hint="Across active clients"
+          />
+        </StatGrid>
       )}
+
+      {!firstRun && state.status !== "error" && (
+        <Toolbar
+          end={
+            <>
+              {links && <ResultCount count={visible.length} noun="client" />}
+              <InviteClientDialog onInvited={() => reload()} />
+            </>
+          }
+        >
+          <ToolbarSearch value={search} onChange={setSearch} placeholder="Search name or slug" label="Search clients" />
+          <FilterSelect value={status} onValueChange={setStatus} options={STATUS_FILTER} label="Filter by status" />
+          {hasFilters && <ClearFiltersButton onClick={clearFilters} />}
+        </Toolbar>
+      )}
+
+      <Reveal>
+        {state.status === "loading" && <TableSkeleton columns={CLIENT_COLUMNS} rows={4} label="Loading clients…" />}
+
+        {state.status === "error" && <ErrorPanel title="Clients didn't load" message={state.error.message} onRetry={reload} />}
+
+        {firstRun && (
+          <EmptyState
+            icon={<Handshake size={20} />}
+            title="No client organizations yet"
+            description="Invite a client by their organization slug. They have to accept before you can see or act on anything — access is never granted one-sided."
+            action={<InviteClientDialog onInvited={() => reload()} />}
+          />
+        )}
+
+        {links && links.length > 0 && visible.length === 0 && (
+          <NoResults noun="clients" onClear={clearFilters} hint="Try a different name, slug, or status." />
+        )}
+
+        {visible.length > 0 && (
+          <RefreshOverlay active={state.isRefreshing}>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Access</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">AI Visibility</TableHead>
+                  <TableHead className="text-right">Open opps</TableHead>
+                  <TableHead>Invited</TableHead>
+                  <TableHead>
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visible.map((link) => (
+                  <TableRow key={link.id}>
+                    <TableCell>
+                      <OrgCell name={link.clientOrgName} slug={link.clientOrgSlug} />
+                    </TableCell>
+                    <TableCell>
+                      <AgencyRoleBadge role={link.role} size="sm" />
+                    </TableCell>
+                    <TableCell>
+                      <AgencyLinkStatusBadge status={link.status} size="sm" />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <AvsCell score={link.summary?.aiVisibilityScore ?? null} />
+                    </TableCell>
+                    <TableCell className={`text-right ${typography.numeric}`}>
+                      {typeof link.summary?.openOpportunities === "number" ? (
+                        formatNumber(link.summary.openOpportunities)
+                      ) : (
+                        <span className="text-subtle-foreground">&mdash;</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <time dateTime={link.invitedAt} title={formatDate(link.invitedAt)} className={typography.meta}>
+                        {formatRelativeTime(link.invitedAt)}
+                      </time>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {REVOCABLE.includes(link.status) && (
+                        <Button variant="ghost" size="sm" onClick={() => setPendingRevoke(link)}>
+                          <ShieldOff size={13} aria-hidden="true" />
+                          {link.status === "pending" ? "Withdraw" : "Revoke"}
+                          <span className="sr-only"> access to {link.clientOrgName ?? "this client"}</span>
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </RefreshOverlay>
+        )}
+      </Reveal>
+
+      <ConfirmDialog
+        open={pendingRevoke !== null}
+        onOpenChange={(open) => !open && setPendingRevoke(null)}
+        title={pendingRevoke?.status === "pending" ? "Withdraw this invitation?" : `Revoke access to ${pendingRevoke?.clientOrgName ?? "this client"}?`}
+        description="This takes effect immediately — the very next request acting as this client is rejected. To work with them again you'll need to send a new invitation."
+        confirmLabel={pendingRevoke?.status === "pending" ? "Withdraw invitation" : "Revoke access"}
+        onConfirm={() => (pendingRevoke ? handleRevoke(pendingRevoke) : undefined)}
+      />
+    </PageStack>
+  );
+}
+
+function OrgCell({ name, slug }: { name: string | null; slug: string | null }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5">
+      <Avatar fallback={getInitials(name ?? slug ?? "?")} size="sm" />
+      <div className="min-w-0">
+        <p className="truncate text-[13px] font-medium text-foreground">{name ?? "Deleted organization"}</p>
+        <p className="truncate font-mono text-[11.5px] text-muted-foreground">{slug ?? "—"}</p>
+      </div>
     </div>
   );
 }
 
-function IncomingAgenciesPanel() {
-  const { reload, ...state } = useAsyncData(listIncomingAgencyLinks, []);
+// ---------------------------------------------------------------------------
+// Client side — "Agencies with access"
+
+const INCOMING_COLUMNS: SkeletonColumn[] = [
+  { header: "Agency", cell: "entity" },
+  { header: "Access requested", cell: "badge" },
+  { header: "Status", cell: "badge" },
+  { header: "Invited", cell: "meta" },
+  { header: "", cell: "meta" },
+];
+
+function IncomingAgenciesPanel({ state }: { state: ListState<IncomingAgencyLink> }) {
+  const { reload } = state;
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [pendingRevoke, setPendingRevoke] = useState<IncomingAgencyLink | null>(null);
   const { toast } = useToast();
 
   async function handleAccept(link: IncomingAgencyLink) {
@@ -198,88 +354,116 @@ function IncomingAgenciesPanel() {
   }
 
   async function handleRevoke(link: IncomingAgencyLink) {
-    const confirmed = window.confirm(`Remove ${link.agencyOrgName ?? "this agency"}'s access to your organization? This takes effect immediately.`);
-    if (!confirmed) return;
-    setBusyId(link.id);
     try {
       await revokeAgencyClient(link.id);
       toast({ title: "Access removed", description: `${link.agencyOrgName ?? "That agency"} can no longer act on your organization.`, variant: "success" });
       reload();
     } catch {
       toast({ title: "Couldn't remove access", description: "Try again in a moment.", variant: "danger" });
-    } finally {
-      setBusyId(null);
     }
   }
 
-  if (state.status === "loading") {
-    return <Skeleton className="h-64 w-full rounded-xl" />;
-  }
-
-  if (state.status === "error") {
-    return <ErrorPanel message={state.error.message} onRetry={reload} />;
-  }
-
-  const links = state.data;
-  const revocable = (status: IncomingAgencyLink["status"]) => status === "active" || status === "pending" || status === "paused";
-
-  if (links.length === 0) {
-    return (
-      <EmptyState
-        compact
-        icon={<Users size={18} />}
-        eyebrow="Agency"
-        title="No agencies manage this organization"
-        description="If an agency invites you, their invitation will appear here for your organization's admin to accept."
-      />
-    );
-  }
+  const links = state.status === "success" ? state.data : null;
+  const waiting = links?.filter((l) => l.status === "pending").length ?? 0;
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Agency</TableHead>
-          <TableHead>Access offered</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Invited</TableHead>
-          <TableHead className="text-right">Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {links.map((link) => (
-          <TableRow key={link.id}>
-            <TableCell>
-              <p className="text-[13px] font-medium text-foreground">{link.agencyOrgName ?? "(deleted org)"}</p>
-              <p className="text-[12px] text-muted-foreground">{link.agencyOrgSlug}</p>
-            </TableCell>
-            <TableCell>
-              <AgencyRoleBadge role={link.role} size="sm" />
-            </TableCell>
-            <TableCell>
-              <AgencyLinkStatusBadge status={link.status} size="sm" />
-            </TableCell>
-            <TableCell>
-              <span className="text-[12.5px] text-muted-foreground">{formatDate(link.invitedAt)}</span>
-            </TableCell>
-            <TableCell className="text-right">
-              <div className="flex items-center justify-end gap-2">
-                {link.status === "pending" && (
-                  <Button variant="primary" size="sm" onClick={() => handleAccept(link)} loading={busyId === link.id} disabled={busyId !== null}>
-                    Accept
-                  </Button>
-                )}
-                {revocable(link.status) && (
-                  <Button variant="outline" size="sm" onClick={() => handleRevoke(link)} loading={busyId === link.id} disabled={busyId !== null}>
-                    <ShieldOff size={13} /> {link.status === "pending" ? "Decline" : "Revoke"}
-                  </Button>
-                )}
-                {!revocable(link.status) && <Badge variant="neutral" size="sm">No action</Badge>}
-              </div>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <PageStack>
+      {waiting > 0 && (
+        <Reveal>
+          <Notice tone="warning" title={waiting === 1 ? "1 agency is waiting for your answer" : `${waiting} agencies are waiting for your answer`}>
+            Nothing is shared until you accept. Accepting gives the agency the access level shown, and you can revoke it at any time.
+          </Notice>
+        </Reveal>
+      )}
+
+      <Reveal>
+        {state.status === "loading" && <TableSkeleton columns={INCOMING_COLUMNS} rows={3} label="Loading agencies…" />}
+
+        {state.status === "error" && <ErrorPanel title="Agencies didn't load" message={state.error.message} onRetry={reload} />}
+
+        {links && links.length === 0 && (
+          <EmptyState
+            icon={<Users size={20} />}
+            title="No agencies have access"
+            description="When an agency invites your organization, the invitation appears here for an admin to accept or decline. Nothing is shared until you accept."
+          />
+        )}
+
+        {links && links.length > 0 && (
+          <RefreshOverlay active={state.isRefreshing}>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Agency</TableHead>
+                  <TableHead>Access requested</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Invited</TableHead>
+                  <TableHead>
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortPendingFirst(links).map((link) => {
+                  const name = link.agencyOrgName ?? "this agency";
+                  return (
+                    <TableRow key={link.id}>
+                      <TableCell>
+                        <OrgCell name={link.agencyOrgName} slug={link.agencyOrgSlug} />
+                      </TableCell>
+                      <TableCell>
+                        <AgencyRoleBadge role={link.role} size="sm" />
+                      </TableCell>
+                      <TableCell>
+                        <AgencyLinkStatusBadge status={link.status} size="sm" />
+                      </TableCell>
+                      <TableCell>
+                        <time dateTime={link.invitedAt} title={formatDate(link.invitedAt)} className={typography.meta}>
+                          {formatRelativeTime(link.invitedAt)}
+                        </time>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {REVOCABLE.includes(link.status) && (
+                            <Button variant="ghost" size="sm" onClick={() => setPendingRevoke(link)} disabled={busyId !== null}>
+                              {link.status === "pending" ? "Decline" : "Revoke"}
+                              <span className="sr-only"> {name}</span>
+                            </Button>
+                          )}
+                          {link.status === "pending" && (
+                            <Button variant="primary" size="sm" onClick={() => handleAccept(link)} loading={busyId === link.id} disabled={busyId !== null}>
+                              <ShieldCheck size={13} aria-hidden="true" />
+                              Accept
+                              <span className="sr-only"> invitation from {name}</span>
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </RefreshOverlay>
+        )}
+      </Reveal>
+
+      <ConfirmDialog
+        open={pendingRevoke !== null}
+        onOpenChange={(open) => !open && setPendingRevoke(null)}
+        title={
+          pendingRevoke?.status === "pending"
+            ? `Decline ${pendingRevoke.agencyOrgName ?? "this agency"}'s invitation?`
+            : `Remove ${pendingRevoke?.agencyOrgName ?? "this agency"}'s access?`
+        }
+        description="This takes effect immediately. The agency can't see or act on your organization unless they send a new invitation and you accept it."
+        confirmLabel={pendingRevoke?.status === "pending" ? "Decline invitation" : "Remove access"}
+        onConfirm={() => (pendingRevoke ? handleRevoke(pendingRevoke) : undefined)}
+      />
+    </PageStack>
   );
+}
+
+function sortPendingFirst(links: IncomingAgencyLink[]): IncomingAgencyLink[] {
+  return [...links].sort((a, b) => Number(b.status === "pending") - Number(a.status === "pending"));
 }
