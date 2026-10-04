@@ -2,19 +2,21 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, ChevronDown, ChevronUp, Minus, TrendingDown, TrendingUp } from "lucide-react";
-import { Badge, Skeleton } from "@bebest/ui";
+import { ArrowRight, CalendarClock, Minus, TrendingDown, TrendingUp } from "lucide-react";
+import { Badge, Skeleton, cn } from "@bebest/ui";
 import { ErrorPanel } from "@/components/patterns/error-panel";
 import { useAsyncData } from "@/lib/use-async-data";
 import { getActionMeasurement } from "@/data/measurement/client";
 import { ATTRIBUTION_CONFIDENCE_BADGE_VARIANT, ATTRIBUTION_CONFIDENCE_LABEL } from "@/data/measurement/labels";
 import type { GeoScoreComponent, Measurement, ScoreDeltaBasis, ScoreSnapshot, SeoScoreComponent } from "@/data/measurement/types";
 import type { ActionWithContext } from "@/data/actions/types";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime, formatDelta } from "@/lib/format";
+import { DisclosureButton } from "@/components/recommendations/level-meter";
+import { ScoreShift } from "@/components/reports/score-shift";
 
 /** The backend's own 4-week trigger (`schedule-remeasurement.ts`'s
- *  `FOUR_WEEKS_MS`) — used here only to give the "not measured yet" state a
- *  real, honest ETA, never to predict the actual measurement itself. */
+ *  `FOUR_WEEKS_MS`) — used only to give the "not measured yet" state an
+ *  honest ETA, never to predict the measurement itself. */
 const REMEASUREMENT_WINDOW_DAYS = 28;
 
 function addDays(iso: string, days: number): string {
@@ -23,15 +25,10 @@ function addDays(iso: string, days: number): string {
   return d.toISOString();
 }
 
-/**
- * Which component `computeScoreDelta` (`apps/api/src/lib/measurement/
- * scoring.ts`) actually compared — GEO preferred over SEO when both sides
- * have a GEO component, SEO as the fallback, `"none"` otherwise. The API
- * response carries the resulting `scoreDelta` number but not this label, so
- * it's re-derived here from the same before/after snapshot using the
- * identical preference order the backend's own pure function documents —
- * if that preference order ever changes, this must change with it.
- */
+/** Which component `computeScoreDelta` (`apps/api/src/lib/measurement/
+ *  scoring.ts`) compared — GEO preferred over SEO when both sides have it.
+ *  Re-derived here with the identical preference order; if the backend's
+ *  order changes, this must change with it. */
 function pickDeltaBasis(before: ScoreSnapshot, after: ScoreSnapshot): ScoreDeltaBasis {
   if (before.geo && after.geo) return "geo";
   if (before.seo && after.seo) return "seo";
@@ -49,47 +46,47 @@ function basisLabel(basis: ScoreDeltaBasis): string {
   return "score";
 }
 
+const shell = "rounded-lg border border-border bg-surface/60 px-3.5 py-3";
+const eyebrow = "font-mono text-[10.5px] font-medium uppercase tracking-[0.12em] text-subtle-foreground";
+
 /**
- * The before/after delta and attribution estimate for one completed (or
- * rolled-back) action — Epic 14's UI surface, per its own spec: "surface
- * the before/after delta directly on the action it measures, with the
- * attribution confidence visibly labeled, never presented as more certain
- * than it is." Self-fetches `GET /actions/:id/measurement`, same
- * per-row-self-fetch convention `keyword-group-card.tsx` (Epic 4) already
- * establishes, rather than the parent list view bulk-loading every action's
- * measurement up front.
+ * "Did it work?" for one completed (or rolled-back) action — Epic 14's
+ * before/after delta with attribution confidence visibly labeled, never
+ * presented as more certain than it is. Self-fetches `GET
+ * /actions/:id/measurement`.
  */
 export function MeasurementPanel({ action }: { action: ActionWithContext }) {
   const { reload, ...state } = useAsyncData(() => getActionMeasurement(action.id), [action.id]);
 
   if (state.status === "loading") {
     return (
-      <div className="rounded-lg border border-border bg-surface p-3 flex flex-col gap-2">
-        <Skeleton className="h-2.5 w-28" />
-        <Skeleton className="h-6 w-36" />
+      <div className={cn(shell, "flex flex-col gap-2")} aria-busy="true">
+        <span className="sr-only">Loading outcome…</span>
+        <Skeleton className="h-2.5 w-24" />
+        <Skeleton className="h-6 w-32" />
+        <Skeleton className="h-2 w-full" />
       </div>
     );
   }
 
   if (state.status === "error") {
-    return (
-      <div className="rounded-lg border border-border bg-surface p-3">
-        <ErrorPanel compact title="Couldn't load the outcome measurement" message={state.error.message} onRetry={reload} />
-      </div>
-    );
+    return <ErrorPanel compact title="Couldn't load the outcome measurement" message={state.error.message} onRetry={reload} />;
   }
 
   if (!state.data.measured) {
     const { executedAt, beforeScoreCapturedAt } = state.data.action;
     const eta = executedAt ? addDays(executedAt, REMEASUREMENT_WINDOW_DAYS) : null;
     return (
-      <div className="rounded-lg border border-border bg-surface p-3">
-        <p className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-subtle-foreground mb-1">Did it work?</p>
-        <p className="text-[12.5px] text-muted-foreground leading-relaxed">
-          {beforeScoreCapturedAt
-            ? `A baseline score was captured before this action ran. We automatically re-measure ~4 weeks after execution to see what changed${eta ? ` — around ${formatDate(eta)}` : ""}, and it'll show up here once it does.`
-            : "No baseline score was available to compare against when this action was approved, so its effect can't be measured against a before/after."}
-        </p>
+      <div className={cn(shell, "flex items-start gap-3")}>
+        <CalendarClock size={15} className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <div className="min-w-0">
+          <p className={eyebrow}>Did it work?</p>
+          <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+            {beforeScoreCapturedAt
+              ? `A baseline was captured before this ran. We re-measure about 4 weeks after execution${eta ? ` — around ${formatDate(eta)}` : ""} and the result appears here.`
+              : "No baseline score existed when this was approved, so its effect can't be measured as a before/after."}
+          </p>
+        </div>
       </div>
     );
   }
@@ -106,70 +103,57 @@ function MeasuredOutcome({ measurement }: { measurement: Measurement }) {
 
   const direction = delta === null ? "none" : delta > 0 ? "up" : delta < 0 ? "down" : "flat";
   const DirectionIcon = direction === "up" ? TrendingUp : direction === "down" ? TrendingDown : Minus;
-  const directionColor =
-    direction === "up" ? "text-success" : direction === "down" ? "text-danger" : "text-muted-foreground";
+  const directionColor = direction === "up" ? "text-success" : direction === "down" ? "text-danger" : "text-muted-foreground";
 
   return (
-    <div className="rounded-lg border border-border bg-surface p-3 flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
+    <div className={cn(shell, "flex flex-col gap-3")}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-subtle-foreground mb-1">Did it work?</p>
-          <div className="flex items-baseline gap-2">
-            <DirectionIcon size={16} className={`${directionColor} shrink-0`} aria-hidden="true" />
+          <p className={eyebrow}>Did it work?</p>
+          <div className="mt-1 flex items-baseline gap-2">
+            <DirectionIcon size={16} className={cn("shrink-0 self-center", directionColor)} aria-hidden="true" />
             {delta !== null ? (
-              <p className={`font-mono text-[22px] font-semibold leading-none ${directionColor}`}>
-                {delta > 0 ? "+" : ""}
-                {delta.toFixed(1)} <span className="text-[13px] font-normal text-muted-foreground">pts</span>
+              <p className={cn("text-[22px] font-semibold leading-none tabular-nums", directionColor)}>
+                {formatDelta(delta, 1)} <span className="text-[13px] font-normal text-muted-foreground">pts</span>
               </p>
             ) : (
-              <p className="font-mono text-[16px] font-medium text-muted-foreground leading-none">Not enough data</p>
+              <p className="text-[15px] font-medium leading-none text-muted-foreground">Not enough data</p>
             )}
           </div>
-          {basis !== "none" && before !== null && after !== null && (
-            <p className="text-[11.5px] text-muted-foreground mt-1">
+          {before !== null && after !== null && (
+            <p className="mt-1.5 font-mono text-[12px] tabular-nums text-muted-foreground">
               {basisLabel(basis)}: {before.toFixed(1)} → {after.toFixed(1)}
             </p>
           )}
         </div>
-        <Badge variant={ATTRIBUTION_CONFIDENCE_BADGE_VARIANT[measurement.attributionConfidence]} size="sm">
+        <Badge variant={ATTRIBUTION_CONFIDENCE_BADGE_VARIANT[measurement.attributionConfidence]} size="sm" className="self-start">
           {ATTRIBUTION_CONFIDENCE_LABEL[measurement.attributionConfidence]}
         </Badge>
       </div>
 
-      <p className="text-[12px] text-muted-foreground leading-relaxed">{measurement.attributionNotes}</p>
+      {before !== null && after !== null && <ScoreShift before={before} after={after} beforeLabel="Before" afterLabel="After" />}
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          className="inline-flex items-center gap-1 text-[11.5px] font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
-        >
-          {expanded ? (
-            <>
-              Hide score breakdown <ChevronUp size={12} />
-            </>
-          ) : (
-            <>
-              Show score breakdown <ChevronDown size={12} />
-            </>
-          )}
-        </button>
+      <p className="text-[12.5px] leading-relaxed text-muted-foreground">{measurement.attributionNotes}</p>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <DisclosureButton expanded={expanded} onClick={() => setExpanded((v) => !v)}>
+          Score breakdown
+        </DisclosureButton>
         {measurement.afterAiRunId && (
           <Link
             href="/ai-visibility"
-            className="inline-flex items-center gap-1 text-[11.5px] font-medium text-accent hover:underline"
+            className="inline-flex items-center gap-1 rounded-sm text-[12.5px] font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            View raw AI responses in AI Visibility <ArrowRight size={11} />
+            Raw AI responses <ArrowRight size={12} aria-hidden="true" />
           </Link>
         )}
-        <span className="text-[11px] text-subtle-foreground">Measured {formatDateTime(measurement.measuredAt)}</span>
+        <span className="ml-auto text-[12px] text-subtle-foreground">Measured {formatDateTime(measurement.measuredAt)}</span>
       </div>
 
       {expanded && (
-        <div className="rounded-lg border border-border/70 bg-background p-3 flex flex-col gap-3">
-          <ComponentBreakdown label="Baseline (before)" snapshot={measurement.beforeScore} capturedAt={measurement.beforeScoreCapturedAt} />
-          <ComponentBreakdown label="Re-measured (after)" snapshot={measurement.afterScore} capturedAt={measurement.afterScore.capturedAt} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <ComponentBreakdown label="Before" snapshot={measurement.beforeScore} capturedAt={measurement.beforeScoreCapturedAt} />
+          <ComponentBreakdown label="After" snapshot={measurement.afterScore} capturedAt={measurement.afterScore.capturedAt} />
         </div>
       )}
     </div>
@@ -178,11 +162,11 @@ function MeasuredOutcome({ measurement }: { measurement: Measurement }) {
 
 function ComponentBreakdown({ label, snapshot, capturedAt }: { label: string; snapshot: ScoreSnapshot; capturedAt: string }) {
   return (
-    <div>
-      <p className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-subtle-foreground mb-1.5">
-        {label} · captured {formatDate(capturedAt)}
+    <div className="rounded-lg border border-border bg-surface-raised p-3">
+      <p className={cn(eyebrow, "mb-2")}>
+        {label} · {formatDate(capturedAt)}
       </p>
-      {!snapshot.geo && !snapshot.seo && <p className="text-[12px] text-subtle-foreground">No comparable score data for this snapshot.</p>}
+      {!snapshot.geo && !snapshot.seo && <p className="text-[12.5px] text-muted-foreground">No comparable score data for this snapshot.</p>}
       {snapshot.geo && <GeoRow component={snapshot.geo} />}
       {snapshot.seo && <SeoRow component={snapshot.seo} />}
     </div>
@@ -191,21 +175,21 @@ function ComponentBreakdown({ label, snapshot, capturedAt }: { label: string; sn
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <p className="text-[10px] text-subtle-foreground">{label}</p>
-      <p className="font-mono text-[13px] text-foreground">{value}</p>
+    <div className="min-w-0">
+      <p className="truncate text-[11px] text-muted-foreground">{label}</p>
+      <p className="font-mono text-[13px] tabular-nums text-foreground">{value}</p>
     </div>
   );
 }
 
 function GeoRow({ component }: { component: GeoScoreComponent }) {
   return (
-    <div className="flex flex-col gap-1.5 mb-2 last:mb-0">
-      <p className="text-[11.5px] font-medium text-foreground">
-        AI Visibility Score — {component.aiVisibilityScore.toFixed(1)}{" "}
-        <span className="font-mono text-[10px] text-subtle-foreground font-normal">formula v{component.formulaVersion}</span>
+    <div className="mb-3 flex flex-col gap-2 last:mb-0">
+      <p className="text-[12.5px] font-medium text-foreground">
+        AI Visibility {component.aiVisibilityScore.toFixed(1)}{" "}
+        <span className="font-mono text-[10.5px] font-normal text-subtle-foreground">formula v{component.formulaVersion}</span>
       </p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <Stat label="Mention" value={component.mentionScore.toFixed(1)} />
         <Stat label="Recommendation" value={component.recommendationScore.toFixed(1)} />
         <Stat label="Position" value={component.positionScore.toFixed(1)} />
@@ -217,11 +201,11 @@ function GeoRow({ component }: { component: GeoScoreComponent }) {
 
 function SeoRow({ component }: { component: SeoScoreComponent }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <p className="text-[11.5px] font-medium text-foreground">
-        SEO Health Score — {component.overallScore.toFixed(1)}{" "}
-        <span className="font-mono text-[10px] text-subtle-foreground font-normal">
-          formula v{component.formulaVersion} · {component.pagesAnalyzed} page{component.pagesAnalyzed === 1 ? "" : "s"} analyzed
+    <div className="flex flex-col gap-2">
+      <p className="text-[12.5px] font-medium text-foreground">
+        SEO Health {component.overallScore.toFixed(1)}{" "}
+        <span className="font-mono text-[10.5px] font-normal text-subtle-foreground">
+          v{component.formulaVersion} · {component.pagesAnalyzed} page{component.pagesAnalyzed === 1 ? "" : "s"}
         </span>
       </p>
       <div className="grid grid-cols-2 gap-2">

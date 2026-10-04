@@ -1,42 +1,54 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useId, useState } from "react";
 import { Play } from "lucide-react";
-import { Button, Card, CardContent, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@bebest/ui";
-import type { AgentName, AutonomyLevel } from "@/data/agents/types";
+import { Button, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@bebest/ui";
+import type { AgentName, AgentRun, AutonomyLevel } from "@/data/agents/types";
 import { AUTONOMY_LEVELS } from "@/data/agents/types";
 import { AGENT_NAME_DESCRIPTION, AGENT_NAME_LABEL, AUTONOMY_LEVEL_DESCRIPTION, AUTONOMY_LEVEL_LABEL } from "@/data/agents/labels";
+import { formatDateTime, formatRelativeTime } from "@/lib/format";
+import { AgentIconTile, RunStatusBadge } from "./agent-meta";
 
 /**
- * One agent's trigger control — `docs/epics/12-agents.md`'s "trigger the
- * GEO Agent on demand" (end-to-end flow step 1), extended to all three
- * agents this epic builds. The autonomy-level select only ever offers 1-3
- * (`AUTONOMY_LEVELS`) — level 4 is never a reachable choice anywhere in this
- * UI, per the epic's own "Level 4 must be unreachable" requirement; the
- * real hard-block still lives server-side (`lib/agents/autonomy.ts`), this
- * is just the UI never handing it a way to try.
+ * One agent's launch tile. The autonomy select only ever offers 1-3
+ * (`AUTONOMY_LEVELS`) — level 4 is never reachable from this UI, per the
+ * epic's "Level 4 must be unreachable" requirement; the real hard block
+ * lives server-side (`lib/agents/autonomy.ts`). `lastRun` is this agent's
+ * most recent run from the history list, linked so "what happened last
+ * time" is one click away from "run it again".
  */
 export function AgentTriggerCard({
   agentName,
   running,
+  lastRun,
   onRun,
 }: {
   agentName: AgentName;
   running: boolean;
+  lastRun?: AgentRun;
   onRun: (agentName: AgentName, autonomyLevel: AutonomyLevel) => void;
 }) {
   const [autonomyLevel, setAutonomyLevel] = useState<AutonomyLevel>(1);
+  const selectId = useId();
+  const descId = useId();
 
   return (
-    <Card>
-      <CardContent className="p-4 flex flex-col gap-3">
-        <div>
-          <h3 className="font-display text-[14.5px] font-semibold text-foreground">{AGENT_NAME_LABEL[agentName]}</h3>
-          <p className="text-[12.5px] text-muted-foreground mt-1 leading-relaxed">{AGENT_NAME_DESCRIPTION[agentName]}</p>
+    <div className="flex h-full flex-col gap-4 rounded-lg border border-border bg-surface-raised p-4 transition-colors hover:border-border-strong">
+      <div className="flex items-start gap-3">
+        <AgentIconTile agentName={agentName} />
+        <div className="min-w-0">
+          <h3 className="text-[14px] font-semibold text-foreground">{AGENT_NAME_LABEL[agentName]}</h3>
+          <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">{AGENT_NAME_DESCRIPTION[agentName]}</p>
         </div>
+      </div>
 
+      <div className="mt-auto flex flex-col gap-1.5">
+        <Label htmlFor={selectId} className="text-[12px]">
+          Autonomy
+        </Label>
         <Select value={String(autonomyLevel)} onValueChange={(v) => setAutonomyLevel(Number(v) as AutonomyLevel)} disabled={running}>
-          <SelectTrigger className="h-8 text-[12.5px]" aria-label={`Autonomy level for ${AGENT_NAME_LABEL[agentName]}`}>
+          <SelectTrigger id={selectId} aria-describedby={descId} className="h-9 text-[12.5px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -47,12 +59,30 @@ export function AgentTriggerCard({
             ))}
           </SelectContent>
         </Select>
-        <p className="text-[11.5px] text-subtle-foreground leading-relaxed -mt-1.5">{AUTONOMY_LEVEL_DESCRIPTION[autonomyLevel]}</p>
+        <p id={descId} className="min-h-[2lh] text-[12px] leading-snug text-muted-foreground">
+          {AUTONOMY_LEVEL_DESCRIPTION[autonomyLevel]}
+        </p>
+      </div>
 
-        <Button variant="primary" size="sm" loading={running} onClick={() => onRun(agentName, autonomyLevel)}>
-          <Play size={13} /> Run {AGENT_NAME_LABEL[agentName]}
+      <div className="flex flex-col gap-2.5 border-t border-border pt-3">
+        <Button variant="primary" size="md" loading={running} onClick={() => onRun(agentName, autonomyLevel)} className="w-full">
+          <Play size={13} aria-hidden="true" /> Run {AGENT_NAME_LABEL[agentName]}
         </Button>
-      </CardContent>
-    </Card>
+        {lastRun ? (
+          <Link
+            href={`/agents/${lastRun.id}`}
+            className="flex items-center justify-between gap-2 rounded-md text-[12px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span>
+              Last run{" "}
+              <span title={formatDateTime(lastRun.createdAt)}>{formatRelativeTime(lastRun.startedAt ?? lastRun.createdAt)}</span>
+            </span>
+            <RunStatusBadge status={lastRun.status} />
+          </Link>
+        ) : (
+          <p className="text-[12px] text-subtle-foreground">Never run</p>
+        )}
+      </div>
+    </div>
   );
 }

@@ -1,53 +1,62 @@
 import Link from "next/link";
 import { ArrowUpRight, Target } from "lucide-react";
 import { Badge, EmptyState } from "@bebest/ui";
-import { OPPORTUNITY_TYPE_BADGE_VARIANT, OPPORTUNITY_TYPE_LABEL, PRIORITY_LABEL } from "@/data/opportunities/labels";
+import { OPPORTUNITY_TYPE_LABEL, PRIORITY_LABEL } from "@/data/opportunities/labels";
 import type { Opportunity } from "@/data/opportunities/types";
 
 /**
- * A report's `newOpportunities` section — a frozen READ of the
- * `unified_opportunities` rows that existed at generation time (this
- * epic's immutability non-negotiable: these entries never re-render with a
- * status/priority the opportunity may since have moved to). Links out to
- * the live Opportunities screen to actually act on one, rather than
- * offering status/priority controls here that would silently drift from
- * what the frozen snapshot says.
+ * A report's `newOpportunities` — a frozen read of the rows that existed
+ * at generation time (they never re-render with a later status/priority).
+ * Each row links to the live Opportunities screen to act on it, with the
+ * score drawn as a bar so the strongest stand out at a glance.
  */
 export function ReportOpportunitiesList({ opportunities }: { opportunities: Opportunity[] }) {
   if (opportunities.length === 0) {
     return (
-      <EmptyState
-        compact
-        icon={<Target size={18} />}
-        title="No new opportunities in this period"
-        description="Nothing new surfaced from the SEO + GEO merge within this report's date range."
-      />
+      <div className="p-5">
+        <EmptyState
+          compact
+          icon={<Target size={18} />}
+          title="No new opportunities in this period"
+          description="Nothing new surfaced from the SEO + GEO merge within this report's date range."
+        />
+      </div>
     );
   }
 
   return (
-    <div className="flex flex-col divide-y divide-border rounded-lg border border-border overflow-hidden">
-      {opportunities.map((opportunity) => (
-        <Link
-          key={opportunity.id}
-          href="/opportunities"
-          className="group flex items-center justify-between gap-3 px-4 py-3 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-        >
-          <div className="min-w-0">
-            <p className="text-[13px] font-medium text-foreground truncate">{opportunity.title}</p>
-            <div className="flex items-center gap-2 mt-1">
-              <Badge variant={OPPORTUNITY_TYPE_BADGE_VARIANT[opportunity.type]} size="sm">
-                {OPPORTUNITY_TYPE_LABEL[opportunity.type]}
-              </Badge>
-              <span className="text-[11.5px] text-subtle-foreground">{PRIORITY_LABEL[opportunity.priority]}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <p className="font-mono text-[15px] font-semibold text-foreground">{opportunity.opportunityScore.toFixed(0)}</p>
-            <ArrowUpRight size={14} className="text-subtle-foreground group-hover:text-accent transition-colors" />
-          </div>
-        </Link>
-      ))}
-    </div>
+    <ul className="divide-y divide-border">
+      {opportunities.map((opportunity) => {
+        const score = Math.max(0, Math.min(100, opportunity.opportunityScore));
+        return (
+          <li key={opportunity.id}>
+            <Link
+              href="/opportunities"
+              className="group flex items-center justify-between gap-4 px-5 py-3 transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-[13px] font-medium text-foreground">{opportunity.title}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" size="sm">
+                    {OPPORTUNITY_TYPE_LABEL[opportunity.type]}
+                  </Badge>
+                  <span className="text-[12px] text-muted-foreground">{PRIORITY_LABEL[opportunity.priority]}</span>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <span className="hidden h-1.5 w-20 overflow-hidden rounded-full bg-surface sm:block" aria-hidden="true">
+                  <span className="block h-full rounded-full bg-foreground/60" style={{ width: `${score}%` }} />
+                </span>
+                <span className="w-8 text-right font-mono text-[13px] font-semibold tabular-nums text-foreground">
+                  {opportunity.opportunityScore.toFixed(0)}
+                  <span className="sr-only"> opportunity score out of 100</span>
+                </span>
+                <ArrowUpRight size={14} className="text-subtle-foreground transition-colors group-hover:text-accent" aria-hidden="true" />
+              </div>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

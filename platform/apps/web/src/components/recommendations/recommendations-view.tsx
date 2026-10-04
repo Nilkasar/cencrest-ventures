@@ -1,76 +1,113 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles } from "lucide-react";
-import { Button, Card, CardContent, EmptyState, Pagination, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, useToast } from "@bebest/ui";
-import { PageHeader } from "@/components/patterns/page-header";
+import Link from "next/link";
+import { CheckCircle2, CircleDashed, Loader, ShieldCheck, Sparkles } from "lucide-react";
+import { Button, EmptyState, Pagination, RefreshOverlay, Skeleton, useToast } from "@bebest/ui";
 import { ErrorPanel } from "@/components/patterns/error-panel";
+import { PageStack, Reveal } from "@/components/patterns/motion";
+import { Section } from "@/components/patterns/section";
+import { StatGrid, StatTile } from "@/components/patterns/stat-tile";
+import { ClearFiltersButton, FilterSelect, ResultCount, Toolbar } from "@/components/patterns/toolbar";
+import { NoResults } from "@/components/patterns/states";
 import { useAsyncData } from "@/lib/use-async-data";
 import { listRecommendations, updateRecommendationStatus } from "@/data/recommendations/client";
 import type { Recommendation, RecommendationActionType, RecommendationStatus } from "@/data/recommendations/types";
 import { ACTION_TYPE_LABEL, RECOMMENDATION_STATUS_LABEL } from "@/data/recommendations/labels";
 import { approvePendingAction, listPendingActionsByRecommendationId } from "@/data/agents/client";
 import type { AgentPendingAction } from "@/data/agents/types";
+import { formatNumber, formatPercent } from "@/lib/format";
 import { RecommendationCard } from "./recommendation-card";
 
-const STATUS_FILTERS: Array<RecommendationStatus | "all"> = ["all", "new", "in_progress", "completed", "dismissed"];
-const ACTION_TYPE_FILTERS: Array<RecommendationActionType | "all"> = ["all", "create_page", "update_page", "fix_technical", "build_citations"];
-const SHOW_OPTIONS = [10, 25, 50] as const;
+const STATUS_OPTIONS: { value: RecommendationStatus | "all"; label: string }[] = [
+  { value: "all", label: "All statuses" },
+  ...(["new", "in_progress", "completed", "dismissed"] as const).map((s) => ({ value: s, label: RECOMMENDATION_STATUS_LABEL[s] })),
+];
+const ACTION_TYPE_OPTIONS: { value: RecommendationActionType | "all"; label: string }[] = [
+  { value: "all", label: "All action types" },
+  ...(["create_page", "update_page", "fix_technical", "build_citations"] as const).map((t) => ({ value: t, label: ACTION_TYPE_LABEL[t] })),
+];
+const SHOW_OPTIONS = [
+  { value: "10", label: "10 per page" },
+  { value: "25", label: "25 per page" },
+  { value: "50", label: "50 per page" },
+] as const;
+type ShowValue = (typeof SHOW_OPTIONS)[number]["value"];
+
+/** Whole-brand status totals for the stat row — one `limit=1` request per
+ *  status reading the server's `pagination.total`, so the tiles count every
+ *  recommendation, never just the page on screen. */
+async function loadStatusCounts(): Promise<Record<RecommendationStatus | "all", number>> {
+  const statuses: RecommendationStatus[] = ["new", "in_progress", "completed", "dismissed"];
+  const [all, ...rest] = await Promise.all([
+    listRecommendations({ limit: 1 }),
+    ...statuses.map((status) => listRecommendations({ status, limit: 1 })),
+  ]);
+  return {
+    all: all!.pagination.total,
+    new: rest[0]!.pagination.total,
+    in_progress: rest[1]!.pagination.total,
+    completed: rest[2]!.pagination.total,
+    dismissed: rest[3]!.pagination.total,
+  };
+}
 
 function ListSkeleton() {
   return (
-    <div className="flex flex-col gap-3 p-5">
-      {Array.from({ length: 3 }).map((_, i) => (
-        <Skeleton key={i} className="h-28 w-full rounded-lg" />
+    <div className="divide-y divide-border rounded-xl border border-border bg-surface-raised shadow-sm" aria-busy="true">
+      <span className="sr-only">Loading recommendations…</span>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="flex gap-4 px-5 py-4" aria-hidden="true">
+          <Skeleton className="hidden size-11 shrink-0 rounded-lg sm:block" />
+          <div className="flex flex-1 flex-col gap-2.5">
+            <div className="flex justify-between gap-4">
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-8 w-32 rounded-md" />
+            </div>
+            <Skeleton className="h-3 w-56" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-4/5" />
+          </div>
+        </div>
       ))}
     </div>
   );
 }
 
 /**
- * Epic 10 (Recommendation Engine)'s own screen —
- * `docs/09-ux/CUSTOMER_JOURNEY.md`'s onboarding Step 6 ("first 3
- * recommendations") and Stage 4 dashboard's "top 10 prioritized
- * recommendations" experience, per the epic's UI-surface requirement. Calls
- * `platform/apps/api`'s real, tested `GET /brands/me/recommendations` and
- * `PATCH /recommendations/:id` from the first line, no fixture layer.
- *
- * Sorted by `priorityRank` desc server-side, never re-sorted client-side.
- * Defaults to a page of 10 (`show` below) — matching the journey doc's own
- * framing of a short, prioritized list rather than an undifferentiated
- * backlog — with a "per page" control to widen the window, and real
- * Prev/Next paging (Epic 19 production-hardening item 2: the API caps at
- * 100/page regardless of what's requested, so a brand with more than one
- * page of recommendations needs a real way to reach the rest, not just a
- * bigger single fetch).
+ * Epic 10 (Recommendation Engine)'s screen — "What should I do next?"
+ * Calls the real `GET /brands/me/recommendations` / `PATCH
+ * /recommendations/:id`. Sorted by `priorityRank` desc server-side, never
+ * re-sorted here; defaults to a page of 10 (the journey doc's short,
+ * prioritized list), with a per-page control and real paging.
  */
 export function RecommendationsView() {
   const [statusFilter, setStatusFilter] = useState<RecommendationStatus | "all">("all");
   const [actionTypeFilter, setActionTypeFilter] = useState<RecommendationActionType | "all">("all");
-  const [show, setShow] = useState<(typeof SHOW_OPTIONS)[number]>(10);
+  const [show, setShow] = useState<ShowValue>("10");
   const [page, setPage] = useState(1);
+  const pageSize = Number(show);
 
   const { reload, ...state } = useAsyncData(
     () =>
       listRecommendations({
         status: statusFilter === "all" ? undefined : statusFilter,
         actionType: actionTypeFilter === "all" ? undefined : actionTypeFilter,
-        limit: show,
-        offset: (page - 1) * show,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
       }),
-    [statusFilter, actionTypeFilter, show, page],
+    [statusFilter, actionTypeFilter, pageSize, page],
   );
+  const { reload: reloadCounts, ...countsState } = useAsyncData(loadStatusCounts, []);
 
   const { toast } = useToast();
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  // Epic 12 — Level 3's one-click approval, surfaced inline here rather than
-  // a separate approval inbox (that epic's own UI-surface requirement). A
-  // best-effort join, not this screen's primary data — see
-  // `listPendingActionsByRecommendationId`'s header comment for why this is
-  // an N+1 fetch over a small, recent window rather than a single request.
+  // Epic 12 — Level 3's one-click approval, surfaced inline on the row it
+  // targets rather than in a separate inbox. A best-effort join, not this
+  // screen's primary data (see `listPendingActionsByRecommendationId`).
   const { reload: reloadPendingActions, ...pendingActionsState } = useAsyncData(() => listPendingActionsByRecommendationId(), []);
-  const pendingActionsByRecommendationId: Map<string, { pendingAction: AgentPendingAction; agentRunId: string }> =
+  const pendingByRecommendationId: Map<string, { pendingAction: AgentPendingAction; agentRunId: string }> =
     pendingActionsState.status === "success" ? pendingActionsState.data : new Map();
 
   async function handleApprovePendingAction(agentRunId: string) {
@@ -87,19 +124,12 @@ export function RecommendationsView() {
     }
   }
 
-  const filtersActive = statusFilter !== "all" || actionTypeFilter !== "all";
-
-  function clearFilters() {
-    setStatusFilter("all");
-    setActionTypeFilter("all");
-    setPage(1);
-  }
-
   async function handleStatusChange(recommendation: Recommendation, status: RecommendationStatus) {
     setUpdatingId(recommendation.id);
     try {
       await updateRecommendationStatus(recommendation.id, status);
       reload();
+      reloadCounts();
     } catch (err) {
       toast({
         title: "Couldn't update that recommendation",
@@ -111,132 +141,139 @@ export function RecommendationsView() {
     }
   }
 
+  const hasFilters = statusFilter !== "all" || actionTypeFilter !== "all";
+  function clearFilters() {
+    setStatusFilter("all");
+    setActionTypeFilter("all");
+    setPage(1);
+  }
+
+  const data = state.status === "success" ? state.data : null;
+  const counts = countsState.status === "success" ? countsState.data : null;
+  const firstRun = data !== null && data.pagination.total === 0 && !hasFilters;
+  const awaitingApproval = pendingActionsState.status === "success" ? pendingActionsState.data.size : null;
+
   return (
-    <>
-      <PageHeader
-        eyebrow="Execution"
-        title="Recommendations"
-        description="The exact next move for each opportunity — a specific page to build, gap to fix, or citation to earn, briefed with both SEO and GEO requirements and the evidence behind it. Prioritized so the cheap, high-impact moves surface first."
-      />
+    <PageStack>
+      {!firstRun && state.status !== "error" && (
+        <StatGrid>
+          <StatTile
+            label="To do"
+            icon={<CircleDashed size={13} />}
+            loading={!counts}
+            value={counts ? formatNumber(counts.new) : "—"}
+            hint="Not started yet"
+          />
+          <StatTile
+            label="In progress"
+            icon={<Loader size={13} />}
+            loading={!counts}
+            value={counts ? formatNumber(counts.in_progress) : "—"}
+            hint="Being worked on"
+          />
+          <StatTile
+            label="Completed"
+            icon={<CheckCircle2 size={13} />}
+            loading={!counts}
+            value={counts ? formatNumber(counts.completed) : "—"}
+            hint={
+              counts && counts.all > 0
+                ? `${formatPercent((counts.completed / counts.all) * 100)} of ${formatNumber(counts.all)} recommendations`
+                : "Shipped and done"
+            }
+          />
+          <StatTile
+            label="Awaiting approval"
+            icon={<ShieldCheck size={13} />}
+            loading={awaitingApproval === null && pendingActionsState.status === "loading"}
+            value={awaitingApproval !== null ? formatNumber(awaitingApproval) : "—"}
+            muted={awaitingApproval === null}
+            hint="Agent actions proposed for these"
+          />
+        </StatGrid>
+      )}
 
-      <Card>
-        <CardContent className="p-5 flex flex-col gap-4">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <h2 className="font-display text-[16px] font-semibold text-foreground">Prioritized recommendations</h2>
-              <p className="text-[12.5px] text-muted-foreground mt-0.5">
-                Sorted by priority rank
-                {state.status === "success" ? ` — ${state.data.pagination.total} total` : ""}.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Select
-                value={actionTypeFilter}
-                onValueChange={(v) => {
-                  setActionTypeFilter(v as RecommendationActionType | "all");
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-40 h-8 text-[12.5px]" aria-label="Filter by action type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ACTION_TYPE_FILTERS.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {value === "all" ? "All action types" : ACTION_TYPE_LABEL[value]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={statusFilter}
-                onValueChange={(v) => {
-                  setStatusFilter(v as RecommendationStatus | "all");
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-36 h-8 text-[12.5px]" aria-label="Filter by status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_FILTERS.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {value === "all" ? "All statuses" : RECOMMENDATION_STATUS_LABEL[value]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={String(show)}
-                onValueChange={(v) => {
-                  setShow(Number(v) as (typeof SHOW_OPTIONS)[number]);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-32 h-8 text-[12.5px]" aria-label="Number per page">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SHOW_OPTIONS.map((value) => (
-                    <SelectItem key={value} value={String(value)}>
-                      {value} per page
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+      {!firstRun && (
+        <Toolbar end={data && <ResultCount count={data.pagination.total} noun="recommendation" />}>
+          <FilterSelect
+            value={actionTypeFilter}
+            onValueChange={(value) => {
+              setActionTypeFilter(value);
+              setPage(1);
+            }}
+            options={ACTION_TYPE_OPTIONS}
+            label="Filter by action type"
+            className="sm:w-44"
+          />
+          <FilterSelect
+            value={statusFilter}
+            onValueChange={(value) => {
+              setStatusFilter(value);
+              setPage(1);
+            }}
+            options={STATUS_OPTIONS}
+            label="Filter by status"
+          />
+          <FilterSelect
+            value={show}
+            onValueChange={(value) => {
+              setShow(value);
+              setPage(1);
+            }}
+            options={[...SHOW_OPTIONS]}
+            label="Recommendations per page"
+            className="sm:w-36"
+          />
+          {hasFilters && <ClearFiltersButton onClick={clearFilters} />}
+        </Toolbar>
+      )}
 
-          {state.status === "loading" && <ListSkeleton />}
+      <Reveal>
+        {state.status === "loading" && <ListSkeleton />}
 
-          {state.status === "error" && <ErrorPanel message={state.error.message} onRetry={reload} />}
+        {state.status === "error" && <ErrorPanel title="Recommendations didn't load" message={state.error.message} onRetry={reload} />}
 
-          {state.status === "success" && state.data.recommendations.length === 0 && !filtersActive && (
-            <EmptyState
-              compact
-              icon={<Sparkles size={18} />}
-              title="No recommendations yet"
-              description="Recommendations are generated from an opportunity's evidence. Open an opportunity on the Opportunities screen and generate its next action to see it here."
-            />
-          )}
+        {firstRun && (
+          <EmptyState
+            icon={<Sparkles size={20} />}
+            title="No recommendations yet"
+            description="Each recommendation is generated from an opportunity's evidence. Open an opportunity and generate its next action — it lands here, ranked by priority."
+            action={
+              <Button variant="primary" size="sm" asChild>
+                <Link href="/opportunities">Go to Opportunities</Link>
+              </Button>
+            }
+          />
+        )}
 
-          {state.status === "success" && state.data.recommendations.length === 0 && filtersActive && (
-            <EmptyState
-              compact
-              icon={<Sparkles size={18} />}
-              title="No recommendations match these filters"
-              description="Try a different combination, or clear filters to see everything."
-              action={
-                <Button variant="outline" size="sm" onClick={clearFilters}>
-                  Clear filters
-                </Button>
-              }
-            />
-          )}
+        {data && data.recommendations.length === 0 && hasFilters && (
+          <NoResults noun="recommendations" onClear={clearFilters} hint="Try a different action type or status." />
+        )}
 
-          {state.status === "success" && state.data.recommendations.length > 0 && (
-            <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
-              {state.data.recommendations.map((recommendation) => {
-                const pending = pendingActionsByRecommendationId.get(recommendation.id);
-                return (
-                  <RecommendationCard
-                    key={recommendation.id}
-                    recommendation={recommendation}
-                    updating={updatingId === recommendation.id}
-                    onStatusChange={handleStatusChange}
-                    pendingAction={pending?.pendingAction}
-                    onApprovePendingAction={pending ? () => handleApprovePendingAction(pending.agentRunId) : undefined}
-                  />
-                );
-              })}
-            </div>
-          )}
-
-          {state.status === "success" && state.data.recommendations.length > 0 && (
-            <Pagination page={page} pageSize={show} total={state.data.pagination.total} onPageChange={setPage} itemLabel="recommendations" />
-          )}
-        </CardContent>
-      </Card>
-    </>
+        {data && data.recommendations.length > 0 && (
+          <RefreshOverlay active={state.isRefreshing} className="flex flex-col gap-3">
+            <Section flush title="Prioritized" description="Highest priority first — cheap, high-impact moves surface at the top.">
+              <ul className="divide-y divide-border">
+                {data.recommendations.map((recommendation) => {
+                  const pending = pendingByRecommendationId.get(recommendation.id);
+                  return (
+                    <li key={recommendation.id}>
+                      <RecommendationCard
+                        recommendation={recommendation}
+                        updating={updatingId === recommendation.id}
+                        onStatusChange={handleStatusChange}
+                        pendingAction={pending?.pendingAction}
+                        onApprovePendingAction={pending ? () => handleApprovePendingAction(pending.agentRunId) : undefined}
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+            </Section>
+            <Pagination page={page} pageSize={pageSize} total={data.pagination.total} onPageChange={setPage} itemLabel="recommendations" />
+          </RefreshOverlay>
+        )}
+      </Reveal>
+    </PageStack>
   );
 }

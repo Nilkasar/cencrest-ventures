@@ -99,8 +99,8 @@ function GenerateReportForm({
         {REPORT_TYPES.map((option) => (
           <label
             key={option}
-            className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
-              type === option ? "border-accent bg-accent-muted/40" : "border-border hover:border-border-strong"
+            className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring ${
+              type === option ? "border-accent bg-accent-muted/40" : "border-border hover:border-border-strong hover:bg-surface"
             }`}
           >
             <input

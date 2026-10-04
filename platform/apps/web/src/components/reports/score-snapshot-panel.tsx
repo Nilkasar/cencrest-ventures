@@ -1,83 +1,134 @@
-import { Badge } from "@bebest/ui";
+"use client";
+
+import { motion } from "framer-motion";
+import { easings } from "@bebest/ui";
 import { SCORE_COMPONENT_LABEL } from "@/data/ai-visibility/labels";
 import type { ScoreComponentKey } from "@/data/ai-visibility/types";
 import type { ScoreSnapshot } from "@/data/reporting/types";
-import { formatDate } from "@/lib/format";
+import { SrTable } from "@/components/overview/primitives";
+import { formatDate, formatDelta } from "@/lib/format";
 
 const COMPONENT_ORDER: ScoreComponentKey[] = ["mentionScore", "recommendationScore", "positionScore", "coverageScore"];
 
+interface Row {
+  label: string;
+  before: number | null;
+  after: number | null;
+  strong?: boolean;
+}
+
 /**
- * One side of a baseline-vs-current comparison (`ScoreSnapshotPanel
- * baseline={...}` / `current={...}` in `report-detail-view.tsx`) — renders
- * both the GEO (AI Visibility) and SEO components a `ScoreSnapshot` can
- * carry, each independently `null` when that signal has no data yet
- * (never coerced to a misleading 0, per the backend's own convention).
- * "Shows its work" per this epic's non-negotiable: the headline number is
- * never presented alone — its four GEO sub-components (or SEO's
- * technical/content split) sit right below it, labeled with the same
- * vocabulary the AI Visibility screen (`score-panel.tsx`) uses, so a
- * reader who already knows that screen recognizes these numbers instantly.
+ * Baseline vs current, component by component — the "show your work"
+ * half of a baseline comparison. Each score (the composite, its four GEO
+ * components, and SEO's technical/content split) is a pair of bars on a
+ * shared 0–100 scale: muted for the baseline, accent for today (the "you"
+ * series). Missing sides render "—", never a misleading 0. Ships a
+ * visually hidden table with the same numbers.
  */
-export function ScoreSnapshotPanel({ label, snapshot }: { label: string; snapshot: ScoreSnapshot }) {
+export function ScoreComparison({ baseline, current }: { baseline: ScoreSnapshot; current: ScoreSnapshot }) {
+  const geoRows: Row[] =
+    baseline.geo || current.geo
+      ? [
+          { label: "AI Visibility Score", before: baseline.geo?.aiVisibilityScore ?? null, after: current.geo?.aiVisibilityScore ?? null, strong: true },
+          ...COMPONENT_ORDER.map((key) => ({
+            label: SCORE_COMPONENT_LABEL[key],
+            before: baseline.geo ? baseline.geo[key] : null,
+            after: current.geo ? current.geo[key] : null,
+          })),
+        ]
+      : [];
+  const seoRows: Row[] =
+    baseline.seo || current.seo
+      ? [
+          { label: "SEO Health Score", before: baseline.seo?.overallScore ?? null, after: current.seo?.overallScore ?? null, strong: true },
+          { label: "Technical", before: baseline.seo?.technicalScore ?? null, after: current.seo?.technicalScore ?? null },
+          { label: "Content", before: baseline.seo?.contentScore ?? null, after: current.seo?.contentScore ?? null },
+        ]
+      : [];
+
+  if (geoRows.length === 0 && seoRows.length === 0) {
+    return <p className="text-[13px] text-muted-foreground">No score data was captured at either point in time.</p>;
+  }
+
+  const versions = [
+    baseline.geo && current.geo && baseline.geo.formulaVersion !== current.geo.formulaVersion
+      ? `AI Visibility formula v${baseline.geo.formulaVersion} → v${current.geo.formulaVersion}`
+      : current.geo
+        ? `AI Visibility formula v${current.geo.formulaVersion}`
+        : null,
+    current.seo ? `SEO formula v${current.seo.formulaVersion} · ${current.seo.pagesAnalyzed} pages analyzed now` : null,
+  ].filter(Boolean);
+
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-border p-4">
-      <div className="flex items-center justify-between gap-2">
-        <p className="font-mono text-[10.5px] font-medium uppercase tracking-[0.1em] text-subtle-foreground">{label}</p>
-        <p className="text-[11px] text-subtle-foreground">as of {formatDate(snapshot.capturedAt)}</p>
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[12px] text-muted-foreground" aria-hidden="true">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-1.5 w-4 rounded-full bg-muted-foreground/40" /> Baseline · {formatDate(baseline.capturedAt)}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-1.5 w-4 rounded-full bg-accent" /> Now · {formatDate(current.capturedAt)}
+        </span>
       </div>
 
-      {snapshot.geo && (
-        <div>
-          <div className="flex items-baseline justify-between gap-2">
-            <p className="text-[11px] font-medium text-muted-foreground">AI Visibility Score</p>
-            <Badge variant="outline" size="sm">
-              Formula v{snapshot.geo.formulaVersion}
-            </Badge>
-          </div>
-          <p className="font-mono text-[32px] font-semibold text-foreground leading-none mt-1">
-            {snapshot.geo.aiVisibilityScore.toFixed(1)}
-            <span className="text-[14px] text-muted-foreground font-normal">/100</span>
-          </p>
-          <div className="grid grid-cols-2 gap-2 mt-3">
-            {COMPONENT_ORDER.map((key) => (
-              <div key={key} className="rounded-md bg-surface px-2.5 py-2">
-                <p className="text-[10.5px] text-muted-foreground">{SCORE_COMPONENT_LABEL[key]}</p>
-                <p className="font-mono text-[15px] font-semibold text-foreground">{snapshot.geo![key].toFixed(1)}</p>
-              </div>
+      {[geoRows, seoRows]
+        .filter((rows) => rows.length > 0)
+        .map((rows) => (
+          <dl key={rows[0]!.label} className="flex flex-col gap-3.5">
+            {rows.map((row, i) => (
+              <ComparisonRow key={row.label} row={row} index={i} />
             ))}
-          </div>
-        </div>
-      )}
+          </dl>
+        ))}
 
-      {snapshot.seo && (
-        <div className={snapshot.geo ? "pt-3 border-t border-border" : ""}>
-          <div className="flex items-baseline justify-between gap-2">
-            <p className="text-[11px] font-medium text-muted-foreground">SEO Health Score</p>
-            <p className="text-[11px] text-subtle-foreground">{snapshot.seo.pagesAnalyzed} pages analyzed</p>
-          </div>
-          <p className="font-mono text-[32px] font-semibold text-foreground leading-none mt-1">
-            {snapshot.seo.overallScore.toFixed(1)}
-            <span className="text-[14px] text-muted-foreground font-normal">/100</span>
-          </p>
-          <div className="grid grid-cols-2 gap-2 mt-3">
-            <div className="rounded-md bg-surface px-2.5 py-2">
-              <p className="text-[10.5px] text-muted-foreground">Technical</p>
-              <p className="font-mono text-[15px] font-semibold text-foreground">
-                {snapshot.seo.technicalScore !== null ? snapshot.seo.technicalScore.toFixed(1) : "—"}
-              </p>
-            </div>
-            <div className="rounded-md bg-surface px-2.5 py-2">
-              <p className="text-[10.5px] text-muted-foreground">Content</p>
-              <p className="font-mono text-[15px] font-semibold text-foreground">
-                {snapshot.seo.contentScore !== null ? snapshot.seo.contentScore.toFixed(1) : "—"}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      {versions.length > 0 && <p className="font-mono text-[11px] text-subtle-foreground">{versions.join(" · ")}</p>}
 
-      {!snapshot.geo && !snapshot.seo && (
-        <p className="text-[12.5px] text-muted-foreground">No score data captured yet for this point in time.</p>
+      <SrTable
+        caption="Scores at baseline and now"
+        head={["Score", "Baseline", "Now", "Change"]}
+        rows={[...geoRows, ...seoRows].map((r) => [
+          r.label,
+          r.before !== null ? r.before.toFixed(1) : "—",
+          r.after !== null ? r.after.toFixed(1) : "—",
+          r.before !== null && r.after !== null ? formatDelta(r.after - r.before, 1) : "—",
+        ])}
+      />
+    </div>
+  );
+}
+
+function ComparisonRow({ row, index }: { row: Row; index: number }) {
+  const delta = row.before !== null && row.after !== null ? row.after - row.before : null;
+  const tone = delta === null || Math.abs(delta) < 0.05 ? "text-muted-foreground" : delta > 0 ? "text-success" : "text-danger";
+
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 sm:grid-cols-[170px_minmax(0,1fr)_120px]" aria-hidden="true">
+      <dt className={row.strong ? "text-[13px] font-medium text-foreground" : "text-[12.5px] text-muted-foreground"}>{row.label}</dt>
+      <dd className="col-span-2 row-start-2 flex flex-col gap-1 sm:col-span-1 sm:row-start-auto">
+        <Bar value={row.before} className="bg-muted-foreground/40" index={index} />
+        <Bar value={row.after} className="bg-accent" index={index} delay={0.08} />
+      </dd>
+      <dd className="flex items-baseline justify-end gap-2 font-mono text-[12.5px] tabular-nums">
+        <span className="text-muted-foreground">{row.before !== null ? row.before.toFixed(1) : "—"}</span>
+        <span className="text-subtle-foreground">→</span>
+        <span className="font-semibold text-foreground">{row.after !== null ? row.after.toFixed(1) : "—"}</span>
+        <span className={`w-11 text-right ${tone}`}>{delta !== null ? formatDelta(delta, 1) : ""}</span>
+      </dd>
+    </div>
+  );
+}
+
+function Bar({ value, className, index, delay = 0 }: { value: number | null; className: string; index: number; delay?: number }) {
+  const pct = value === null ? 0 : Math.max(0, Math.min(100, value));
+  return (
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface">
+      {value !== null && (
+        <motion.div
+          className={`h-full rounded-full ${className}`}
+          style={{ width: `${pct}%`, transformOrigin: "left center" }}
+          initial={{ scaleX: 0 }}
+          animate={{ scaleX: 1 }}
+          transition={{ duration: 0.7, delay: 0.1 + index * 0.05 + delay, ease: easings.emphasized }}
+        />
       )}
     </div>
   );

@@ -16,7 +16,7 @@ export const BRIEF_STATUS_BADGE_VARIANT: Record<ContentBriefStatus, NonNullable<
   draft: "neutral",
   in_review: "warning",
   approved: "success",
-  archived: "outline",
+  archived: "neutral",
 };
 
 /** `"landing_page" | "page_update"` — `contentTypeForActionType`,

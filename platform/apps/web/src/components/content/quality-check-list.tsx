@@ -1,5 +1,6 @@
-import { Badge } from "@bebest/ui";
-import type { ContentQualityCheck } from "@/data/content/types";
+import { AlertTriangle, Check, CheckCircle2, CircleDashed, X, XCircle } from "lucide-react";
+import { Badge, cn } from "@bebest/ui";
+import type { ContentQualityCheck, QualityCheckStatus } from "@/data/content/types";
 import {
   QUALITY_CHECK_LABEL,
   QUALITY_CHECK_ORDER,
@@ -40,9 +41,11 @@ interface GeoStructureDetails {
 }
 
 function Signal({ ok, label }: { ok: boolean; label: string }) {
+  const Icon = ok ? Check : X;
   return (
-    <span className={`inline-flex items-center gap-1 ${ok ? "text-success" : "text-muted-foreground"}`}>
-      <span aria-hidden>{ok ? "✓" : "✗"}</span>
+    <span className={cn("inline-flex items-center gap-1.5", ok ? "text-foreground" : "text-muted-foreground")}>
+      <Icon size={12} className={ok ? "text-success" : "text-subtle-foreground"} aria-hidden="true" />
+      <span className="sr-only">{ok ? "Yes:" : "No:"}</span>
       {label}
     </span>
   );
@@ -122,49 +125,97 @@ function CheckDetails({ check }: { check: ContentQualityCheck }) {
   }
 }
 
+const STATUS_ICON: Record<QualityCheckStatus, typeof CheckCircle2> = {
+  pass: CheckCircle2,
+  warning: AlertTriangle,
+  fail: XCircle,
+};
+
+const STATUS_TONE: Record<QualityCheckStatus, string> = {
+  pass: "text-success",
+  warning: "text-warning",
+  fail: "text-danger",
+};
+
+const PIP_TONE: Record<QualityCheckStatus, string> = {
+  pass: "bg-success",
+  warning: "bg-warning",
+  fail: "bg-danger",
+};
+
+/** One-line verdict for a draft's five checks: a pip per check in run
+ *  order plus "4 of 5 passed". Status is in the text, not only the color. */
+export function QualitySummary({ checks, className }: { checks: ContentQualityCheck[]; className?: string }) {
+  const byType = new Map(checks.map((c) => [c.checkType, c]));
+  const passed = checks.filter((c) => c.status === "pass").length;
+  const failed = checks.filter((c) => c.status === "fail").length;
+  const warned = checks.filter((c) => c.status === "warning").length;
+  return (
+    <div className={cn("flex items-center gap-2.5", className)}>
+      <span className="flex items-center gap-1" aria-hidden="true">
+        {QUALITY_CHECK_ORDER.map((type) => {
+          const check = byType.get(type);
+          return (
+            <span
+              key={type}
+              title={`${QUALITY_CHECK_LABEL[type]}: ${check ? QUALITY_CHECK_STATUS_LABEL[check.status] : "Not run"}`}
+              className={cn("h-2 w-4 rounded-full", check ? PIP_TONE[check.status] : "bg-border-strong/60")}
+            />
+          );
+        })}
+      </span>
+      <span className="text-[12.5px] text-muted-foreground">
+        <span className="font-medium text-foreground">{passed} of {QUALITY_CHECK_ORDER.length}</span> passed
+        {failed > 0 && ` · ${failed} failed`}
+        {warned > 0 && ` · ${warned} warning${warned === 1 ? "" : "s"}`}
+      </span>
+    </div>
+  );
+}
+
 /**
- * The 5 quality-check results a generated draft always carries — this
- * epic's literal DoD requirement, verbatim: "every check's result stored
- * alongside the draft... a reviewer needs to see what was checked, not just
- * that something was." Rendered directly inline wherever a draft appears
- * (the "drafts awaiting approval" list AND the approval screen) — never
- * behind a click, per the epic's UI-surface requirement. Always renders all
- * 5 in `QUALITY_CHECK_ORDER`, even if a check result is unexpectedly
- * missing (defensive — `runAllQualityChecks` guarantees all 5 server-side,
- * but a partial fetch failure should show what's missing, not silently
- * collapse the list).
+ * The 5 quality-check results a generated draft always carries — Epic 11's
+ * DoD: "a reviewer needs to see what was checked, not just that something
+ * was." Rendered inline wherever a draft appears (the review queue and the
+ * approval screen), never behind a click. Always renders all 5 in
+ * `QUALITY_CHECK_ORDER`, even if one is unexpectedly missing, so a partial
+ * fetch failure shows what's missing instead of collapsing the list.
  */
-export function QualityCheckList({ checks }: { checks: ContentQualityCheck[] }) {
+export function QualityCheckList({ checks, columns = 1 }: { checks: ContentQualityCheck[]; columns?: 1 | 2 }) {
   const byType = new Map(checks.map((c) => [c.checkType, c]));
   return (
-    <div className="flex flex-col divide-y divide-border">
+    <ul className={cn("grid gap-x-6", columns === 2 ? "md:grid-cols-2" : "grid-cols-1")}>
       {QUALITY_CHECK_ORDER.map((type) => {
         const check = byType.get(type);
+        const Icon = check ? STATUS_ICON[check.status] : CircleDashed;
         return (
-          <div key={type} className="py-2.5 first:pt-0 last:pb-0 flex flex-col gap-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className="text-[12.5px] font-medium text-foreground">{QUALITY_CHECK_LABEL[type]}</p>
-              {check ? (
-                <>
+          <li key={type} className="flex gap-2.5 border-b border-border py-3 last:border-b-0">
+            <Icon size={15} className={cn("mt-0.5 shrink-0", check ? STATUS_TONE[check.status] : "text-subtle-foreground")} aria-hidden="true" />
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[13px] font-medium text-foreground">{QUALITY_CHECK_LABEL[type]}</p>
+                {check ? (
                   <Badge variant={QUALITY_CHECK_STATUS_BADGE_VARIANT[check.status]} size="sm">
                     {QUALITY_CHECK_STATUS_LABEL[check.status]}
                   </Badge>
-                  {check.score !== null && <span className="font-mono text-[11px] text-subtle-foreground">{check.score}/100</span>}
-                </>
-              ) : (
-                <Badge variant="outline" size="sm">
-                  Not run
-                </Badge>
+                ) : (
+                  <Badge variant="outline" size="sm">
+                    Not run
+                  </Badge>
+                )}
+                {check?.score !== null && check?.score !== undefined && (
+                  <span className="ml-auto font-mono text-[11.5px] tabular-nums text-muted-foreground">{check.score}/100</span>
+                )}
+              </div>
+              {check && (
+                <div className="text-[12.5px] leading-relaxed text-muted-foreground">
+                  <CheckDetails check={check} />
+                </div>
               )}
             </div>
-            {check && (
-              <div className="text-[12px] text-muted-foreground leading-relaxed">
-                <CheckDetails check={check} />
-              </div>
-            )}
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ul>
   );
 }

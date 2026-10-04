@@ -21,6 +21,6 @@ export const REPORT_TYPE_DESCRIPTION: Record<ReportType, string> = {
 export const REPORT_TYPE_BADGE_VARIANT: Record<ReportType, NonNullable<BadgeProps["variant"]>> = {
   weekly: "outline",
   monthly: "outline",
-  custom: "neutral",
-  baseline_comparison: "accent",
+  custom: "outline",
+  baseline_comparison: "outline",
 };

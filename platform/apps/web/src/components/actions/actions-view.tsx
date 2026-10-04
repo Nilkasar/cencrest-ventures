@@ -2,15 +2,34 @@
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { CheckCircle2, Clock3, ListChecks, RotateCcw } from "lucide-react";
-import { Button, Card, CardContent, EmptyState, Skeleton, Tabs, TabsContent, TabsList, TabsTrigger, useToast } from "@bebest/ui";
-import { PageHeader } from "@/components/patterns/page-header";
+import { CheckCircle2, Clock3, Info, ListChecks, RotateCcw, Upload } from "lucide-react";
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  EmptyState,
+  RefreshOverlay,
+  Skeleton,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  useToast,
+} from "@bebest/ui";
 import { ErrorPanel } from "@/components/patterns/error-panel";
+import { PageStack, Reveal } from "@/components/patterns/motion";
+import { Section } from "@/components/patterns/section";
+import { StatGrid, StatTile } from "@/components/patterns/stat-tile";
 import { useAsyncData } from "@/lib/use-async-data";
 import { useSession } from "@/lib/session-context";
 import { agentRunIdsByPendingActionId, approveAction, executeAction, getActionsOverview, rollbackAction } from "@/data/actions/client";
 import type { ActionsOverview, ActionWithContext, PublishedContent } from "@/data/actions/types";
 import type { AgentPendingAction } from "@/data/agents/types";
+import { formatNumber } from "@/lib/format";
 import { ActionCard } from "./action-card";
 
 interface ActionsData {
@@ -19,22 +38,12 @@ interface ActionsData {
   agentPendingActions: Map<string, AgentPendingAction>;
 }
 
-function ListSkeleton() {
-  return (
-    <div className="flex flex-col gap-3 p-5">
-      {Array.from({ length: 3 }).map((_, i) => (
-        <Skeleton key={i} className="h-28 w-full rounded-lg" />
-      ))}
-    </div>
-  );
-}
+type TabKey = keyof ActionsOverview;
+const TAB_ORDER: TabKey[] = ["pending", "inProgress", "completed", "rolledBack"];
 
-/** `GET /brands/me/actions` returns every section's `agentPendingActionId`
- *  already inlined, but not the `agentRunId` it belongs to (no such field
- *  or route exists — see `data/actions/client.ts`'s own comment). This
- *  screen resolves that once, up front, for every agent-originated action
- *  across all four sections in a single bounded join, rather than one join
- *  per row. */
+/** `GET /brands/me/actions` inlines every row's `agentPendingActionId` but
+ *  not the run it belongs to; resolve that once, up front, for every
+ *  agent-originated action across all four sections in one bounded join. */
 async function loadActionsData(): Promise<ActionsData> {
   const overview = await getActionsOverview();
   const allActions = [...overview.pending, ...overview.inProgress, ...overview.completed, ...overview.rolledBack];
@@ -43,17 +52,37 @@ async function loadActionsData(): Promise<ActionsData> {
   return { overview, agentRunIds, agentPendingActions };
 }
 
+function ListSkeleton() {
+  return (
+    <div className="flex flex-col gap-4" aria-busy="true">
+      <span className="sr-only">Loading actions…</span>
+      <Skeleton className="h-10 w-full max-w-[520px]" />
+      <div className="divide-y divide-border rounded-xl border border-border bg-surface-raised shadow-sm" aria-hidden="true">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="flex gap-4 px-5 py-4">
+            <Skeleton className="hidden size-9 shrink-0 rounded-lg sm:block" />
+            <div className="flex flex-1 flex-col gap-2.5">
+              <div className="flex justify-between gap-4">
+                <Skeleton className="h-4 w-1/2" />
+                <Skeleton className="h-8 w-24 rounded-md" />
+              </div>
+              <Skeleton className="h-3 w-64" />
+              <Skeleton className="h-16 w-full rounded-lg" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /**
- * `docs/09-ux/CUSTOMER_JOURNEY.md`'s Actions screen — "What have I done and
- * what happened?" Four sections, exactly matching `GET /brands/me/actions`'s
- * own response shape: pending approvals, in-progress (approved, awaiting
- * execution — approve and execute are deliberately separate steps, spec
- * verbatim), completed (with outcome), rolled back. Calls
- * `platform/apps/api`'s real, tested Epic 13 routes from the first line, no
- * fixture layer — every mutation (`approveAction`/`executeAction`/
- * `rollbackAction`) hits the real endpoint and reloads from it afterward,
- * nothing is applied optimistically to local state as if it were the
- * source of truth.
+ * The Actions screen — `docs/09-ux/CUSTOMER_JOURNEY.md`: "What have I done
+ * and what happened?" The four sections of `GET /brands/me/actions`, in
+ * lifecycle order: awaiting approval → approved, ready to execute
+ * (approve and execute are deliberately separate steps) → published, with
+ * its measured outcome → rolled back. Every mutation hits the real
+ * endpoint and reloads from it; nothing is applied optimistically.
  */
 export function ActionsView() {
   const { org } = useSession();
@@ -61,13 +90,12 @@ export function ActionsView() {
   const { toast } = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [publishedContentByActionId, setPublishedContentByActionId] = useState<Map<string, PublishedContent>>(new Map());
+  const [tab, setTab] = useState<TabKey | null>(null);
+  const [confirmRollback, setConfirmRollback] = useState<ActionWithContext | null>(null);
 
   // `publish_content` is `owner`/`admin`-only server-side
-  // (`docs/08-security/SECURITY.md`'s "Publish content" row) — this mirrors
-  // that in the UI, same `currentUser.role`-gating convention
-  // `billing-panel.tsx`/`integrations-panel.tsx` already establish for
-  // their own owner/admin-only actions. The server's own 403 remains the
-  // real enforcement if this hint is ever bypassed or stale.
+  // (`docs/08-security/SECURITY.md`). This mirrors it in the UI; the
+  // server's 403 remains the real enforcement.
   const myRole = org?.role ?? "member";
   const canPublish = myRole === "owner" || myRole === "admin";
 
@@ -84,7 +112,7 @@ export function ActionsView() {
         title: result.alreadyApproved ? "Already approved" : "Action approved",
         description: result.alreadyApproved
           ? "This action was already approved — nothing changed."
-          : "Ready to execute. Approving and executing are separate steps — nothing publishes until you execute it below.",
+          : "It's now under Ready to execute. Nothing publishes until you execute it.",
       });
       reload();
     } catch (err) {
@@ -103,7 +131,7 @@ export function ActionsView() {
         title: result.alreadyExecuted ? "Already published" : "Published",
         description: result.alreadyExecuted
           ? "This action was already executed — nothing changed."
-          : "Written to the internal publish record — no external CMS is connected yet, so nothing went out beyond this app.",
+          : "Written to the internal publish record — no external CMS is connected yet, so nothing left this app.",
       });
       reload();
     } catch (err) {
@@ -113,9 +141,8 @@ export function ActionsView() {
     }
   }
 
-  async function handleRollback(action: ActionWithContext) {
-    const confirmed = window.confirm(`Roll back "${action.title}"? This reverts the published record — it doesn't un-approve the action itself.`);
-    if (!confirmed) return;
+  async function runRollback(action: ActionWithContext) {
+    setConfirmRollback(null);
     setBusyId(action.id);
     try {
       const result = await rollbackAction(action.id);
@@ -132,167 +159,212 @@ export function ActionsView() {
     }
   }
 
+  const data = state.status === "success" ? state.data : null;
+  const overview = data?.overview;
+  const total = overview ? TAB_ORDER.reduce((n, key) => n + overview[key].length, 0) : 0;
+  const firstRun = overview !== undefined && total === 0;
+  // Open on the first section that has something in it — usually the
+  // approvals queue — unless the person has picked a tab.
+  const activeTab: TabKey = tab ?? (overview ? (TAB_ORDER.find((key) => overview[key].length > 0) ?? "pending") : "pending");
+
+  function card(action: ActionWithContext, handlers: Partial<Pick<Parameters<typeof ActionCard>[0], "onApprove" | "onExecute" | "onRollback">>) {
+    return (
+      <li key={action.id}>
+        <ActionCard
+          action={action}
+          agentRunId={action.agentPendingActionId ? data!.agentRunIds.get(action.agentPendingActionId) : undefined}
+          agentPendingAction={action.agentPendingActionId ? data!.agentPendingActions.get(action.agentPendingActionId) : undefined}
+          canPublish={canPublish}
+          busy={busyId === action.id}
+          publishedContent={publishedContentByActionId.get(action.id)}
+          {...handlers}
+        />
+      </li>
+    );
+  }
+
   return (
-    <>
-      <PageHeader
-        eyebrow="Execution"
-        title="Actions"
-        description="Pending approvals, in-progress work, completed publishes with their outcome, and anything rolled back. Nothing here ever publishes without your explicit approval."
-      />
-
-      {state.status === "success" && !canPublish && (
-        <p className="text-[12.5px] text-muted-foreground -mt-3 mb-5">
-          You&apos;re viewing Actions as {myRole}. Only an organization owner or admin can approve, execute, or roll back — everyone else can still see what happened.
-        </p>
-      )}
-
+    <PageStack>
       {state.status === "loading" && (
-        <Card>
+        <Reveal>
           <ListSkeleton />
-        </Card>
+        </Reveal>
       )}
 
       {state.status === "error" && (
-        <Card>
-          <CardContent className="p-5">
-            <ErrorPanel message={state.error.message} onRetry={reload} />
-          </CardContent>
-        </Card>
+        <Reveal>
+          <ErrorPanel title="Actions didn't load" message={state.error.message} onRetry={reload} />
+        </Reveal>
       )}
 
-      {state.status === "success" && (
-        <Tabs defaultValue="pending">
-          <TabsList>
-            <TabsTrigger value="pending">Pending approval ({state.data.overview.pending.length})</TabsTrigger>
-            <TabsTrigger value="inProgress">In progress ({state.data.overview.inProgress.length})</TabsTrigger>
-            <TabsTrigger value="completed">Completed ({state.data.overview.completed.length})</TabsTrigger>
-            <TabsTrigger value="rolledBack">Rolled back ({state.data.overview.rolledBack.length})</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="pending">
-            <Section
-              items={state.data.overview.pending}
-              emptyIcon={<ListChecks size={18} />}
-              emptyTitle="No actions awaiting approval"
-              emptyDescription="Actions are born from an approved content draft (Content screen) or a Level-3-approved agent action (Agents screen). Approve one there and it lands here, ready for a human sign-off before anything publishes."
-              emptyAction={
-                <Button asChild variant="secondary" size="sm">
-                  <Link href="/content">Go to Content</Link>
-                </Button>
-              }
-              emptySecondaryAction={
-                <Button asChild variant="ghost" size="sm">
-                  <Link href="/agents">Go to Agents</Link>
-                </Button>
-              }
-              renderItem={(action) => (
-                <ActionCard
-                  key={action.id}
-                  action={action}
-                  agentRunId={action.agentPendingActionId ? state.data.agentRunIds.get(action.agentPendingActionId) : undefined}
-                  agentPendingAction={action.agentPendingActionId ? state.data.agentPendingActions.get(action.agentPendingActionId) : undefined}
-                  canPublish={canPublish}
-                  busy={busyId === action.id}
-                  onApprove={handleApprove}
-                />
-              )}
-            />
-          </TabsContent>
-
-          <TabsContent value="inProgress">
-            <Section
-              items={state.data.overview.inProgress}
-              emptyIcon={<Clock3 size={18} />}
-              emptyTitle="Nothing approved and awaiting execution"
-              emptyDescription="Once you approve a pending action above, it moves here until it's executed — approval and execution are deliberately separate steps, so a human might approve now and execute later."
-              renderItem={(action) => (
-                <ActionCard
-                  key={action.id}
-                  action={action}
-                  agentRunId={action.agentPendingActionId ? state.data.agentRunIds.get(action.agentPendingActionId) : undefined}
-                  agentPendingAction={action.agentPendingActionId ? state.data.agentPendingActions.get(action.agentPendingActionId) : undefined}
-                  canPublish={canPublish}
-                  busy={busyId === action.id}
-                  onExecute={handleExecute}
-                />
-              )}
-            />
-          </TabsContent>
-
-          <TabsContent value="completed">
-            <Section
-              items={state.data.overview.completed}
-              emptyIcon={<CheckCircle2 size={18} />}
-              emptyTitle="Nothing published yet"
-              emptyDescription="Executed actions land here with their outcome — what was published, where, and when. Publishing today writes an internal record only; no external CMS is connected yet, matching every other epic's Null-provider boundary in this build."
-              renderItem={(action) => (
-                <ActionCard
-                  key={action.id}
-                  action={action}
-                  agentRunId={action.agentPendingActionId ? state.data.agentRunIds.get(action.agentPendingActionId) : undefined}
-                  agentPendingAction={action.agentPendingActionId ? state.data.agentPendingActions.get(action.agentPendingActionId) : undefined}
-                  canPublish={canPublish}
-                  busy={busyId === action.id}
-                  publishedContent={publishedContentByActionId.get(action.id)}
-                  onRollback={handleRollback}
-                />
-              )}
-            />
-          </TabsContent>
-
-          <TabsContent value="rolledBack">
-            <Section
-              items={state.data.overview.rolledBack}
-              emptyIcon={<RotateCcw size={18} />}
-              emptyTitle="Nothing rolled back"
-              emptyDescription="If a published action needs to be reverted within its 30-day window, it'll show up here with when it was rolled back."
-              renderItem={(action) => (
-                <ActionCard
-                  key={action.id}
-                  action={action}
-                  agentRunId={action.agentPendingActionId ? state.data.agentRunIds.get(action.agentPendingActionId) : undefined}
-                  agentPendingAction={action.agentPendingActionId ? state.data.agentPendingActions.get(action.agentPendingActionId) : undefined}
-                  canPublish={canPublish}
-                  busy={busyId === action.id}
-                  publishedContent={publishedContentByActionId.get(action.id)}
-                />
-              )}
-            />
-          </TabsContent>
-        </Tabs>
+      {firstRun && (
+        <Reveal>
+          <EmptyState
+            icon={<ListChecks size={20} />}
+            title="No actions yet"
+            description="Actions are created when you approve a content draft or a Level 3 agent proposal. Each one waits here for a human sign-off before anything publishes."
+            action={
+              <Button variant="primary" size="sm" asChild>
+                <Link href="/content">Review content drafts</Link>
+              </Button>
+            }
+            secondaryAction={
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/agents">Go to Agents</Link>
+              </Button>
+            }
+          />
+        </Reveal>
       )}
-    </>
+
+      {overview && !firstRun && (
+        <>
+          <StatGrid>
+            <StatTile label="Awaiting approval" icon={<Clock3 size={13} />} value={formatNumber(overview.pending.length)} hint="Needs a human sign-off" />
+            <StatTile label="Ready to execute" icon={<Upload size={13} />} value={formatNumber(overview.inProgress.length)} hint="Approved, not yet published" />
+            <StatTile label="Published" icon={<CheckCircle2 size={13} />} value={formatNumber(overview.completed.length)} hint="With measured outcome" />
+            <StatTile label="Rolled back" icon={<RotateCcw size={13} />} value={formatNumber(overview.rolledBack.length)} hint="Reverted within 30 days" />
+          </StatGrid>
+
+          {!canPublish && (
+            <Reveal>
+              <div className="flex items-start gap-2.5 rounded-lg border border-info/25 bg-info-muted px-4 py-3">
+                <Info size={15} className="mt-0.5 shrink-0 text-info" aria-hidden="true" />
+                <p className="text-[13px] leading-relaxed text-foreground">
+                  You&apos;re viewing as <span className="font-medium">{myRole}</span>. Only an owner or admin can approve, execute or roll back — you can still see
+                  everything that happened.
+                </p>
+              </div>
+            </Reveal>
+          )}
+
+          <Reveal>
+            <Tabs value={activeTab} onValueChange={(v) => setTab(v as TabKey)}>
+              <TabsList variant="underline" aria-label="Action lifecycle">
+                <TabsTrigger value="pending">
+                  Awaiting approval <Count n={overview.pending.length} />
+                </TabsTrigger>
+                <TabsTrigger value="inProgress">
+                  Ready to execute <Count n={overview.inProgress.length} />
+                </TabsTrigger>
+                <TabsTrigger value="completed">
+                  Published <Count n={overview.completed.length} />
+                </TabsTrigger>
+                <TabsTrigger value="rolledBack">
+                  Rolled back <Count n={overview.rolledBack.length} />
+                </TabsTrigger>
+              </TabsList>
+
+              <RefreshOverlay active={state.isRefreshing} className="mt-5">
+                <TabsContent value="pending" className="mt-0">
+                  <ActionList
+                    items={overview.pending}
+                    render={(a) => card(a, { onApprove: handleApprove })}
+                    title="Awaiting approval"
+                    description="Approving moves an action to Ready to execute. It doesn't publish anything."
+                    empty={{
+                      icon: <ListChecks size={18} />,
+                      title: "Nothing awaiting approval",
+                      description: "New actions arrive when a content draft or a Level 3 agent proposal is approved.",
+                      action: (
+                        <Button variant="secondary" size="sm" asChild>
+                          <Link href="/content">Go to Content</Link>
+                        </Button>
+                      ),
+                    }}
+                  />
+                </TabsContent>
+                <TabsContent value="inProgress" className="mt-0">
+                  <ActionList
+                    items={overview.inProgress}
+                    render={(a) => card(a, { onExecute: handleExecute })}
+                    title="Ready to execute"
+                    description="Approved and waiting. Executing writes the publish record and starts a 30-day rollback window."
+                    empty={{
+                      icon: <Upload size={18} />,
+                      title: "Nothing waiting to execute",
+                      description: "Approve an action and it waits here — approval and execution are separate steps, so you can approve now and publish later.",
+                    }}
+                  />
+                </TabsContent>
+                <TabsContent value="completed" className="mt-0">
+                  <ActionList
+                    items={overview.completed}
+                    render={(a) => card(a, { onRollback: (action) => setConfirmRollback(action) })}
+                    title="Published"
+                    description="What went out, where and when — and whether it moved your score."
+                    empty={{
+                      icon: <CheckCircle2 size={18} />,
+                      title: "Nothing published yet",
+                      description: "Executed actions land here with their outcome. Publishing currently writes an internal record only — no external CMS is connected.",
+                    }}
+                  />
+                </TabsContent>
+                <TabsContent value="rolledBack" className="mt-0">
+                  <ActionList
+                    items={overview.rolledBack}
+                    render={(a) => card(a, {})}
+                    title="Rolled back"
+                    description="Published actions reverted within their 30-day window."
+                    empty={{
+                      icon: <RotateCcw size={18} />,
+                      title: "Nothing rolled back",
+                      description: "If a published action is reverted within its 30-day window, it appears here with when it happened.",
+                    }}
+                  />
+                </TabsContent>
+              </RefreshOverlay>
+            </Tabs>
+          </Reveal>
+        </>
+      )}
+
+      <Dialog open={confirmRollback !== null} onOpenChange={(open) => !open && setConfirmRollback(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Roll back this action?</DialogTitle>
+            <DialogDescription>
+              {confirmRollback ? `“${confirmRollback.title}” — ` : ""}this reverts the published record. It doesn&apos;t un-approve the action, and any outcome
+              already measured stays on record.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmRollback(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" size="sm" onClick={() => confirmRollback && runRollback(confirmRollback)}>
+              <RotateCcw size={14} aria-hidden="true" /> Roll back
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </PageStack>
   );
 }
 
-function Section({
+function Count({ n }: { n: number }) {
+  return <span className="ml-1.5 rounded-full bg-surface px-1.5 font-mono text-[10.5px] tabular-nums text-muted-foreground">{n}</span>;
+}
+
+function ActionList({
   items,
-  renderItem,
-  emptyIcon,
-  emptyTitle,
-  emptyDescription,
-  emptyAction,
-  emptySecondaryAction,
+  render,
+  title,
+  description,
+  empty,
 }: {
   items: ActionWithContext[];
-  renderItem: (action: ActionWithContext) => ReactNode;
-  emptyIcon: ReactNode;
-  emptyTitle: string;
-  emptyDescription: string;
-  emptyAction?: ReactNode;
-  emptySecondaryAction?: ReactNode;
+  render: (action: ActionWithContext) => ReactNode;
+  title: string;
+  description: string;
+  empty: { icon: ReactNode; title: string; description: string; action?: ReactNode };
 }) {
+  if (items.length === 0) {
+    return <EmptyState compact icon={empty.icon} title={empty.title} description={empty.description} action={empty.action} />;
+  }
   return (
-    <Card>
-      <CardContent className="p-0">
-        {items.length === 0 ? (
-          <div className="p-5">
-            <EmptyState compact icon={emptyIcon} title={emptyTitle} description={emptyDescription} action={emptyAction} secondaryAction={emptySecondaryAction} />
-          </div>
-        ) : (
-          <div className="divide-y divide-border">{items.map(renderItem)}</div>
-        )}
-      </CardContent>
-    </Card>
+    <Section flush title={title} description={description}>
+      <ul className="divide-y divide-border">{items.map(render)}</ul>
+    </Section>
   );
 }
