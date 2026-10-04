@@ -2,46 +2,28 @@
 
 import { useState } from "react";
 import { Target } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  EmptyState,
-  Pagination,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Skeleton,
-  useToast,
-} from "@bebest/ui";
+import { EmptyState, Pagination, RefreshOverlay, Skeleton, useToast } from "@bebest/ui";
 import { ErrorPanel } from "@/components/patterns/error-panel";
+import { Section } from "@/components/patterns/section";
+import { NoResults } from "@/components/patterns/states";
+import { FilterSelect } from "@/components/patterns/toolbar";
 import { useAsyncData } from "@/lib/use-async-data";
 import { dismissOpportunity, listOpportunities } from "@/data/seo/client";
 import type { OpportunityStatus, SeoOpportunity } from "@/data/seo/types";
 import { OPPORTUNITY_STATUS_LABEL } from "@/data/seo/labels";
+import { formatNumber } from "@/lib/format";
 import { OpportunityRow } from "./opportunity-row";
 
-const STATUS_FILTERS: Array<OpportunityStatus | "all"> = ["all", "new", "in_progress", "completed", "dismissed"];
+const STATUS_FILTERS: { value: OpportunityStatus | "all"; label: string }[] = [
+  { value: "all", label: "All statuses" },
+  ...(["new", "in_progress", "completed", "dismissed"] as const).map((s) => ({ value: s, label: OPPORTUNITY_STATUS_LABEL[s] })),
+];
 const PAGE_SIZE = 25;
 
-function RowsSkeleton() {
-  return (
-    <div className="flex flex-col gap-3 p-5">
-      {Array.from({ length: 3 }).map((_, i) => (
-        <Skeleton key={i} className="h-16 w-full rounded-lg" />
-      ))}
-    </div>
-  );
-}
-
 /**
- * `seo_opportunities`, sorted by score — per the epic's UI surface. Sorting
- * is entirely server-side (`data/seo/client.ts`'s `listOpportunities` never
- * re-orders the response); `refreshKey` bumps whenever
- * `KeywordCoveragePanel` generates new keywords (each one creates a scored
- * opportunity server-side), so this list picks those up without the user
- * having to manually reload.
+ * `seo_opportunities`, ranked by score server-side (never re-sorted here).
+ * `refreshKey` bumps whenever Keyword coverage generates keywords (each
+ * creates a scored opportunity), so new rows appear without a reload.
  */
 export function OpportunitiesPanel({ refreshKey }: { refreshKey: number }) {
   const [statusFilter, setStatusFilter] = useState<OpportunityStatus | "all">("all");
@@ -70,70 +52,86 @@ export function OpportunitiesPanel({ refreshKey }: { refreshKey: number }) {
     }
   }
 
+  const data = state.status === "success" ? state.data : null;
+  const total = data?.pagination.total ?? 0;
+  const firstRun = data !== null && total === 0 && statusFilter === "all";
+  const rows = data?.opportunities ?? [];
+
   return (
-    <Card>
-      <CardContent className="p-5 flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <h2 className="font-display text-[16px] font-semibold text-foreground">Opportunities</h2>
-            <p className="text-[12.5px] text-muted-foreground mt-0.5">
-              Sorted by opportunity score{state.status === "success" ? ` — ${state.data.pagination.total} total` : ""}.
-            </p>
-          </div>
-          <Select
+    <Section
+      title="Content opportunities"
+      description={
+        data && !firstRun
+          ? `${formatNumber(total)} ${statusFilter === "all" ? "" : `${OPPORTUNITY_STATUS_LABEL[statusFilter].toLowerCase()} `}keyword opportunit${total === 1 ? "y" : "ies"}, highest score first.`
+          : "One scored page idea per keyword, highest score first."
+      }
+      actions={
+        !firstRun ? (
+          <FilterSelect
             value={statusFilter}
             onValueChange={(v) => {
-              setStatusFilter(v as OpportunityStatus | "all");
+              setStatusFilter(v);
               setPage(1);
             }}
-          >
-            <SelectTrigger className="w-44" aria-label="Filter by status">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {STATUS_FILTERS.map((value) => (
-                <SelectItem key={value} value={value}>
-                  {value === "all" ? "All statuses" : OPPORTUNITY_STATUS_LABEL[value]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {state.status === "loading" && <RowsSkeleton />}
-
-        {state.status === "error" && <ErrorPanel message={state.error.message} onRetry={reload} />}
-
-        {state.status === "success" && state.data.opportunities.length === 0 && (
-          <EmptyState
-            compact
-            icon={<Target size={18} />}
-            title={statusFilter === "all" ? "No opportunities yet" : `No ${OPPORTUNITY_STATUS_LABEL[statusFilter].toLowerCase()} opportunities`}
-            description={
-              statusFilter === "all"
-                ? "Generate keywords from your brand profile above — every keyword generated gets a scored opportunity here."
-                : "Try a different status."
-            }
+            options={STATUS_FILTERS}
+            label="Filter opportunities by status"
+            className="h-8 w-36 sm:w-40"
           />
-        )}
+        ) : undefined
+      }
+      flush={rows.length > 0}
+    >
+      {state.status === "loading" && (
+        <div className="flex flex-col gap-3" aria-busy="true">
+          <span className="sr-only">Loading opportunities…</span>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-[72px] w-full rounded-lg" />
+          ))}
+        </div>
+      )}
 
-        {state.status === "success" && state.data.opportunities.length > 0 && (
-          <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
-            {state.data.opportunities.map((opportunity) => (
+      {state.status === "error" && <ErrorPanel compact title="Opportunities didn't load" message={state.error.message} onRetry={reload} />}
+
+      {firstRun && (
+        <EmptyState
+          compact
+          icon={<Target size={18} />}
+          title="No content opportunities yet"
+          description="Every keyword you generate or add gets a scored page idea here. Generate keywords from your brand profile in Keyword coverage above to get your first list."
+        />
+      )}
+
+      {data && !firstRun && rows.length === 0 && (
+        <NoResults
+          noun="opportunities"
+          onClear={() => {
+            setStatusFilter("all");
+            setPage(1);
+          }}
+          hint="Nothing has this status yet. Try another, or show all."
+        />
+      )}
+
+      {rows.length > 0 && (
+        <RefreshOverlay active={state.isRefreshing}>
+          <ul className="divide-y divide-border">
+            {rows.map((opportunity, i) => (
               <OpportunityRow
                 key={opportunity.id}
                 opportunity={opportunity}
+                rank={(page - 1) * PAGE_SIZE + i + 1}
                 dismissing={dismissingId === opportunity.id}
                 onDismiss={handleDismiss}
               />
             ))}
-          </div>
-        )}
-
-        {state.status === "success" && state.data.opportunities.length > 0 && (
-          <Pagination page={page} pageSize={PAGE_SIZE} total={state.data.pagination.total} onPageChange={setPage} itemLabel="opportunities" />
-        )}
-      </CardContent>
-    </Card>
+          </ul>
+          {total > PAGE_SIZE && (
+            <div className="border-t border-border px-5 py-3">
+              <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} itemLabel="opportunities" />
+            </div>
+          )}
+        </RefreshOverlay>
+      )}
+    </Section>
   );
 }

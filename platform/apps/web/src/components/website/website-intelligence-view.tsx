@@ -1,14 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { RefreshCw } from "lucide-react";
-import { Button, Card, CardContent, CardHeader, CardTitle, Pagination, Skeleton } from "@bebest/ui";
+import { History, RefreshCw } from "lucide-react";
+import { Button, Card } from "@bebest/ui";
 import { PageHeader } from "@/components/patterns/page-header";
 import { ErrorPanel } from "@/components/patterns/error-panel";
+import { PageStack, Reveal } from "@/components/patterns/motion";
+import { StatGrid, StatTile } from "@/components/patterns/stat-tile";
+import { SectionSkeleton } from "@/components/patterns/states";
+import { TableSkeleton } from "@/components/patterns/data-table";
+import { typography } from "@/components/patterns/typography";
 import { CrawlEmptyState } from "@/components/website/crawl-empty-state";
 import { CrawlProgressPanel } from "@/components/website/crawl-progress-panel";
 import { CrawlFailedPanel } from "@/components/website/crawl-failed-panel";
-import { CrawlHistoryTable } from "@/components/website/crawl-history";
+import { CrawlHistorySection } from "@/components/website/crawl-history";
 import { PageIssuesList } from "@/components/website/page-issues-list";
 import { useCrawlJob } from "@/hooks/use-crawl-job";
 import { useAsyncData } from "@/lib/use-async-data";
@@ -16,39 +21,20 @@ import { listCrawlJobs } from "@/data/website/client";
 import { useBrandProfile } from "@/hooks/use-brand-profile";
 import { useCurrentOrg } from "@/lib/session-context";
 import { formatDateTime } from "@/lib/format";
+import { hostOf } from "./status-badges";
 
 const HISTORY_PAGE_SIZE = 10;
 
-function OverviewSkeleton() {
-  return (
-    <Card>
-      <CardContent className="p-6 flex flex-col gap-4">
-        <Skeleton className="h-4 w-64" />
-        <Skeleton className="h-3 w-48" />
-        <div className="flex flex-col gap-3 mt-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-3">
-              <Skeleton className="size-7 rounded-full" />
-              <Skeleton className="h-3 w-40" />
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 /**
- * Post-verification fix: this used to key everything off `crawlBrand` — a
- * small, self-contained fixture with a hardcoded fake website URL, entirely
- * disconnected from whatever the org actually onboarded in Epic 2 — because
- * this epic had no live backend to read a real brand from yet (see the old
- * `data/website/fixtures.ts`'s "Why not read the real brand profile"
- * section). Epic 2's frontend is wired to the real `apps/api` brand routes
- * now, and so is this epic's crawl data (`data/website/client.ts`), so this
- * view reads the real website URL via `useBrandProfile` — the same hook
- * `components/settings/brand-profile-panel.tsx` already uses — instead of a
- * fixture that would show the wrong domain for every real organization.
+ * Website Intelligence — "Can search engines and AI read my site, and what
+ * do I fix first?" Reads the org's real website URL via `useBrandProfile`
+ * and the real crawl pipeline via `useCrawlJob` (latest job + live poll)
+ * and `listCrawlJobs` (history).
+ *
+ * Layout, top to bottom: live crawl progress or a failure notice when
+ * relevant → the viewed crawl's headline numbers → where issues
+ * concentrate (by type, by severity — both act as filters) → the issue
+ * table → crawl history.
  */
 export function WebsiteIntelligenceView() {
   const org = useCurrentOrg();
@@ -77,82 +63,111 @@ export function WebsiteIntelligenceView() {
   const viewingLatest = effectiveViewingJobId === latestJob?.id;
   const showIssuesList = effectiveViewingJobId !== null && (!latestIsInFlight || !viewingLatest);
 
+  const historyJobs = history.status === "success" ? history.data.crawlJobs : [];
+  const viewingJob = viewingLatest ? latestJob : (historyJobs.find((j) => j.id === effectiveViewingJobId) ?? null);
+
   const websiteUrl = profile?.brand.websiteUrl || "your website";
-  const websiteHost = websiteUrl.replace(/^https?:\/\//, "");
+  const websiteHost = profile?.brand.websiteUrl ? hostOf(profile.brand.websiteUrl) : null;
+
+  const showSkeleton = state.status === "loading" || (state.status === "empty" && profileLoading);
 
   return (
     <>
       <PageHeader
-        eyebrow="Intelligence"
         title="Website Intelligence"
-        description={`Crawled technical health for ${websiteHost} — page-level issues an AI model or search crawler would trip over.`}
+        description={
+          websiteHost
+            ? `What a search or AI crawler trips over on ${websiteHost} — page-level issues from your latest crawl, ranked so you know what to fix first.`
+            : "What a search or AI crawler trips over on your site — page-level issues from your latest crawl, ranked so you know what to fix first."
+        }
+        meta={
+          latestJob?.completedAt && latestJob.status === "completed" ? (
+            <span className={typography.meta}>Last crawled {formatDateTime(latestJob.completedAt)}</span>
+          ) : undefined
+        }
         actions={
           canRecrawl ? (
             <Button variant="outline" size="sm" loading={starting} onClick={handleStart}>
-              <RefreshCw size={14} /> Re-crawl
+              <RefreshCw size={14} aria-hidden="true" /> Re-crawl
             </Button>
           ) : undefined
         }
       />
 
-      {(state.status === "loading" || (state.status === "empty" && profileLoading)) && <OverviewSkeleton />}
-
-      {state.status === "error" && <ErrorPanel message={state.error.message} onRetry={reload} />}
-
-      {state.status === "empty" && !profileLoading && (
-        <CrawlEmptyState websiteUrl={websiteUrl} starting={starting} onStart={handleStart} />
+      {showSkeleton && (
+        <PageStack>
+          <StatGrid>
+            {["Pages crawled", "Issues found", "High severity", "Pages with issues"].map((label) => (
+              <StatTile key={label} label={label} value="—" loading />
+            ))}
+          </StatGrid>
+          <Reveal className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+            <SectionSkeleton lines={6} className="lg:col-span-7" titleWidth="w-40" />
+            <SectionSkeleton lines={4} className="lg:col-span-5" titleWidth="w-28" />
+          </Reveal>
+          <Reveal>
+            <TableSkeleton
+              columns={[
+                { header: "Issue", cell: "entity" },
+                { header: "Severity", cell: "badge" },
+                { header: "Page", cell: "text" },
+                { header: "Crawled", cell: "meta" },
+              ]}
+              label="Loading crawl results…"
+            />
+          </Reveal>
+        </PageStack>
       )}
 
+      {state.status === "error" && <ErrorPanel title="Crawl status didn't load" message={state.error.message} onRetry={reload} />}
+
+      {state.status === "empty" && !profileLoading && <CrawlEmptyState websiteUrl={websiteUrl} starting={starting} onStart={handleStart} />}
+
       {state.status === "ready" && (
-        <div className="flex flex-col gap-6">
-          {(state.job.status === "queued" || state.job.status === "running") && <CrawlProgressPanel job={state.job} />}
+        <PageStack>
+          {latestIsInFlight && <CrawlProgressPanel job={state.job} />}
 
-          {state.job.status === "failed" && <CrawlFailedPanel job={state.job} retrying={starting} onRetry={handleStart} />}
-
-          {state.job.status === "completed" && viewingLatest && (
-            <p className="text-[13px] text-muted-foreground">
-              Finished {state.job.completedAt ? formatDateTime(state.job.completedAt) : ""} — {state.job.pagesCrawled} pages
-              crawled.
-            </p>
-          )}
+          {state.job.status === "failed" && viewingLatest && <CrawlFailedPanel job={state.job} retrying={starting} onRetry={handleStart} />}
 
           {!viewingLatest && effectiveViewingJobId && (
-            <p className="text-[12.5px] text-muted-foreground">
-              Viewing results from a previous crawl.{" "}
-              <button
-                type="button"
-                className="text-accent underline-offset-4 hover:underline"
-                onClick={() => setViewingJobId(null)}
-              >
-                Back to latest
-              </button>
-            </p>
+            <Reveal>
+              <Card className="flex flex-col gap-3 border-info/30 bg-info-muted/40 px-4 py-3 sm:flex-row sm:items-center">
+                <History size={15} className="hidden shrink-0 text-info sm:block" aria-hidden="true" />
+                <p className="flex-1 text-[13px] text-foreground" role="status">
+                  Viewing an earlier crawl
+                  {viewingJob?.startedAt ? <span className="text-muted-foreground"> from {formatDateTime(viewingJob.startedAt)}</span> : null}.
+                </p>
+                <Button variant="outline" size="sm" onClick={() => setViewingJobId(null)} className="self-start sm:self-auto">
+                  Back to latest
+                </Button>
+              </Card>
+            </Reveal>
           )}
 
-          {showIssuesList && effectiveViewingJobId && <PageIssuesList jobId={effectiveViewingJobId} />}
+          {showIssuesList && effectiveViewingJobId && <PageIssuesList key={effectiveViewingJobId} jobId={effectiveViewingJobId} job={viewingJob} />}
 
-          {history.status === "success" && history.data.crawlJobs.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Crawl history</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                <CrawlHistoryTable
-                  jobs={history.data.crawlJobs}
-                  viewingJobId={effectiveViewingJobId ?? ""}
-                  onView={(jobId) => setViewingJobId(jobId)}
-                />
-                <Pagination
-                  page={historyPage}
-                  pageSize={HISTORY_PAGE_SIZE}
-                  total={history.data.pagination.total}
-                  onPageChange={setHistoryPage}
-                  itemLabel="past crawls"
-                />
-              </CardContent>
-            </Card>
+          {history.status === "success" && historyJobs.length > 0 && (
+            <CrawlHistorySection
+              jobs={historyJobs}
+              total={history.data.pagination.total}
+              page={historyPage}
+              pageSize={HISTORY_PAGE_SIZE}
+              onPageChange={setHistoryPage}
+              refreshing={history.isRefreshing}
+              viewingJobId={effectiveViewingJobId ?? ""}
+              onView={(jobId) => {
+                setViewingJobId(jobId);
+                window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+              }}
+            />
           )}
-        </div>
+
+          {history.status === "error" && (
+            <Reveal>
+              <ErrorPanel compact title="Crawl history didn't load" message={history.error.message} onRetry={history.reload} />
+            </Reveal>
+          )}
+        </PageStack>
       )}
     </>
   );

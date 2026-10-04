@@ -2,32 +2,23 @@
 
 import { useState } from "react";
 import { FolderPlus, Sparkles, Tags } from "lucide-react";
-import { Button, Card, CardContent, EmptyState, Skeleton, useToast } from "@bebest/ui";
+import { Button, EmptyState, RefreshOverlay, Skeleton, useToast } from "@bebest/ui";
 import { ErrorPanel } from "@/components/patterns/error-panel";
+import { Section } from "@/components/patterns/section";
 import { useAsyncData } from "@/lib/use-async-data";
 import { NoKeywordCandidatesError, createKeywordGroup, generateKeywordGroup, listKeywordGroups } from "@/data/seo/client";
+import { formatNumber } from "@/lib/format";
 import { KeywordGroupCard } from "./keyword-group-card";
 import { KeywordGroupDialog } from "./keyword-group-dialog";
 
-function GroupsSkeleton() {
-  return (
-    <div className="flex flex-col gap-3">
-      {Array.from({ length: 2 }).map((_, i) => (
-        <Skeleton key={i} className="h-14 w-full rounded-xl" />
-      ))}
-    </div>
-  );
-}
-
-/** Keyword coverage — a list of `keyword_groups`, each expandable to its
+/** Keyword coverage — `keyword_groups`, each expandable to its
  *  `seo_keywords`. "Generate from brand profile" is the primary path (real
  *  `categories`/`use_cases`, never a fixture); manual groups/keywords cover
- *  the CRUD half of the epic's API surface. Generating also creates one
- *  scored opportunity per keyword server-side, so `onGenerated` tells the
- *  parent view to refresh the Opportunities panel too. */
+ *  the CRUD half. Generating also creates one scored opportunity per
+ *  keyword server-side, so `onGenerated` refreshes the Opportunities
+ *  section too. */
 export function KeywordCoveragePanel({ onGenerated }: { onGenerated: () => void }) {
   const { reload, ...state } = useAsyncData(listKeywordGroups, []);
-  const status = state.status;
   const groups = state.status === "success" ? state.data : [];
   const { toast } = useToast();
 
@@ -83,68 +74,79 @@ export function KeywordCoveragePanel({ onGenerated }: { onGenerated: () => void 
     reload();
   }
 
-  const actions = (
-    <div className="flex items-center gap-2">
-      <Button variant="outline" size="sm" onClick={() => setCreateOpen(true)}>
-        <FolderPlus size={13} /> New group
-      </Button>
-      <Button variant="primary" size="sm" loading={generating} onClick={handleGenerate}>
-        <Sparkles size={13} /> Generate from brand profile
-      </Button>
-    </div>
-  );
+  const hasGroups = state.status === "success" && groups.length > 0;
+  const keywordTotal = groups.reduce((sum, g) => sum + (g.keywordCount ?? 0), 0);
+  const knowsKeywordTotal = groups.every((g) => g.keywordCount !== undefined);
 
   return (
-    <Card>
-      <CardContent className="p-5 flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <h2 className="font-display text-[16px] font-semibold text-foreground">Keyword coverage</h2>
-            <p className="text-[12.5px] text-muted-foreground mt-0.5">
-              Topic clusters and the phrases inside them — seeded from your brand profile or curated by hand.
-            </p>
-          </div>
-          {status === "success" && groups.length > 0 && actions}
+    <Section
+      title="Keyword coverage"
+      description={
+        hasGroups
+          ? `${formatNumber(groups.length)} topic cluster${groups.length === 1 ? "" : "s"}${knowsKeywordTotal ? ` · ${formatNumber(keywordTotal)} keywords` : ""} — seeded from your brand profile or curated by hand.`
+          : "Topic clusters and the phrases inside them — seeded from your brand profile or curated by hand."
+      }
+      actions={
+        hasGroups ? (
+          <>
+            <Button variant="outline" size="sm" onClick={() => setCreateOpen(true)}>
+              <FolderPlus size={13} aria-hidden="true" /> <span className="hidden sm:inline">New group</span>
+              <span className="sr-only sm:hidden">New group</span>
+            </Button>
+            <Button variant="primary" size="sm" loading={generating} onClick={handleGenerate}>
+              <Sparkles size={13} aria-hidden="true" /> <span className="hidden sm:inline">Generate from brand profile</span>
+              <span className="sm:hidden">Generate</span>
+            </Button>
+          </>
+        ) : undefined
+      }
+      flush={hasGroups}
+    >
+      {generateError && (
+        <div className={hasGroups ? "border-b border-border p-4" : "mb-4"}>
+          <ErrorPanel compact title="Keywords weren't generated" message={generateError} onRetry={handleGenerate} />
         </div>
+      )}
 
-        {generateError && <ErrorPanel compact message={generateError} onRetry={handleGenerate} />}
+      {state.status === "loading" && (
+        <div className="flex flex-col gap-2" aria-busy="true">
+          <span className="sr-only">Loading keyword groups…</span>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full rounded-lg" />
+          ))}
+        </div>
+      )}
 
-        {status === "loading" && <GroupsSkeleton />}
+      {state.status === "error" && <ErrorPanel compact title="Keyword groups didn't load" message={state.error.message} onRetry={reload} />}
 
-        {state.status === "error" && <ErrorPanel message={state.error.message} onRetry={reload} />}
+      {state.status === "success" && groups.length === 0 && (
+        <EmptyState
+          compact
+          icon={<Tags size={18} />}
+          title="No keyword groups yet"
+          description="Keywords are what we score your coverage and opportunities against. Generate a starting set from your brand's categories and use cases, or start a group by hand."
+          action={
+            <Button variant="primary" size="sm" loading={generating} onClick={handleGenerate}>
+              <Sparkles size={13} aria-hidden="true" /> Generate from brand profile
+            </Button>
+          }
+          secondaryAction={
+            <Button variant="outline" size="sm" onClick={() => setCreateOpen(true)}>
+              <FolderPlus size={13} aria-hidden="true" /> New group
+            </Button>
+          }
+        />
+      )}
 
-        {status === "success" && groups.length === 0 && (
-          <EmptyState
-            icon={<Tags size={20} />}
-            title="No keyword groups yet"
-            description="Generate an initial list from your brand's categories and use cases, or start a group manually."
-            action={
-              <Button variant="primary" size="sm" loading={generating} onClick={handleGenerate}>
-                <Sparkles size={13} /> Generate from brand profile
-              </Button>
-            }
-            secondaryAction={
-              <Button variant="outline" size="sm" onClick={() => setCreateOpen(true)}>
-                <FolderPlus size={13} /> New group
-              </Button>
-            }
-          />
-        )}
-
-        {status === "success" && groups.length > 0 && (
-          <div className="flex flex-col gap-3">
+      {hasGroups && (
+        <RefreshOverlay active={state.isRefreshing}>
+          <ul className="divide-y divide-border">
             {groups.map((group) => (
-              <KeywordGroupCard
-                key={group.id}
-                group={group}
-                defaultOpen={group.id === justCreatedId}
-                onRenamed={reload}
-                onDeleted={handleDeleted}
-              />
+              <KeywordGroupCard key={group.id} group={group} defaultOpen={group.id === justCreatedId} onRenamed={reload} onDeleted={handleDeleted} />
             ))}
-          </div>
-        )}
-      </CardContent>
+          </ul>
+        </RefreshOverlay>
+      )}
 
       <KeywordGroupDialog
         key={createOpen ? "create-open" : "create-closed"}
@@ -154,6 +156,6 @@ export function KeywordCoveragePanel({ onGenerated }: { onGenerated: () => void 
         onSubmit={handleCreate}
         submitting={createSubmitting}
       />
-    </Card>
+    </Section>
   );
 }

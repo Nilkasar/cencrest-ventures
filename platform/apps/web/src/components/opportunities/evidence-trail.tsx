@@ -1,20 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { FileWarning } from "lucide-react";
-import { Button, Skeleton } from "@bebest/ui";
+import { AlertTriangle, RotateCw } from "lucide-react";
+import { Badge, Button, Skeleton } from "@bebest/ui";
+import { typography } from "@/components/patterns/typography";
 import { getOpportunity } from "@/data/opportunities/client";
 import type { OpportunityDetail } from "@/data/opportunities/types";
 import { sourceTableLabel } from "@/data/opportunities/labels";
 import { formatDate } from "@/lib/format";
 
 /**
- * The lazy-fetched `GET /opportunities/:id` evidence trail — factored out of
- * `opportunity-card.tsx` so Epic 10's standalone Recommendations screen
- * (`recommendation-card.tsx`) can show the exact same "link to its source
- * opportunity's evidence" disclosure without a second, drifting copy of the
- * fetch/loading/error/render logic. Same shape, same lazy-on-first-open
- * behavior, same styling, in both places.
+ * The lazy-fetched `GET /opportunities/:id` evidence trail — shared by the
+ * Opportunities list (`opportunity-card.tsx`) and the Recommendations
+ * screen (`recommendation-card.tsx`) so both show the same disclosure:
+ * same lazy-on-first-open fetch, same states, same rendering.
  */
 export type EvidenceState =
   | { status: "idle" }
@@ -42,9 +41,10 @@ export function useEvidenceTrail(opportunityId: string) {
 }
 
 export function EvidenceTrailPanel({ state, onRetry }: { state: EvidenceState; onRetry: () => void }) {
-  if (state.status === "loading") {
+  if (state.status === "loading" || state.status === "idle") {
     return (
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2" aria-busy="true">
+        <span className="sr-only">Loading evidence…</span>
         <Skeleton className="h-3 w-full" />
         <Skeleton className="h-3 w-4/5" />
       </div>
@@ -53,38 +53,34 @@ export function EvidenceTrailPanel({ state, onRetry }: { state: EvidenceState; o
 
   if (state.status === "error") {
     return (
-      <div className="flex items-center gap-2 text-[12.5px] text-danger">
-        <FileWarning size={14} className="shrink-0" />
-        {state.error.message}
+      <div role="alert" className="flex flex-wrap items-center gap-2 text-[12.5px]">
+        <AlertTriangle size={14} className="shrink-0 text-danger" aria-hidden="true" />
+        <span className="text-foreground">Evidence didn&rsquo;t load.</span>
+        <span className="text-muted-foreground">{state.error.message}</span>
         <Button variant="ghost" size="sm" onClick={onRetry}>
-          Retry
+          <RotateCw size={12} aria-hidden="true" /> Try again
         </Button>
       </div>
     );
   }
 
-  if (state.status === "success") {
-    return (
-      <>
-        <ul className="flex flex-col gap-2.5">
-          {state.data.evidence.map((row) => (
-            <li key={row.id} className="text-[12.5px] leading-relaxed">
-              <span className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-subtle-foreground mr-2">
-                {sourceTableLabel(row.sourceTable)}
-              </span>
-              <span className="text-foreground">{row.summary}</span>
-            </li>
-          ))}
-          {state.data.evidence.length === 0 && (
-            <li className="text-[12.5px] text-muted-foreground">No evidence rows recorded for this opportunity.</li>
-          )}
-        </ul>
-        <p className="text-[11px] text-subtle-foreground mt-2.5 pt-2.5 border-t border-border">
-          Formula v{state.data.scoringFormulaVersion} · last updated {formatDate(state.data.updatedAt)}
-        </p>
-      </>
-    );
-  }
-
-  return null;
+  return (
+    <>
+      <p className={`${typography.eyebrow} mb-2.5`}>Evidence behind this score</p>
+      <ul className="flex flex-col gap-2.5">
+        {state.data.evidence.map((row) => (
+          <li key={row.id} className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
+            <Badge variant="outline" size="sm" className="w-fit shrink-0">
+              {sourceTableLabel(row.sourceTable)}
+            </Badge>
+            <span className="text-[12.5px] leading-relaxed text-foreground">{row.summary}</span>
+          </li>
+        ))}
+        {state.data.evidence.length === 0 && <li className="text-[12.5px] text-muted-foreground">No evidence rows were recorded for this opportunity.</li>}
+      </ul>
+      <p className="mt-3 border-t border-border pt-2.5 text-[11.5px] text-muted-foreground">
+        Formula v{state.data.scoringFormulaVersion} · last updated {formatDate(state.data.updatedAt)}
+      </p>
+    </>
+  );
 }

@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, ChevronRight, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { useId, useState } from "react";
+import { ChevronRight, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import {
-  Badge,
   Button,
   DropdownMenu,
   DropdownMenuContent,
@@ -17,9 +16,11 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  cn,
   useToast,
 } from "@bebest/ui";
 import { ErrorPanel } from "@/components/patterns/error-panel";
+import { typography } from "@/components/patterns/typography";
 import { useAsyncData } from "@/lib/use-async-data";
 import {
   addKeyword,
@@ -31,16 +32,11 @@ import {
   type NewKeywordInput,
 } from "@/data/seo/client";
 import type { KeywordGroup, SeoKeyword } from "@/data/seo/types";
-import {
-  KEYWORD_CONFIDENCE_BADGE_VARIANT,
-  KEYWORD_CONFIDENCE_LABEL,
-  KEYWORD_INTENT_BADGE_VARIANT,
-  KEYWORD_INTENT_LABEL,
-  PROVIDER_SOURCE_LABEL,
-} from "@/data/seo/labels";
-import { formatDate } from "@/lib/format";
+import { PROVIDER_SOURCE_LABEL } from "@/data/seo/labels";
+import { formatNumber, formatRelativeTime } from "@/lib/format";
 import { KeywordGroupDialog } from "./keyword-group-dialog";
 import { KeywordFormDialog } from "./keyword-form-dialog";
+import { KeywordConfidenceBadge, KeywordIntentBadge, Meter } from "./status-badges";
 
 interface KeywordGroupCardProps {
   group: KeywordGroup;
@@ -49,8 +45,12 @@ interface KeywordGroupCardProps {
   onDeleted: (groupId: string) => void;
 }
 
+/** One keyword group as a row of the Keyword coverage list (an `<li>`):
+ *  a disclosure header with its count and actions, expanding to the
+ *  group's keyword table. */
 export function KeywordGroupCard({ group, defaultOpen = false, onRenamed, onDeleted }: KeywordGroupCardProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const panelId = useId();
   const { reload, ...keywordsState } = useAsyncData(() => listKeywords(group.id), [group.id]);
   const status = keywordsState.status;
   const keywords = keywordsState.status === "success" ? keywordsState.data : [];
@@ -103,6 +103,7 @@ export function KeywordGroupCard({ group, defaultOpen = false, onRenamed, onDele
         await addKeyword(group.id, values);
       }
       setKeywordDialog(null);
+      setOpen(true);
       reload();
     } catch (err) {
       setKeywordError(err instanceof Error ? err.message : "Couldn't save that keyword — try again.");
@@ -124,124 +125,142 @@ export function KeywordGroupCard({ group, defaultOpen = false, onRenamed, onDele
   }
 
   return (
-    <div className="rounded-xl border border-border bg-surface-raised overflow-hidden">
-      <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">
+    <li>
+      <div className="flex min-h-[56px] items-center gap-2 px-5 py-2 sm:gap-3">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-2 min-w-0 flex-1 text-left"
+          className="-ml-2 flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 text-left transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-expanded={open}
+          aria-controls={panelId}
         >
-          {open ? <ChevronDown size={14} className="text-subtle-foreground shrink-0" /> : <ChevronRight size={14} className="text-subtle-foreground shrink-0" />}
-          <h3 className="font-display text-[14.5px] font-semibold text-foreground truncate">{group.name}</h3>
-          <Badge variant="neutral" size="sm" className="shrink-0">
+          <ChevronRight
+            size={14}
+            className={cn("shrink-0 text-subtle-foreground transition-transform duration-200 motion-reduce:transition-none", open && "rotate-90")}
+            aria-hidden="true"
+          />
+          <span className="truncate text-[13.5px] font-medium text-foreground">{group.name}</span>
+          <span className="shrink-0 rounded-full bg-surface px-1.5 font-mono text-[11px] tabular-nums text-muted-foreground">
             {count}
-          </Badge>
+            <span className="sr-only"> keyword{count === 1 ? "" : "s"}</span>
+          </span>
         </button>
-        <span className="font-mono text-[11px] text-subtle-foreground shrink-0 hidden sm:inline">
-          Updated {formatDate(group.updatedAt)}
-        </span>
+        <span className={cn(typography.meta, "hidden shrink-0 md:inline")}>Updated {formatRelativeTime(group.updatedAt)}</span>
         <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setKeywordDialog({ mode: "create" })}>
-          <Plus size={13} /> Add keyword
+          <Plus size={13} aria-hidden="true" />
+          <span className="hidden sm:inline">Add keyword</span>
+          <span className="sr-only sm:hidden">Add a keyword to {group.name}</span>
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label={`More actions for "${group.name}"`} disabled={deleting}>
-              <MoreHorizontal size={15} />
+            <Button variant="ghost" size="icon" className="size-8 shrink-0" aria-label={`More actions for "${group.name}"`} disabled={deleting}>
+              <MoreHorizontal size={15} aria-hidden="true" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={() => setRenameOpen(true)}>
-              <Pencil size={13} /> Rename
+              <Pencil size={13} aria-hidden="true" /> Rename
             </DropdownMenuItem>
             <DropdownMenuItem destructive onSelect={handleDelete}>
-              <Trash2 size={13} /> Delete
+              <Trash2 size={13} aria-hidden="true" /> Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
       {open && (
-        <div className="p-4">
+        <div id={panelId} className="border-t border-border bg-surface/40">
           {status === "loading" && (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 p-4" aria-busy="true">
+              <span className="sr-only">Loading keywords…</span>
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-8 w-full" />
               ))}
             </div>
           )}
 
-          {keywordsState.status === "error" && <ErrorPanel compact message={keywordsState.error.message} onRetry={reload} />}
+          {keywordsState.status === "error" && (
+            <div className="p-4">
+              <ErrorPanel compact title="Keywords didn't load" message={keywordsState.error.message} onRetry={reload} />
+            </div>
+          )}
 
           {status === "success" && keywords.length === 0 && (
             <EmptyState
               compact
               title="No keywords in this group yet"
-              description="Add one manually, or generate a group from your brand profile above."
+              description="Add the phrases this cluster should rank for. Each one is scored for demand and coverage."
               action={
                 <Button variant="outline" size="sm" onClick={() => setKeywordDialog({ mode: "create" })}>
-                  <Plus size={13} /> Add keyword
+                  <Plus size={13} aria-hidden="true" /> Add keyword
                 </Button>
               }
             />
           )}
 
           {status === "success" && keywords.length > 0 && (
-            <Table>
+            <Table framed={false}>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Keyword</TableHead>
+                  <TableHead className="pl-12">Keyword</TableHead>
                   <TableHead>Intent</TableHead>
-                  <TableHead>Volume</TableHead>
+                  <TableHead className="text-right">Volume / mo</TableHead>
                   <TableHead>Difficulty</TableHead>
                   <TableHead>Confidence</TableHead>
                   <TableHead>Source</TableHead>
-                  <TableHead />
+                  <TableHead className="text-right">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {keywords.map((keyword) => (
                   <TableRow key={keyword.id}>
-                    <TableCell className="max-w-[280px] truncate">{keyword.text}</TableCell>
+                    <TableCell className="max-w-[280px] pl-12">
+                      <span className="block truncate text-[13px] text-foreground">{keyword.text}</span>
+                    </TableCell>
                     <TableCell>
-                      {keyword.intent ? (
-                        <Badge variant={KEYWORD_INTENT_BADGE_VARIANT[keyword.intent]} size="sm">
-                          {KEYWORD_INTENT_LABEL[keyword.intent]}
-                        </Badge>
+                      {keyword.intent ? <KeywordIntentBadge intent={keyword.intent} /> : <span className="text-subtle-foreground">&mdash;</span>}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <span className={typography.numeric}>{keyword.monthlyVolume !== null ? formatNumber(keyword.monthlyVolume) : "—"}</span>
+                    </TableCell>
+                    <TableCell>
+                      {keyword.difficulty !== null ? (
+                        <span className="flex items-center gap-2">
+                          <Meter value={keyword.difficulty} className="w-12" fillClassName="bg-muted-foreground" />
+                          <span className={typography.numeric}>{keyword.difficulty}</span>
+                        </span>
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="text-subtle-foreground">&mdash;</span>
                       )}
                     </TableCell>
-                    <TableCell className="font-mono text-muted-foreground">
-                      {keyword.monthlyVolume !== null ? keyword.monthlyVolume.toLocaleString() : "—"}
-                    </TableCell>
-                    <TableCell className="font-mono text-muted-foreground">{keyword.difficulty ?? "—"}</TableCell>
                     <TableCell>
-                      <Badge variant={KEYWORD_CONFIDENCE_BADGE_VARIANT[keyword.confidence]} size="sm">
-                        {KEYWORD_CONFIDENCE_LABEL[keyword.confidence]}
-                      </Badge>
+                      <KeywordConfidenceBadge confidence={keyword.confidence} />
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{PROVIDER_SOURCE_LABEL[keyword.source]}</TableCell>
+                    <TableCell>
+                      <span className="whitespace-nowrap text-[12px] text-muted-foreground">{PROVIDER_SOURCE_LABEL[keyword.source]}</span>
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-subtle-foreground hover:text-foreground"
+                          className="size-8 text-subtle-foreground hover:text-foreground"
                           aria-label={`Edit "${keyword.text}"`}
                           onClick={() => setKeywordDialog({ mode: "edit", keyword })}
                         >
-                          <Pencil size={13} />
+                          <Pencil size={13} aria-hidden="true" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-subtle-foreground hover:text-danger"
+                          className="size-8 text-subtle-foreground hover:text-danger"
                           aria-label={`Remove "${keyword.text}"`}
                           loading={removingId === keyword.id}
                           onClick={() => handleRemoveKeyword(keyword)}
                         >
-                          <Trash2 size={13} />
+                          <Trash2 size={13} aria-hidden="true" />
                         </Button>
                       </div>
                     </TableCell>
@@ -275,6 +294,6 @@ export function KeywordGroupCard({ group, defaultOpen = false, onRenamed, onDele
           submitting={keywordSubmitting}
         />
       )}
-    </div>
+    </li>
   );
 }
