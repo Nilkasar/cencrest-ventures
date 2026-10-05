@@ -72,9 +72,11 @@ deliberately `null` until the owner picks (1) or (2).
 - ❌ A sampled-on date, or any invented figure, presented as measurement. An illustrative
   figure once carried a real-looking `SAMPLED 06 AUG 2026` and had to be relabelled.
 - ❌ Named competitors.
-- ⚠️ **Still live and unsupportable**: `ai-visibility-snapshot.html:163` says "Many
-  clients start with the Snapshot and upgrade immediately." Same class as the claims
-  already removed. Fix before any campaign quotes that page.
+- ✅ Fixed 2026-10-05: three surviving client-behaviour claims ("Many clients start with
+  the Snapshot and upgrade immediately" on both service pages, "Most clients start with
+  the free Snapshot…" on `pricing.html`) were rewritten as what the reader can do rather
+  than what unnamed clients supposedly did. A sweep for the rest of the class found none
+  — the remaining "customers" mentions all refer to the *prospect's* customers.
 
 ---
 
