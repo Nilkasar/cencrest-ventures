@@ -49,3 +49,9 @@ coverage/
 graphify-out/
 api/node_modules/
 api/.env
+
+# marketing studio
+marketing/out/
+marketing/node_modules/
+marketing/studio.config.json
+marketing/shots/

@@ -1,0 +1,106 @@
+<!doctype html>
+<!-- carousel.html — seamless Instagram carousels drawn as ONE wide canvas and sliced into 1080×1350 slides.
+     ?c=A what's coming (features + cover + end) · ?c=B swipe for a surprise (6) · ?c=C guess the feature (2×3 + cover + end)
+     node tools/render.cjs carousel templates/carousel.html out/carousels A,B,C -->
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700;9..144,900&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Caveat:wght@700&family=Bebas+Neue&display=swap" rel="stylesheet">
+<script src="brand.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{overflow:hidden}
+#p{position:absolute;left:0;top:0;height:1350px;overflow:hidden}
+.a{position:absolute}.J{font-weight:800;letter-spacing:-.045em;line-height:1}.I{font-weight:700}
+.H{font-family:Caveat;font-weight:700;line-height:1.02}.B{font-family:'Bebas Neue';line-height:.85}
+</style></head>
+<body><div id="p"></div>
+<script>
+const Bd = BRAND, c = new URLSearchParams(location.search).get('c') || 'A', W = 1080, X = (i) => i * W;
+document.querySelectorAll('style')[0].textContent += `.J{font-family:'${Bd.fontDisplay}'}.I{font-family:'${Bd.fontUI}'}`;
+const G = `linear-gradient(90deg,${Bd.grad.join(',')})`;
+const phone = (x, y, w, rot, scr, sy, blur = 0) => { const bz = 16, S = (w - 2 * bz) / 780;
+  return `<div class="a" style="left:${x}px;top:${y}px;width:${w}px;height:1500px;border-radius:${w * .13}px;background:#16131f;padding:${bz}px;transform:rotate(${rot}deg);box-shadow:0 50px 100px rgba(0,0,0,.4),inset 0 0 0 3px #3a3446">
+   <div style="position:relative;width:100%;height:100%;border-radius:${w * .11}px;overflow:hidden;background:${Bd.cream}"><img src="../shots/${scr}_screen.png" style="position:absolute;left:0;top:0;width:780px;transform-origin:0 0;transform:scale(${S}) translateY(${-sy}px);${blur ? `filter:blur(${blur}px) saturate(1.3)` : ''}"></div></div>`; };
+const logo = (x, y, sz, col) => `<div class="a" style="left:${x}px;top:${y}px;display:flex;align-items:center;gap:${sz * .25}px"><img src="${Bd.logo}" style="width:${sz}px;height:${sz}px"><span class="J" style="font-size:${sz * .62}px;color:${col};letter-spacing:-.02em">${Bd.name}</span></div>`;
+// SWIPE pill has its own background — plain text vanishes over a white phone screen
+const swipe = (i, col) => `<div class="I a" style="left:${X(i) + 760}px;top:1246px;z-index:40;font-size:24px;letter-spacing:.2em;color:${col};display:flex;align-items:center;gap:12px;padding:6px 26px;border-radius:40px;background:${col === '#fff' ? 'rgba(22,19,31,.85)' : 'rgba(255,255,255,.85)'};box-shadow:0 8px 20px rgba(0,0,0,.2)">SWIPE <span style="font-size:40px;letter-spacing:0">→</span></div>`;
+const dots = (i, n, col) => `<div class="a" style="left:${X(i) + 60}px;top:1276px;display:flex;gap:10px">${Array.from({ length: n }, (_, j) => `<div style="width:${j === i ? 34 : 12}px;height:12px;border-radius:6px;background:${col};opacity:${j === i ? 1 : .35}"></div>`).join('')}</div>`;
+const tape = (x, y, txt, bg, col, rot = 3) => `<div class="I a" style="left:${x}px;top:${y}px;transform:rotate(${rot}deg);background:${bg};color:${col};font-size:26px;font-weight:900;letter-spacing:.18em;padding:12px 22px;box-shadow:0 8px 20px rgba(0,0,0,.2)">${txt}</div>`;
+const grain = (w) => `<svg class="a" width="${w}" height="1350" style="left:0;top:0;opacity:.06;mix-blend-mode:overlay;pointer-events:none;z-index:60"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="3" stitchTiles="stitch"/></filter><rect width="${w}" height="1350" filter="url(#n)"/></svg>`;
+const endCard = (e, bgCol, ink, sub) => `<img class="a" src="${Bd.logo}" style="left:${e + 390}px;top:200px;width:300px;height:300px;filter:drop-shadow(0 30px 60px rgba(255,111,165,.5))">
+   <div class="J a" style="left:${e}px;width:${W}px;top:570px;text-align:center;font-size:96px;color:${ink}">${Bd.status.replace(' to ', '<br>to ').replace(' on ', '<br>on ')}.</div>
+   <div class="I a" style="left:${e}px;width:${W}px;top:800px;text-align:center;font-size:32px;color:${sub};font-weight:600;line-height:1.5">🔔 Turn on post notifications<br>🔖 Save this · 📤 Send it to a friend who needs it</div>
+   <div class="I a" style="left:${e}px;width:${W}px;top:1110px;text-align:center;font-size:26px;color:${Bd.gold};letter-spacing:.16em">${Bd.url}</div>`;
+
+const C = {
+ A: () => { const F = FEATURES, n = F.length + 2, w = n * W; let pts = [];
+  for (let x = 0; x <= X(n - 1) + 200; x += 60) pts.push(`${x},${1000 + Math.sin(x / 540 * Math.PI) * 140}`);
+  let h = `<div class="a" style="left:0;top:0;width:${w}px;height:1350px;background:linear-gradient(90deg,#1A0B2E,${Bd.dark} 30%,#160A24 60%,#2A0F2E)"></div>
+   ${Array.from({ length: n }, (_, i) => `<div class="a" style="left:${X(i) + (i % 2 ? 600 : 100)}px;top:${i % 2 ? 100 : 700}px;width:700px;height:700px;border-radius:50%;background:${Bd.grad[i % 3]};opacity:.16;filter:blur(120px)"></div>`).join('')}
+   <svg class="a" width="${w}" height="1350" style="left:0;top:0"><defs><linearGradient id="rg" x1="0" x2="1">${Bd.grad.map((g, i) => `<stop offset="${i / (Bd.grad.length - 1)}" stop-color="${g}"/>`).join('')}</linearGradient></defs>
+    <polyline points="${pts.join(' ')}" fill="none" stroke="url(#rg)" stroke-width="70" stroke-linecap="round" opacity=".9"/></svg>`;
+  h += logo(60, 60, 60, '#fff') + tape(640, 64, 'LAUNCHING SOON', Bd.gold, '#16131f')
+   + `<div class="J a" style="left:60px;top:220px;font-size:118px;color:#fff">Something<br>big is coming<br><span style="background:${G};-webkit-background-clip:text;color:transparent">to your phone.</span></div>
+    <div class="I a" style="left:60px;top:640px;font-size:34px;color:#cfc8dc;font-weight:600;width:560px;line-height:1.4">Here’s what’s inside →</div>
+    <div class="H a" style="left:70px;top:1110px;font-size:64px;color:${Bd.gold};transform:rotate(-4deg)">swipe to peek 👀</div>` + phone(660, 610, 500, 6, F[0].screen, F[0].sy);
+  F.forEach((f, j) => { const x0 = X(j + 1), num = String(j + 1).padStart(2, '0');
+   h += `<div class="B a" style="left:${x0 + 600}px;top:30px;font-size:420px;color:transparent;-webkit-text-stroke:3px ${f.bg};opacity:.4">${num}</div>
+    <div class="I a" style="left:${x0 + 60}px;top:80px;font-size:26px;letter-spacing:.22em;color:${f.bg}">COMING SOON · ${num}/${String(F.length).padStart(2, '0')}</div>
+    <div class="J a" style="left:${x0 + 60}px;top:140px;font-size:96px;color:#fff">${f.title}</div>
+    <div class="I a" style="left:${x0 + 60}px;top:360px;width:900px;font-size:30px;color:#cfc8dc;font-weight:600;line-height:1.4">${f.sub}</div>` + phone(x0 + 230 + (j % 2 ? 40 : 0), 480, 640, j % 2 ? -4 : 4, f.screen, f.sy); });
+  const e = X(n - 1);
+  h += `<div class="a" style="left:${e}px;top:0;width:${W}px;height:1350px;background:radial-gradient(700px 700px at 50% 45%,rgba(255,111,165,.35),transparent 70%),linear-gradient(90deg,transparent,#2A0F2E 22%)"></div>` + endCard(e, '#2A0F2E', '#fff', '#cfc8dc');
+  for (let i = 0; i < n; i++) h += dots(i, n, '#fff') + (i < n - 1 ? swipe(i, '#fff') : '');
+  return [h + grain(w), n]; },
+
+ B: () => { const n = 6, w = n * W, red = Bd.warn, L = LAUNCH;
+  let h = `<div class="a" style="left:0;top:0;width:${w}px;height:1350px;background:linear-gradient(90deg,#FFF4E6,#FFE9F1 50%,#F3E8FF)"></div>
+   <div class="a" style="left:0;top:880px;width:${X(5) + 330}px;height:90px;background:linear-gradient(180deg,#FF4D6D,${red});box-shadow:0 16px 30px rgba(225,29,72,.3)"></div>`;
+  const T = (i, big, small) => `<div class="J a" style="left:${X(i) + 70}px;top:200px;font-size:120px;color:#16131f">${big}</div><div class="I a" style="left:${X(i) + 70}px;top:${200 + big.split('<br>').length * 120 + 30}px;width:900px;font-size:34px;color:#4b4458;font-weight:600;line-height:1.4">${small}</div>`;
+  const card = (x, inner, rot) => `<div class="a" style="left:${x}px;top:1010px;width:720px;background:#fff;border-radius:36px;padding:30px 34px;box-shadow:0 24px 50px rgba(22,19,31,.12);transform:rotate(${rot}deg)">${inner}</div>`;
+  const conf = (x0) => Array.from({ length: 40 }, (_, k) => `<div class="a" style="left:${x0 + 40 + ((k * 263) % 1000)}px;top:${80 + ((k * 137) % 520)}px;width:${14 + (k % 3) * 6}px;height:${8 + (k % 2) * 10}px;background:${[Bd.grad[1], Bd.gold, Bd.accent, Bd.grad[0], red][k % 5]};transform:rotate(${k * 37}deg);border-radius:3px"></div>`).join('');
+  h += logo(60, 60, 56, '#16131f') + tape(700, 64, 'LAUNCHING SOON', '#16131f', '#fff') + T(0, 'Swipe for a<br>surprise 🎁', 'No peeking at the last slide. We’ll know. 👀')
+   + `<div class="a" style="left:760px;top:740px;font-size:300px;transform:rotate(-12deg)">👉</div>`
+   + T(1, 'Not yet. 😏', 'Keep going…') + `<div class="H a" style="left:${X(1) + 90}px;top:600px;font-size:70px;color:${red};transform:rotate(-4deg)">follow the ribbon →</div>`
+   + T(2, 'Hint #1 🕵️', L.hint1.line) + card(X(2) + 180, `<div style="display:flex;align-items:center;gap:20px"><div style="width:84px;height:84px;border-radius:24px;background:#FFF1F2;font-size:46px;display:flex;align-items:center;justify-content:center">${L.hint1.emoji}</div><div style="flex:1"><div class="J" style="font-size:40px;color:#16131f;letter-spacing:-.02em">${L.hint1.title}</div><div class="I" style="font-size:22px;color:#8B5CF6;margin-top:6px">${L.hint1.badge}</div></div><div class="J" style="font-size:40px;color:${red}">${L.hint1.amount}</div></div>`, -3)
+   + T(3, 'Hint #2 🕵️', L.hint2.line) + card(X(3) + 180, `<div class="I" style="font-size:22px;letter-spacing:.2em;color:#6b7280">${L.hint2.label}</div><div style="display:flex;align-items:baseline;gap:20px;margin-top:8px"><div class="J" style="font-size:80px;color:#16131f">${L.hint2.value}</div><div class="I" style="font-size:28px;color:#16A34A">${L.hint2.extra}</div></div>`, 2)
+   + T(4, 'Almost<br>there… 🥁', 'Ready? Okay. One more swipe.') + `<div class="a" style="left:${X(4) + 640}px;top:1000px;font-size:200px;transform:rotate(10deg)">🥁</div>`;
+  const g = X(5);
+  h += conf(g) + `<div class="a" style="left:${g + 330}px;top:760px;width:420px;height:440px;border-radius:30px;background:linear-gradient(160deg,${Bd.grad[1]},${Bd.grad[0]});box-shadow:0 40px 80px rgba(124,58,237,.35)"></div>
+   <div class="a" style="left:${g + 505}px;top:760px;width:70px;height:440px;background:${red}"></div>
+   <img class="a" src="${Bd.logo}" style="left:${g + 420}px;top:520px;width:240px;height:240px;filter:drop-shadow(0 20px 40px rgba(225,29,72,.35))">
+   <div class="J a" style="left:${g + 60}px;top:110px;width:960px;text-align:center;font-size:72px;line-height:1.05;color:#16131f">${Bd.status} 🎉</div>
+   <div class="I a" style="left:${g + 60}px;top:330px;width:960px;text-align:center;font-size:36px;color:${red};font-weight:800">${L.offer}</div>
+   <div class="I a" style="left:${g + 120}px;top:390px;width:840px;text-align:center;font-size:21px;color:#6b7280;font-weight:600;line-height:1.4">${L.offerFine}</div>
+   <div class="I a" style="left:${g + 60}px;top:1240px;width:960px;text-align:center;font-size:24px;letter-spacing:.18em;color:#16131f">🔔 TURN ON NOTIFICATIONS · ${Bd.url}</div>`;
+  for (let i = 0; i < n - 1; i++) h += dots(i, n, '#16131f') + swipe(i, '#16131f');
+  return [h + grain(w), n]; },
+
+ C: () => { const Q = FEATURES.slice(0, 3), n = Q.length * 2 + 2, w = n * W;
+  let h = `<div class="a" style="left:0;top:0;width:${w}px;height:1350px;background:#16131f"></div>
+   <div class="a" style="left:0;top:0;width:${w}px;height:1350px;background-image:radial-gradient(rgba(255,255,255,.08) 2px,transparent 2px);background-size:40px 40px"></div>
+   <div class="a" style="left:60px;top:1180px;width:${w - 120}px;height:6px;background:repeating-linear-gradient(90deg,${Bd.gold} 0 24px,transparent 24px 44px);opacity:.6"></div>`
+   + logo(60, 60, 56, '#fff') + tape(700, 64, 'LAUNCHING SOON', Bd.gold, '#16131f')
+   + `<div class="J a" style="left:60px;top:240px;font-size:150px;color:#fff">Guess<br>the<br>feature 🤔</div>
+    <div class="I a" style="left:60px;top:760px;font-size:36px;color:#cfc8dc;font-weight:600;line-height:1.4">${Q.length} blurry screens. ${Q.length} hints.<br>Swipe to play →</div>
+    <div class="H a" style="left:60px;top:960px;font-size:60px;color:${Bd.gold};transform:rotate(-3deg)">score yourself in the comments 👇</div>`;
+  Q.forEach((f, j) => { const q = X(1 + j * 2), a = X(2 + j * 2), col = f.bg;
+   h += `<div class="I a" style="left:${q + 60}px;top:80px;font-size:26px;letter-spacing:.22em;color:${col}">ROUND ${j + 1} OF ${Q.length}</div>
+    <div class="J a" style="left:${q + 60}px;top:140px;font-size:84px;color:#fff;width:960px">${(f.guess || f.note).replace(/<br>/g, ' ')}…</div>
+    ${phone(q + 250, 470, 600, -4, f.screen, f.sy, 22)}
+    <div class="B a" style="left:${q + 430}px;top:640px;font-size:420px;color:#fff;text-shadow:0 20px 60px rgba(0,0,0,.5)">?</div>
+    <div class="I a" style="left:${a + 60}px;top:80px;font-size:26px;letter-spacing:.22em;color:${col}">ROUND ${j + 1} · ANSWER</div>
+    <div class="J a" style="left:${a + 60}px;top:140px;font-size:96px;color:${col}">${f.title.replace(/<br>/g, ' ')} ✅</div>
+    <div class="I a" style="left:${a + 60}px;top:${f.title.length > 22 ? 360 : 270}px;width:940px;font-size:32px;color:#e8e3f0;font-weight:600;line-height:1.4">${f.sub}</div>
+    ${phone(a + 250, 520, 600, 4, f.screen, f.sy)}`; });
+  const e = X(n - 1), N = Q.length;
+  h += `<div class="J a" style="left:${e + 60}px;top:200px;font-size:110px;color:#fff">How many<br>did you get?</div>
+   ${[[`${N}/${N}`, `You need ${Bd.name}. 🏆`], [`${N - 1}/${N}`, `You need ${Bd.name}. 😅`], [`1/${N}`, `You really need ${Bd.name}. 🙈`], [`0/${N}`, 'Download it twice. 😂']].map(([s, t], k) => `<div class="a" style="left:${e + 60}px;top:${490 + k * 130}px;width:960px;display:flex;align-items:center;gap:30px;background:rgba(255,255,255,.06);border-radius:30px;padding:22px 30px"><span class="B" style="font-size:80px;color:${Bd.gold}">${s}</span><span class="I" style="font-size:36px;color:#fff">${t}</span></div>`).join('')}
+   <div class="I a" style="left:${e + 60}px;top:1040px;font-size:34px;color:#cfc8dc;font-weight:600">${Bd.status} · ${Bd.url.toLowerCase()}</div>`;
+  for (let i = 0; i < n; i++) h += dots(i, n, '#fff') + (i < n - 1 && i % 2 === 0 ? swipe(i, '#fff') : '');
+  return [h + grain(w), n]; },
+};
+const [html, n] = C[c](); const p = document.getElementById('p'); p.style.width = n * W + 'px'; p.innerHTML = html;
+window.ready = Promise.all([document.fonts.load(`800 40px "${Bd.fontDisplay}"`), document.fonts.load(`700 40px "${Bd.fontUI}"`), document.fonts.load('700 40px Caveat'), document.fonts.load('40px "Bebas Neue"'), document.fonts.ready,
+  ...[...document.images].map((i) => i.decode().catch(() => 0))]).then(() => n);
+</script>
+</body></html>
