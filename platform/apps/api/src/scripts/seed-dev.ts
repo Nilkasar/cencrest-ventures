@@ -64,10 +64,14 @@ async function main(): Promise<void> {
   const [owner, sales, analyst] = users;
   if (!owner || !sales || !analyst) throw new Error('expected three seeded staff users');
 
+  // `kind: 'internal'` (Epic 22) — this IS the org `CRM_INTERNAL_ORG_ID`
+  // names, so it is marked as such in the data rather than inferred from the
+  // env var at request time. Set on update too, so re-running the seed
+  // corrects an ops org created before the column existed.
   const org = await db.organizations.upsert({
     where: { slug: OPS_ORG.slug },
-    create: { name: OPS_ORG.name, slug: OPS_ORG.slug, created_by: owner.id },
-    update: { name: OPS_ORG.name },
+    create: { name: OPS_ORG.name, slug: OPS_ORG.slug, kind: 'internal', created_by: owner.id },
+    update: { name: OPS_ORG.name, kind: 'internal' },
   });
 
   // `memberships` has RLS keyed on app.current_user OR app.current_org

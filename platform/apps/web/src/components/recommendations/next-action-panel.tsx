@@ -1,19 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, FileText, Sparkles } from "lucide-react";
+import { FileText, Sparkles } from "lucide-react";
 import { Badge, Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton, useToast } from "@bebest/ui";
 import type { Recommendation, RecommendationStatus } from "@/data/recommendations/types";
-import {
-  ACTION_TYPE_BADGE_VARIANT,
-  ACTION_TYPE_LABEL,
-  EFFORT_BADGE_VARIANT,
-  IMPACT_BADGE_VARIANT,
-  LEVEL_LABEL,
-  RECOMMENDATION_STATUS_BADGE_VARIANT,
-  RECOMMENDATION_STATUS_LABEL,
-  splitImplementationNotes,
-} from "@/data/recommendations/labels";
+import { ACTION_TYPE_BADGE_VARIANT, ACTION_TYPE_LABEL, RECOMMENDATION_STATUS_LABEL, splitImplementationNotes } from "@/data/recommendations/labels";
+import { DisclosureButton, LevelMeter, RequirementsGrid } from "./level-meter";
 import { generateContentBrief } from "@/data/content/client";
 import { PendingActionPanel } from "@/components/agents/pending-action-panel";
 import type { AgentPendingAction } from "@/data/agents/types";
@@ -97,10 +89,10 @@ export function NextActionPanel({
 
   if (!recommendation) {
     return (
-      <div className="flex items-center justify-between gap-3 flex-wrap rounded-lg border border-dashed border-border bg-surface px-3 py-2.5">
-        <p className="text-[12.5px] text-muted-foreground">No next action generated yet for this opportunity.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border-strong/60 bg-surface/60 px-3.5 py-3">
+        <p className="text-[12.5px] text-muted-foreground">No next action generated for this opportunity yet.</p>
         <Button variant="outline" size="sm" loading={generating} onClick={onGenerate}>
-          <Sparkles size={13} /> Generate recommendation
+          <Sparkles size={13} aria-hidden="true" /> Generate recommendation
         </Button>
       </div>
     );
@@ -109,101 +101,73 @@ export function NextActionPanel({
   const notes = splitImplementationNotes(recommendation.implementationNotes);
 
   return (
-    <div className="rounded-lg border border-accent/25 bg-accent-muted/40 p-3 flex flex-col gap-2.5">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
+    <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface/60 p-3.5">
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
-          <p className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-subtle-foreground mb-1">Next action</p>
-          <p className="text-[13px] font-medium text-foreground">{recommendation.title}</p>
+          <p className="mb-1 font-mono text-[10.5px] font-medium uppercase tracking-[0.12em] text-subtle-foreground">Next action</p>
+          <p className="text-[13.5px] font-medium text-foreground">{recommendation.title}</p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3.5 gap-y-1.5">
+            <Badge variant={ACTION_TYPE_BADGE_VARIANT[recommendation.actionType]} size="sm">
+              {ACTION_TYPE_LABEL[recommendation.actionType]}
+            </Badge>
+            <LevelMeter label="Impact" level={recommendation.impact} />
+            <LevelMeter label="Effort" level={recommendation.effort} />
+          </div>
         </div>
-        <div className="flex items-center gap-1.5 flex-wrap shrink-0">
-          <Badge variant={ACTION_TYPE_BADGE_VARIANT[recommendation.actionType]} size="sm">
-            {ACTION_TYPE_LABEL[recommendation.actionType]}
-          </Badge>
-          <Badge variant={EFFORT_BADGE_VARIANT[recommendation.effort]} size="sm">
-            {LEVEL_LABEL[recommendation.effort]} effort
-          </Badge>
-          <Badge variant={IMPACT_BADGE_VARIANT[recommendation.impact]} size="sm">
-            {LEVEL_LABEL[recommendation.impact]} impact
-          </Badge>
-          <Badge variant={RECOMMENDATION_STATUS_BADGE_VARIANT[recommendation.status]} size="sm">
-            {RECOMMENDATION_STATUS_LABEL[recommendation.status]}
-          </Badge>
+        <div className="flex shrink-0 items-center gap-2">
+          {updatingStatus && (
+            <span className="text-[12px] text-muted-foreground" aria-live="polite">
+              Saving…
+            </span>
+          )}
+          <Select value={recommendation.status} onValueChange={(v) => onStatusChange(v as RecommendationStatus)} disabled={updatingStatus}>
+            <SelectTrigger className="h-8 w-[136px] text-[12.5px]" aria-label={`Status of recommendation "${recommendation.title}"`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {RECOMMENDATION_STATUS_LABEL[s]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      <p className="text-[12.5px] text-muted-foreground leading-relaxed">{recommendation.evidenceSummary}</p>
+      <p className="text-[12.5px] leading-relaxed text-muted-foreground">{recommendation.evidenceSummary}</p>
 
       {pendingAction && onApprovePendingAction && (
         <PendingActionPanel pendingAction={pendingAction} onApprove={onApprovePendingAction} compact />
       )}
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <Select
-          value={recommendation.status}
-          onValueChange={(v) => onStatusChange(v as RecommendationStatus)}
-          disabled={updatingStatus}
-        >
-          <SelectTrigger className="w-40 h-7 text-[12px]" aria-label={`Change status of recommendation "${recommendation.title}"`}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_OPTIONS.map((s) => (
-              <SelectItem key={s} value={s}>
-                {RECOMMENDATION_STATUS_LABEL[s]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {updatingStatus && <span className="text-[11.5px] text-muted-foreground">Saving…</span>}
-        <button
-          type="button"
-          onClick={onViewEvidence}
-          className="text-[12px] text-accent hover:underline underline-offset-4"
-        >
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <DisclosureButton expanded={showNotes} onClick={() => setShowNotes((v) => !v)}>
+          Implementation brief
+        </DisclosureButton>
+        <Button variant="link" size="sm" onClick={onViewEvidence} className="text-[12.5px]">
           View evidence
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowNotes((v) => !v)}
-          className="inline-flex items-center gap-1 text-[12px] text-accent hover:underline underline-offset-4"
-        >
-          {showNotes ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          {showNotes ? "Hide implementation brief" : "Show implementation brief"}
-        </button>
-        <Button variant="ghost" size="sm" loading={generating} onClick={onGenerate}>
-          Regenerate
         </Button>
-        {isContentTypeAction(recommendation.actionType) && (
-          <Button variant="outline" size="sm" loading={generatingBrief} onClick={handleGenerateContentBrief}>
-            <FileText size={13} /> Generate content brief
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          <Button variant="ghost" size="sm" loading={generating} onClick={onGenerate}>
+            Regenerate
           </Button>
-        )}
-      </div>
-
-      {showNotes && (
-        <div className="rounded-lg border border-border bg-surface p-3">
-          {notes ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <p className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-subtle-foreground mb-1">
-                  SEO requirements
-                </p>
-                <p className="text-[12px] text-foreground leading-relaxed">{notes.seo}</p>
-              </div>
-              <div>
-                <p className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-subtle-foreground mb-1">
-                  GEO requirements
-                </p>
-                <p className="text-[12px] text-foreground leading-relaxed">{notes.geo}</p>
-              </div>
-            </div>
-          ) : (
-            <p className="text-[12px] text-foreground leading-relaxed whitespace-pre-line">
-              {recommendation.implementationNotes}
-            </p>
+          {isContentTypeAction(recommendation.actionType) && (
+            <Button variant="secondary" size="sm" loading={generatingBrief} onClick={handleGenerateContentBrief}>
+              <FileText size={13} aria-hidden="true" /> Generate content brief
+            </Button>
           )}
         </div>
-      )}
+      </div>
+
+      {showNotes &&
+        (notes ? (
+          <RequirementsGrid seo={notes.seo} geo={notes.geo} />
+        ) : (
+          <p className="whitespace-pre-line rounded-lg border border-border bg-surface-raised p-3 text-[12.5px] leading-relaxed text-foreground">
+            {recommendation.implementationNotes}
+          </p>
+        ))}
     </div>
   );
 }

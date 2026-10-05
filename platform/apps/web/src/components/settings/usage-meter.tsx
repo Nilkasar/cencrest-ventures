@@ -35,10 +35,18 @@ export function UsageMeter({ label, entry }: { label: string; entry: UsageEntry 
         </span>
       </div>
       {!untracked && !unlimited && (
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface" role="presentation">
+        <div
+          className="h-1.5 w-full overflow-hidden rounded-full bg-surface"
+          role="meter"
+          aria-label={label}
+          aria-valuemin={0}
+          aria-valuemax={limit}
+          aria-valuenow={Math.min(used, limit)}
+          aria-valuetext={`${used.toLocaleString()} of ${limit.toLocaleString()}`}
+        >
           <div
             className={cn(
-              "h-full rounded-full transition-[width] duration-300 ease-out",
+              "h-full rounded-full",
               atLimit ? "bg-danger" : nearLimit ? "bg-warning" : "bg-accent",
             )}
             style={{ width: `${pct}%` }}

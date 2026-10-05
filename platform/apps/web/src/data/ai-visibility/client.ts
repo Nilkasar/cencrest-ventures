@@ -1,5 +1,5 @@
 import { apiClient, ApiError } from "@/lib/api-client";
-import type { AiRun, AiRunResponsesPage, AiRunScore, AiVisibilityQueryMeta } from "./types";
+import type { AiRun, AiRunProviderSummary, AiRunResponsesPage, AiRunScore, AiVisibilityQueryMeta } from "./types";
 
 /**
  * The AI Visibility Engine's data-access seam — same role as
@@ -13,6 +13,7 @@ import type { AiRun, AiRunResponsesPage, AiRunScore, AiVisibilityQueryMeta } fro
  *   GET  /api/ai-runs/:id                  -> getAiRun()
  *   GET  /api/ai-runs/:id/score            -> getAiRunScore()
  *   GET  /api/ai-runs/:id/responses        -> getAiRunResponses() / getAllAiRunResponses()
+ *   GET  /api/ai-runs/:id/provider-summary -> getAiRunProviderSummary()
  *   GET  /api/brands/me/query-sets/:id/queries -> getQuerySetQueries() (for intent/text labels only)
  *
  * All five `ai-runs`/`ai-run-details` routes resolve "the" brand from the
@@ -122,6 +123,13 @@ export async function startAiRun(): Promise<AiRun> {
  *  status, no special-casing "not ready yet" as an error. */
 export async function getAiRunScore(id: string): Promise<AiRunScore> {
   return apiClient.get<AiRunScore>(`/ai-runs/${id}/score`);
+}
+
+/** Per-model mention/recommendation counts for one run, aggregated
+ *  server-side without shipping any raw response text — what the Overview
+ *  dashboard's model nodes read instead of paging every response. */
+export async function getAiRunProviderSummary(id: string): Promise<AiRunProviderSummary> {
+  return apiClient.get<AiRunProviderSummary>(`/ai-runs/${id}/provider-summary`);
 }
 
 export interface ResponsesQuery {

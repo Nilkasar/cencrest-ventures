@@ -2,81 +2,56 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, Search, X } from "lucide-react";
+import { Building2, CircleDollarSign, Trophy } from "lucide-react";
 import {
-  Badge,
   Button,
-  Card,
-  CardContent,
   EmptyState,
-  Input,
   Pagination,
   RefreshOverlay,
-  Skeleton,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  cn,
 } from "@bebest/ui";
 import { ErrorPanel } from "@/components/patterns/error-panel";
+import { PageStack, Reveal } from "@/components/patterns/motion";
+import { StatGrid, StatTile } from "@/components/patterns/stat-tile";
+import { ClearFiltersButton, ResultCount, Toolbar, ToolbarSearch } from "@/components/patterns/toolbar";
+import { CellLink, ClickableRow, TableSkeleton, type SkeletonColumn } from "@/components/patterns/data-table";
+import { NoResults } from "@/components/patterns/states";
+import { typography } from "@/components/patterns/typography";
+import { AccountPlanBadge } from "@/components/crm/status-badges";
+import { pipelineTotals } from "@/components/crm/deal-utils";
 import { DEFAULT_PAGE_SIZE, fetchAccounts, fetchDeals } from "@/data/crm/client";
-import type { Account } from "@/data/crm/types";
+import type { Deal } from "@/data/crm/types";
 import { useAsyncData } from "@/lib/use-async-data";
-import { formatCompactCurrency, formatCurrency, formatDate } from "@/lib/format";
+import { useCrmBasePath } from "@/components/crm/crm-base-path";
+import { formatCompactCurrency, formatCurrency, formatDate, formatNumber, formatRelativeTime } from "@/lib/format";
 
-const PLAN_LABEL: Record<NonNullable<Account["plan"]>, string> = {
-  free: "Free",
-  starter: "Starter",
-  growth: "Growth",
-  pro: "Pro",
-  agency: "Agency",
-  managed: "Managed",
-  enterprise: "Enterprise",
-};
+const COLUMNS: SkeletonColumn[] = [
+  { header: "Account", cell: "entity" },
+  { header: "Primary contact", cell: "text" },
+  { header: "Open pipeline", cell: "number", align: "right" },
+  { header: "Won", cell: "number", align: "right" },
+  { header: "Customer since", cell: "meta" },
+];
 
-function AccountsTableSkeleton() {
+function AccountMark({ name }: { name: string }) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Account</TableHead>
-          <TableHead>Plan</TableHead>
-          <TableHead>Primary contact</TableHead>
-          <TableHead>Deals</TableHead>
-          <TableHead>Converted from</TableHead>
-          <TableHead>Created</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {Array.from({ length: 4 }).map((_, i) => (
-          <TableRow key={i}>
-            <TableCell><Skeleton className="h-3 w-36" /></TableCell>
-            <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
-            <TableCell><Skeleton className="h-3 w-32" /></TableCell>
-            <TableCell><Skeleton className="h-3 w-20" /></TableCell>
-            <TableCell><Skeleton className="h-3 w-24" /></TableCell>
-            <TableCell><Skeleton className="h-3 w-16" /></TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <p className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-subtle-foreground">{label}</p>
-        <p className="font-mono text-[22px] font-semibold text-foreground mt-1">{value}</p>
-      </CardContent>
-    </Card>
+    <span
+      className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-[11px] font-semibold text-muted-foreground"
+      aria-hidden="true"
+    >
+      {name.trim().charAt(0).toUpperCase() || <Building2 size={13} />}
+    </span>
   );
 }
 
 export function AccountsView() {
+  const crm = useCrmBasePath();
   const router = useRouter();
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
@@ -90,173 +65,172 @@ export function AccountsView() {
     return () => clearTimeout(handle);
   }, [searchInput]);
 
-  // Both requests go out together. `q` is a real server-side filter now, so
+  // Both requests go out together. `q` is a real server-side filter, so
   // searching reaches every account, not just the ones already fetched.
   const { reload, ...state } = useAsyncData(
     async () => {
-      const [accounts, deals] = await Promise.all([
-        fetchAccounts({ q, page, limit: DEFAULT_PAGE_SIZE }),
-        fetchDeals(),
-      ]);
+      const [accounts, deals] = await Promise.all([fetchAccounts({ q, page, limit: DEFAULT_PAGE_SIZE }), fetchDeals()]);
       return { accounts, deals };
     },
     [q, page],
   );
 
-  const accounts = state.status === "success" ? state.data.accounts : null;
-  const deals = state.status === "success" ? state.data.deals.items : [];
+  const hasFilters = q.trim() !== "";
 
-  const wonValue = deals
-    .filter((d) => d.stage === "won")
-    .reduce((sum, d) => sum + d.valueCents, 0);
-  const openValueForAccounts = deals
-    .filter((d) => d.organizationId && d.stage !== "won" && d.stage !== "lost")
-    .reduce((sum, d) => sum + d.valueCents, 0);
+  function clearFilters() {
+    setSearchInput("");
+    setQ("");
+    setPage(1);
+  }
+
+  const accounts = state.status === "success" ? state.data.accounts : null;
+  const dealsPage = state.status === "success" ? state.data.deals : null;
+  const deals = dealsPage?.items ?? [];
+  const accountDeals = deals.filter((d) => d.organizationId);
+  const totals = pipelineTotals(accountDeals);
+  const dealsTruncated = dealsPage !== null && dealsPage.total > dealsPage.items.length;
+  const firstRun = accounts !== null && accounts.total === 0 && !hasFilters;
+
+  const dealsByAccount = new Map<string, Deal[]>();
+  for (const deal of accountDeals) {
+    const list = dealsByAccount.get(deal.organizationId!) ?? [];
+    list.push(deal);
+    dealsByAccount.set(deal.organizationId!, list);
+  }
+  const accountsWithOpenDeals = [...dealsByAccount.values()].filter((list) => pipelineTotals(list).openCount > 0).length;
 
   return (
-    <div className="flex flex-col gap-6">
-      {accounts && accounts.total > 0 && !q && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <StatCard label="Accounts" value={String(accounts.total)} />
-          <StatCard label="Won value" value={formatCompactCurrency(wonValue)} />
-          <StatCard label="Open pipeline (accounts)" value={formatCompactCurrency(openValueForAccounts)} />
-        </div>
+    <PageStack>
+      {!firstRun && state.status !== "error" && (
+        <StatGrid columns={3}>
+          <StatTile
+            label="Accounts"
+            icon={<Building2 size={13} />}
+            loading={!accounts}
+            value={accounts ? formatNumber(accounts.total) : "—"}
+            hint={hasFilters ? "Matching this search" : "Converted from leads"}
+          />
+          <StatTile
+            label="Open pipeline"
+            icon={<CircleDollarSign size={13} />}
+            loading={!dealsPage}
+            value={formatCompactCurrency(totals.openValue)}
+            hint={`${formatNumber(totals.openCount)} open ${totals.openCount === 1 ? "deal" : "deals"} across ${formatNumber(accountsWithOpenDeals)} ${accountsWithOpenDeals === 1 ? "account" : "accounts"}${dealsTruncated ? " (first 100 deals)" : ""}`}
+          />
+          <StatTile
+            label="Won revenue"
+            icon={<Trophy size={13} />}
+            loading={!dealsPage}
+            value={formatCompactCurrency(totals.wonValue)}
+            hint={`${formatNumber(totals.wonCount)} closed-won ${totals.wonCount === 1 ? "deal" : "deals"} with accounts`}
+          />
+        </StatGrid>
       )}
 
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-subtle-foreground" aria-hidden="true" />
-          <Input
-            placeholder="Search accounts"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="pl-8"
-            aria-label="Search accounts"
+      {!firstRun && (
+        <Toolbar end={accounts && <ResultCount count={accounts.total} noun="account" />}>
+          <ToolbarSearch value={searchInput} onChange={setSearchInput} placeholder="Search company, contact, email" label="Search accounts" className="sm:w-72" />
+          {hasFilters && <ClearFiltersButton onClick={clearFilters} />}
+        </Toolbar>
+      )}
+
+      <Reveal>
+        {state.status === "loading" && <TableSkeleton columns={COLUMNS} label="Loading accounts…" />}
+
+        {state.status === "error" && <ErrorPanel title="Accounts didn't load" message={state.error.message} onRetry={reload} />}
+
+        {firstRun && (
+          <EmptyState
+            icon={<Building2 size={20} />}
+            title="No accounts yet"
+            description="An account is created when a qualified lead converts. Convert your first lead and it will appear here with its deals and history."
+            action={
+              <Button variant="primary" size="sm" onClick={() => router.push(`${crm}/leads`)}>
+                View leads to convert
+              </Button>
+            }
           />
-        </div>
-        {searchInput && (
-          <Button variant="ghost" size="sm" onClick={() => setSearchInput("")}>
-            <X size={14} /> Clear
-          </Button>
         )}
-      </div>
 
-      {state.status === "loading" && <AccountsTableSkeleton />}
+        {accounts && accounts.items.length === 0 && hasFilters && (
+          <NoResults noun="accounts" onClear={clearFilters} hint="Try a different company, contact name, or email." />
+        )}
 
-      {state.status === "error" && <ErrorPanel message={state.error.message} onRetry={reload} />}
-
-      {accounts && accounts.items.length === 0 && !q && (
-        <EmptyState
-          icon={<Building2 size={20} />}
-          eyebrow="Accounts"
-          title="No accounts yet"
-          description="An account appears here once a lead converts, or a customer signs up directly (agency and enterprise relationships often do). Convert a qualified lead to create the first one."
-          action={
-            <Button variant="primary" size="sm" onClick={() => router.push("/crm/leads")}>
-              View leads to convert
-            </Button>
-          }
-        />
-      )}
-
-      {accounts && accounts.items.length === 0 && q && (
-        <EmptyState
-          compact
-          icon={<Search size={18} />}
-          title="No accounts match that search"
-          description="Try a different company, contact name, or email."
-          action={
-            <Button variant="secondary" size="sm" onClick={() => setSearchInput("")}>
-              Clear search
-            </Button>
-          }
-        />
-      )}
-
-      {accounts && accounts.items.length > 0 && (
-        <RefreshOverlay active={state.isRefreshing} className="flex flex-col gap-3">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Account</TableHead>
-                <TableHead>Plan</TableHead>
-                <TableHead>Primary contact</TableHead>
-                <TableHead>Deals</TableHead>
-                <TableHead>Converted from</TableHead>
-                <TableHead>Created</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {accounts.items.map((account) => {
-                const accountDeals = deals.filter((d) => d.organizationId === account.id);
-                const dealsValue = accountDeals.reduce((sum, d) => sum + d.valueCents, 0);
-                const primaryContact = account.contacts.find((c) => c.primary) ?? account.contacts[0] ?? null;
-                return (
-                  <TableRow
-                    key={account.id}
-                    className="cursor-pointer"
-                    tabIndex={0}
-                    role="link"
-                    onClick={() => router.push(`/crm/accounts/${account.id}`)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") router.push(`/crm/accounts/${account.id}`);
-                    }}
-                  >
-                    <TableCell>
-                      <p className="text-[13px] font-medium text-foreground">{account.name}</p>
-                      {account.domain && <p className="text-[12px] text-muted-foreground">{account.domain}</p>}
-                    </TableCell>
-                    <TableCell>
-                      {account.plan ? (
-                        <Badge variant="outline" size="sm">{PLAN_LABEL[account.plan]}</Badge>
-                      ) : (
-                        <span className="text-[12.5px] text-subtle-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {primaryContact ? (
-                        <div>
-                          <p className="text-[13px] text-foreground">{primaryContact.name}</p>
-                          <p className="text-[12px] text-muted-foreground">{primaryContact.email}</p>
+        {accounts && accounts.items.length > 0 && (
+          <RefreshOverlay active={state.isRefreshing} className="flex flex-col gap-3">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Account</TableHead>
+                  <TableHead>Primary contact</TableHead>
+                  <TableHead className="text-right">Open pipeline</TableHead>
+                  <TableHead className="text-right">Won</TableHead>
+                  <TableHead>Customer since</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {accounts.items.map((account) => {
+                  const href = `${crm}/accounts/${account.id}`;
+                  const rollup = pipelineTotals(dealsByAccount.get(account.id) ?? []);
+                  const primaryContact = account.contacts.find((c) => c.primary) ?? account.contacts[0] ?? null;
+                  return (
+                    <ClickableRow key={account.id} href={href}>
+                      <TableCell>
+                        <div className="flex items-center gap-2.5">
+                          <AccountMark name={account.name} />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <CellLink href={href} className="block truncate text-[13px]">
+                                {account.name}
+                              </CellLink>
+                              {account.plan && <AccountPlanBadge plan={account.plan} />}
+                            </div>
+                            <p className="truncate text-[12px] text-muted-foreground">{account.domain ?? account.slug}</p>
+                          </div>
                         </div>
-                      ) : (
-                        <span className="text-[12.5px] text-subtle-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {accountDeals.length > 0 ? (
-                        <span className="font-mono text-[12.5px] text-foreground">
-                          {accountDeals.length} · {formatCurrency(dealsValue)}
+                      </TableCell>
+                      <TableCell>
+                        {primaryContact ? (
+                          <div className="min-w-0">
+                            <p className="truncate text-[13px] text-foreground">{primaryContact.name}</p>
+                            <p className="truncate text-[12px] text-muted-foreground">{primaryContact.email}</p>
+                          </div>
+                        ) : (
+                          <span className="text-subtle-foreground">&mdash;</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {rollup.openCount > 0 ? (
+                          <div>
+                            <p className={typography.numeric}>{formatCurrency(rollup.openValue)}</p>
+                            <p className={cn(typography.meta, "tabular-nums")}>
+                              {rollup.openCount} {rollup.openCount === 1 ? "deal" : "deals"}
+                            </p>
+                          </div>
+                        ) : (
+                          <span className={cn(typography.numeric, "text-subtle-foreground")}>&mdash;</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className={cn(typography.numeric, rollup.wonCount === 0 && "text-subtle-foreground")}>
+                          {rollup.wonCount > 0 ? formatCurrency(rollup.wonValue) : "—"}
                         </span>
-                      ) : (
-                        <span className="text-[12.5px] text-subtle-foreground">No deals</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {primaryContact ? (
-                        <span className="text-[12.5px] text-foreground">{primaryContact.name}</span>
-                      ) : (
-                        <span className="text-[12.5px] text-subtle-foreground">Direct signup</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-[12.5px] text-muted-foreground">{formatDate(account.createdAt)}</span>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                      </TableCell>
+                      <TableCell>
+                        <span className={typography.meta} title={formatDate(account.createdAt)}>
+                          {formatRelativeTime(account.createdAt)}
+                        </span>
+                      </TableCell>
+                    </ClickableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
 
-          <Pagination
-            page={accounts.page}
-            pageSize={accounts.limit}
-            total={accounts.total}
-            onPageChange={setPage}
-            itemLabel="accounts"
-          />
-        </RefreshOverlay>
-      )}
-    </div>
+            <Pagination page={accounts.page} pageSize={accounts.limit} total={accounts.total} onPageChange={setPage} itemLabel="accounts" />
+          </RefreshOverlay>
+        )}
+      </Reveal>
+    </PageStack>
   );
 }

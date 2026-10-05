@@ -1,77 +1,100 @@
 "use client";
 
-import { Badge, Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@bebest/ui";
+import { Button, Pagination, RefreshOverlay, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@bebest/ui";
+import { Section } from "@/components/patterns/section";
+import { typography } from "@/components/patterns/typography";
 import type { CrawlJob } from "@/data/website/types";
-import { STATUS_LABEL } from "@/data/website/labels";
-import { formatDateTime } from "@/lib/format";
-
-const STATUS_BADGE_VARIANT: Record<CrawlJob["status"], "neutral" | "accent" | "success" | "warning" | "danger"> = {
-  queued: "neutral",
-  running: "accent",
-  completed: "success",
-  failed: "danger",
-  cancelled: "neutral",
-};
-
-function formatDuration(startedAt: string | null, completedAt: string | null): string {
-  if (!startedAt || !completedAt) return "—";
-  const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
-  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
-  return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
-}
+import { formatDateTime, formatNumber } from "@/lib/format";
+import { CrawlStatusBadge, formatCrawlDuration } from "./status-badges";
 
 /**
- * Past crawls for this site — per the epic's end-to-end flow step 5:
- * "re-crawl the same site... a new `crawl_jobs` row is created (history
- * preserved), not an overwrite of the previous crawl's pages." Each
- * completed or failed run stays viewable here, not just the latest one.
+ * Past crawls for this site. Re-crawling creates a new `crawl_jobs` row
+ * (history preserved), so each completed or failed run stays viewable
+ * here, not just the latest one.
  */
-export function CrawlHistoryTable({ jobs, viewingJobId, onView }: { jobs: CrawlJob[]; viewingJobId: string; onView: (jobId: string) => void }) {
+export function CrawlHistorySection({
+  jobs,
+  total,
+  page,
+  pageSize,
+  onPageChange,
+  refreshing,
+  viewingJobId,
+  onView,
+}: {
+  jobs: CrawlJob[];
+  total: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  refreshing: boolean;
+  viewingJobId: string;
+  onView: (jobId: string) => void;
+}) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Status</TableHead>
-          <TableHead>Started</TableHead>
-          <TableHead>Duration</TableHead>
-          <TableHead>Pages</TableHead>
-          <TableHead />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {jobs.map((job) => {
-          const isViewing = job.id === viewingJobId;
-          const hasResults = job.status === "completed" || job.status === "failed";
-          return (
-            <TableRow key={job.id}>
-              <TableCell>
-                <Badge variant={STATUS_BADGE_VARIANT[job.status]} size="sm">
-                  {STATUS_LABEL[job.status]}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <span className="text-[12.5px] text-foreground">{job.startedAt ? formatDateTime(job.startedAt) : "—"}</span>
-              </TableCell>
-              <TableCell>
-                <span className="font-mono text-[12.5px] text-muted-foreground">{formatDuration(job.startedAt, job.completedAt)}</span>
-              </TableCell>
-              <TableCell>
-                <span className="font-mono text-[12.5px] text-foreground">
-                  {job.pagesCrawled}
-                  {job.pagesFound ? ` / ${job.pagesFound}` : ""}
-                </span>
-              </TableCell>
-              <TableCell>
-                {hasResults && (
-                  <Button variant={isViewing ? "secondary" : "ghost"} size="sm" onClick={() => onView(job.id)} disabled={isViewing}>
-                    {isViewing ? "Viewing" : "View results"}
-                  </Button>
-                )}
-              </TableCell>
+    <Section title="Crawl history" description="Every crawl is kept, so you can compare what changed between runs." flush>
+      <RefreshOverlay active={refreshing}>
+        <Table framed={false}>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Started</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Pages</TableHead>
+              <TableHead className="text-right">Failed</TableHead>
+              <TableHead className="text-right">Duration</TableHead>
+              <TableHead className="text-right">
+                <span className="sr-only">Actions</span>
+              </TableHead>
             </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
+          </TableHeader>
+          <TableBody>
+            {jobs.map((job) => {
+              const isViewing = job.id === viewingJobId;
+              const hasResults = job.status === "completed" || job.status === "failed";
+              return (
+                <TableRow key={job.id} aria-current={isViewing ? "true" : undefined} className={isViewing ? "bg-accent-muted/30" : undefined}>
+                  <TableCell>
+                    <span className="text-[13px] text-foreground whitespace-nowrap">
+                      {job.startedAt ? formatDateTime(job.startedAt) : formatDateTime(job.createdAt)}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <CrawlStatusBadge status={job.status} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <span className={typography.numeric}>
+                      {formatNumber(job.pagesCrawled)}
+                      {job.pagesFound ? <span className="text-muted-foreground"> / {formatNumber(job.pagesFound)}</span> : null}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <span className={job.pagesFailed > 0 ? `${typography.numeric} text-danger` : `${typography.numeric} text-muted-foreground`}>
+                      {formatNumber(job.pagesFailed)}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <span className={`${typography.numeric} text-muted-foreground`}>{formatCrawlDuration(job.startedAt, job.completedAt) ?? "—"}</span>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {isViewing ? (
+                      <span className="text-[12px] font-medium text-accent">Viewing</span>
+                    ) : hasResults ? (
+                      <Button variant="ghost" size="sm" onClick={() => onView(job.id)} aria-label={`View results from the crawl started ${job.startedAt ? formatDateTime(job.startedAt) : ""}`}>
+                        View results
+                      </Button>
+                    ) : null}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+        {total > pageSize && (
+          <div className="border-t border-border px-5 py-3">
+            <Pagination page={page} pageSize={pageSize} total={total} onPageChange={onPageChange} itemLabel="past crawls" />
+          </div>
+        )}
+      </RefreshOverlay>
+    </Section>
   );
 }

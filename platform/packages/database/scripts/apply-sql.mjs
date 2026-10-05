@@ -32,6 +32,15 @@
  * whose contents changed after being applied is reported as an error
  * rather than silently re-run: edit-in-place is not a migration.
  *
+ * The one exception is step 1, the DDL rendered from `schema.prisma`. It is
+ * the baseline for a FRESH database only, and `schema.prisma` is supposed
+ * to change whenever a migration folder adds a column or table (0019,
+ * 0023, ...). An existing database never re-runs it — it receives those
+ * changes through the folder's own `ddl.sql`, written `IF NOT EXISTS` so
+ * it is also a no-op on a fresh database that already got them from this
+ * step. So a changed checksum here is expected, reported as a NOTE, and
+ * re-recorded once the run succeeds — not an "edited migration" failure.
+ *
  *   --baseline   record every current file as applied WITHOUT running it.
  *                For a database that was set up before this ledger existed.
  *   --dry-run    list what would run, touch nothing.
@@ -64,6 +73,7 @@ const DRY_RUN = process.argv.includes('--dry-run');
 const BASELINE = process.argv.includes('--baseline');
 
 const LEDGER_TABLE = '_bebest_applied_sql';
+const SCHEMA_STEP = 'schema.prisma (generated DDL)';
 
 function checksum(sql) {
   return createHash('sha256').update(sql).digest('hex');
@@ -106,7 +116,7 @@ async function main() {
   }
 
   console.log('rendering schema DDL from schema.prisma…');
-  const steps = [{ label: 'schema.prisma (generated DDL)', sql: renderSchemaDdl() }, ...collectFiles()];
+  const steps = [{ label: SCHEMA_STEP, sql: renderSchemaDdl() }, ...collectFiles()];
 
   const client = new pg.Client({
     connectionString,
@@ -131,11 +141,19 @@ async function main() {
 
   const pending = [];
   const changed = [];
+  let schemaEvolved = null;
   for (const step of steps) {
     const sum = checksum(step.sql);
     const previous = applied.get(step.label);
     if (previous === undefined) pending.push({ ...step, sum });
+    else if (previous !== sum && step.label === SCHEMA_STEP) schemaEvolved = sum;
     else if (previous !== sum) changed.push(step.label);
+  }
+
+  if (schemaEvolved) {
+    console.log(
+      `NOTE  ${SCHEMA_STEP} differs from the version this database was built from — expected after a schema change; existing databases receive it through migration folders' ddl.sql`,
+    );
   }
 
   for (const label of changed) {
@@ -179,6 +197,15 @@ async function main() {
       failures += 1;
       console.log(`FAIL  ${step.label}\n      ${String(err.message).split('\n')[0]}`);
     }
+  }
+
+  // Re-baseline the rendered schema only once every folder (including the
+  // ddl.sql that carries the change) applied cleanly.
+  if (schemaEvolved && failures === 0) {
+    await client.query(`update ${LEDGER_TABLE} set checksum = $1, applied_at = now() where filename = $2`, [
+      schemaEvolved,
+      SCHEMA_STEP,
+    ]);
   }
 
   const { rows } = await client.query(

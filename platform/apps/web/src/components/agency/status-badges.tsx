@@ -1,15 +1,18 @@
 import { Badge, type BadgeProps } from "@bebest/ui";
+import { typography } from "@/components/patterns/typography";
 import type { AgencyClientRole, AgencyLinkStatus } from "@/data/agency/types";
 
-const LINK_STATUS_VARIANT: Record<AgencyLinkStatus, BadgeProps["variant"]> = {
+/** README §6 tones: pending waits on a human (warning), active is the good
+ *  outcome, paused/terminated are inert, revoked is an explicit pull. */
+const LINK_STATUS_VARIANT: Record<AgencyLinkStatus, NonNullable<BadgeProps["variant"]>> = {
   pending: "warning",
   active: "success",
-  paused: "outline",
+  paused: "neutral",
   terminated: "neutral",
   revoked: "danger",
 };
 
-const LINK_STATUS_LABEL: Record<AgencyLinkStatus, string> = {
+export const LINK_STATUS_LABEL: Record<AgencyLinkStatus, string> = {
   pending: "Pending",
   active: "Active",
   paused: "Paused",
@@ -31,6 +34,7 @@ const ROLE_LABEL: Record<AgencyClientRole, string> = {
   viewer: "Viewer",
 };
 
+/** Access level is a category, not a state — outline, no dot. */
 export function AgencyRoleBadge({ role, size = "md" }: { role: AgencyClientRole; size?: BadgeProps["size"] }) {
   return (
     <Badge variant="outline" size={size}>
@@ -39,10 +43,9 @@ export function AgencyRoleBadge({ role, size = "md" }: { role: AgencyClientRole;
   );
 }
 
-/** AI Visibility Score is a measurement, not a label — mono text with a
- *  color band, same convention `LeadScore` established for CRM. */
+/** AI Visibility Score — an integer out of 100 in mono (README §8). Only
+ *  active links carry a summary; anything else is an em dash. */
 export function AvsCell({ score }: { score: number | null }) {
-  if (score === null) return <span className="font-mono text-[12.5px] text-subtle-foreground">—</span>;
-  const tone = score >= 70 ? "text-success" : score >= 40 ? "text-foreground" : "text-muted-foreground";
-  return <span className={`font-mono text-[12.5px] font-medium ${tone}`}>{score.toFixed(1)}</span>;
+  if (score === null) return <span className="font-mono text-[12.5px] text-subtle-foreground">&mdash;</span>;
+  return <span className={typography.numeric}>{Math.round(score)}</span>;
 }

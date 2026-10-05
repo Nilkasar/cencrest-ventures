@@ -25,13 +25,49 @@
   font-family: var(--font-mono);
 }
 
+/* Sidebar panel colour — a verdant-tinted shade set apart from the page
+   background in both themes, so the nav reads as its own surface. */
+:root {
+  --sidebar: color-mix(in oklab, var(--color-verdant-100) 45%, var(--color-ink-150));
+  --sidebar-border: color-mix(in oklab, var(--color-verdant-200) 40%, var(--color-ink-200));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sidebar: color-mix(in oklab, var(--color-verdant-900) 55%, var(--color-ink-950));
+    --sidebar-border: color-mix(in oklab, var(--color-verdant-800) 45%, var(--color-ink-800));
+  }
+}
+:root[data-theme="dark"] {
+  --sidebar: color-mix(in oklab, var(--color-verdant-900) 55%, var(--color-ink-950));
+  --sidebar-border: color-mix(in oklab, var(--color-verdant-800) 45%, var(--color-ink-800));
+}
+
 /* App shell layout: content column offsets for the fixed sidebar. */
 .app-content {
   margin-left: 0;
 }
+/* Desktop sidebar width (components/shell/sidebar.tsx) — CSS-driven off
+   <html data-sidebar> so it's right before hydration, like the offset. */
+.app-sidebar {
+  width: 240px;
+  transition: width 260ms var(--ease-emphasized);
+}
+[data-sidebar="collapsed"] .app-sidebar {
+  width: 72px;
+}
 @media (min-width: 1024px) {
   .app-content {
-    margin-left: 264px;
+    margin-left: 240px;
+    transition: margin-left 260ms var(--ease-emphasized);
+  }
+  [data-sidebar="collapsed"] .app-content {
+    margin-left: 72px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar,
+  .app-content {
+    transition: none;
   }
 }
 
@@ -47,5 +83,257 @@
   }
   .app-content {
     margin-left: 0 !important;
+  }
+}
+
+/* Hero signal field (components/brand-hero/signal-field.tsx).
+   One 6.4s cycle shared with the component's STEP_MS (1.6s x 4 models):
+   each comet travels in the first 30% of its cycle, so a signal lands on
+   the dial every 1.6s, starting 1.92s in — `sf-arrive` is offset to match.
+   All of these stop under the global prefers-reduced-motion rule. */
+.sf-comet {
+  stroke-dasharray: 7 100;
+  stroke-dashoffset: 7;
+  opacity: 0;
+  animation: sf-travel 6.4s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+@keyframes sf-travel {
+  0% {
+    stroke-dashoffset: 7;
+    opacity: 0;
+  }
+  4% {
+    opacity: 1;
+  }
+  26% {
+    opacity: 1;
+  }
+  30% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+}
+.sf-arrive {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: sf-arrive 1.6s var(--ease-decelerate) 1.92s infinite;
+}
+@keyframes sf-arrive {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  70%,
+  100% {
+    transform: scale(1.22);
+    opacity: 0;
+  }
+}
+.sf-ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sf-ping 1.6s var(--ease-decelerate) infinite;
+}
+@keyframes sf-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  80%,
+  100% {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+.sf-orbit {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sf-spin 60s linear infinite;
+}
+@keyframes sf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.sf-breathe {
+  animation: sf-breathe 6.4s ease-in-out infinite;
+}
+@keyframes sf-breathe {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Faint instrument grid behind the snapshot hero, fading toward the edges. */
+.snapshot-grid {
+  background-image: radial-gradient(rgb(244 242 236 / 0.07) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 80% 70% at 60% 55%, #000 30%, transparent 100%);
+}
+
+/* ── Overview command center (components/overview/*) ───────────────────
+   Every continuous motion on the dashboard is CSS on a handful of SVG
+   strokes — no per-frame JS. A widget scrolled offscreen sets
+   `data-paused="true"` on its root and everything inside stops. All of it
+   is also stopped by the global prefers-reduced-motion rule in tokens.css;
+   the comets/particles are hidden outright under it so a frozen mid-flight
+   dash never reads as data. */
+[data-paused="true"] * {
+  animation-play-state: paused !important;
+}
+
+/* A signal travelling along a model -> dial wire. Duration/delay come from
+   the element (`--ov-dur`, `--ov-delay`), so a stronger signal (higher
+   mention rate) can arrive more often than a weak one. */
+.ov-comet {
+  stroke-dasharray: 9 100;
+  stroke-dashoffset: 9;
+  opacity: 0;
+  animation: ov-travel var(--ov-dur, 3.2s) cubic-bezier(0.45, 0, 0.25, 1) var(--ov-delay, 0s) infinite;
+}
+@keyframes ov-travel {
+  0% {
+    stroke-dashoffset: 9;
+    opacity: 0;
+  }
+  6% {
+    opacity: 1;
+  }
+  44% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+}
+
+/* Particles drifting along a flow band (execution loop, CRM funnel). */
+.ov-flow {
+  stroke-dasharray: 1.5 14;
+  animation: ov-flow var(--ov-dur, 6s) linear infinite;
+}
+@keyframes ov-flow {
+  to {
+    stroke-dashoffset: -155;
+  }
+}
+
+.ov-spin {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sf-spin var(--ov-dur, 80s) linear infinite;
+}
+.ov-spin-rev {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sf-spin var(--ov-dur, 120s) linear infinite reverse;
+}
+
+.ov-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ov-pulse 2.4s var(--ease-decelerate) infinite;
+}
+@keyframes ov-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  80%,
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+.ov-breathe {
+  animation: sf-breathe 7s ease-in-out infinite;
+}
+
+/* "Live" status dot — a ring expanding off a solid dot. */
+.ov-live {
+  position: relative;
+}
+.ov-live::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: currentColor;
+  animation: ov-live 1.8s var(--ease-decelerate) infinite;
+}
+@keyframes ov-live {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+
+/* Faint instrument grid + accent glow behind the hero, theme-aware: the
+   dots are the foreground colour at low alpha, so they read on paper and
+   on ink alike. */
+.ov-grid {
+  background-image: radial-gradient(color-mix(in oklab, var(--foreground) 9%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 75% 80% at 35% 50%, #000 25%, transparent 100%);
+}
+.ov-glow {
+  background: radial-gradient(
+    ellipse 55% 70% at 32% 50%,
+    color-mix(in oklab, var(--accent) 16%, transparent),
+    transparent 70%
+  );
+}
+
+/* In-flight run progress (signal-deck.tsx `RunProgress`): a light sweep
+   across the bar, and a ring pinging off the current stage marker. */
+.ov-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--surface-raised) 55%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: ov-shimmer 2.2s var(--ease-standard, ease-in-out) infinite;
+}
+@keyframes ov-shimmer {
+  from {
+    background-position: -40% 0;
+  }
+  to {
+    background-position: 140% 0;
+  }
+}
+.ov-ping {
+  animation: ov-live 1.8s var(--ease-decelerate) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ov-comet,
+  .ov-pulse,
+  .ov-shimmer,
+  .ov-ping,
+  .ov-live::after {
+    display: none;
+  }
+  .ov-flow {
+    animation: none;
   }
 }

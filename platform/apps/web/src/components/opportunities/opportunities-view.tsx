@@ -2,23 +2,15 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { AlertTriangle, RefreshCw, Target } from "lucide-react";
-import {
-  Button,
-  Card,
-  CardContent,
-  EmptyState,
-  Pagination,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Skeleton,
-  useToast,
-} from "@bebest/ui";
+import { AlertTriangle, CheckCircle2, CircleDot, Flag, Inbox, RefreshCw, Target } from "lucide-react";
+import { Button, Card, EmptyState, Pagination, RefreshOverlay, Skeleton, useToast } from "@bebest/ui";
 import { PageHeader } from "@/components/patterns/page-header";
 import { ErrorPanel } from "@/components/patterns/error-panel";
+import { PageStack, Reveal } from "@/components/patterns/motion";
+import { Section } from "@/components/patterns/section";
+import { StatGrid, StatTile } from "@/components/patterns/stat-tile";
+import { NoResults } from "@/components/patterns/states";
+import { ClearFiltersButton, FilterSelect, ResultCount, Toolbar } from "@/components/patterns/toolbar";
 import { useAsyncData } from "@/lib/use-async-data";
 import {
   NoActiveQuerySetError,
@@ -33,46 +25,51 @@ import { generateRecommendation, listRecommendations, updateRecommendationStatus
 import type { Recommendation, RecommendationStatus } from "@/data/recommendations/types";
 import { approvePendingAction, listPendingActionsByRecommendationId } from "@/data/agents/client";
 import type { AgentPendingAction } from "@/data/agents/types";
+import { formatNumber } from "@/lib/format";
 import { OpportunityCard } from "./opportunity-card";
 
-const STATUS_FILTERS: Array<OpportunityStatus | "all"> = ["all", "new", "in_progress", "completed", "dismissed"];
-const TYPE_FILTERS: Array<OpportunityType | "all"> = ["all", "unified", "seo", "geo", "content", "technical"];
-const PRIORITY_FILTERS: Array<OpportunityPriority | "all"> = ["all", 1, 2, 3];
-const BAND_FILTERS: Array<ScoreBand | "all"> = ["all", "high", "medium", "low"];
+type PriorityFilter = "all" | "1" | "2" | "3";
+
+const STATUS_OPTIONS: { value: OpportunityStatus | "all"; label: string }[] = [
+  { value: "all", label: "All statuses" },
+  ...(["new", "in_progress", "completed", "dismissed"] as const).map((s) => ({ value: s, label: OPPORTUNITY_STATUS_LABEL[s] })),
+];
+const TYPE_OPTIONS: { value: OpportunityType | "all"; label: string }[] = [
+  { value: "all", label: "All types" },
+  ...(["unified", "seo", "geo", "content", "technical"] as const).map((t) => ({ value: t, label: OPPORTUNITY_TYPE_LABEL[t] })),
+];
+const PRIORITY_OPTIONS: { value: PriorityFilter; label: string }[] = [
+  { value: "all", label: "All priorities" },
+  ...([1, 2, 3] as const).map((p) => ({ value: String(p) as PriorityFilter, label: PRIORITY_LABEL[p] })),
+];
 const BAND_LABEL: Record<ScoreBand, string> = { high: "High", medium: "Medium", low: "Low" };
+const IMPACT_OPTIONS: { value: ScoreBand | "all"; label: string }[] = [
+  { value: "all", label: "Any impact" },
+  ...(["high", "medium", "low"] as const).map((b) => ({ value: b, label: `${BAND_LABEL[b]} impact` })),
+];
+const EFFORT_OPTIONS: { value: ScoreBand | "all"; label: string }[] = [
+  { value: "all", label: "Any effort" },
+  ...(["low", "medium", "high"] as const).map((b) => ({ value: b, label: `${BAND_LABEL[b]} effort` })),
+];
 
-function ListSkeleton() {
-  return (
-    <div className="flex flex-col gap-3 p-5">
-      {Array.from({ length: 3 }).map((_, i) => (
-        <Skeleton key={i} className="h-24 w-full rounded-lg" />
-      ))}
-    </div>
-  );
-}
-
-/**
- * Epic 9 — Opportunity Engine's "Opportunities" screen
- * (`docs/09-ux/CUSTOMER_JOURNEY.md`: "What should I do next?" — that doc's
- * own framing names this the single most important screen in the product).
- * Calls `platform/apps/api`'s real, tested routes from the first line, no
- * fixture layer: `data/opportunities/client.ts`'s `listOpportunities`/
- * `recomputeOpportunities`/`updateOpportunity`.
- *
- * Filtering: `status`/`type`/`priority` are real server-side query params
- * (`GET /brands/me/opportunities`) and trigger a refetch. `effort`/`impact`
- * are NOT — the API has no query params for them (see
- * `data/opportunities/client.ts`'s header) — so those two narrow the
- * already-fetched, real page client-side via `scoreBand`. Documented as a
- * known limitation in this epic's frontend completion doc: narrows only the
- * current page (`limit` below), not the server-side total.
- */
 const PAGE_SIZE = 25;
 
+/**
+ * Opportunities — "What should I do next?" (`docs/09-ux/CUSTOMER_JOURNEY.md`
+ * calls it the single most important screen in the product).
+ *
+ *   - Headline counts are real API totals (`pagination.total` per status /
+ *     priority), never a count of the rows on this page.
+ *   - `status`/`type`/`priority` are server-side query params. `impact`/
+ *     `effort` have no API params, so they narrow the already-fetched page
+ *     client-side via `scoreBand` (a known limitation — current page only).
+ *   - Recommendations (Epic 10) and pending agent actions (Epic 12) are
+ *     joined by id client-side: one list fetch each, never N+1.
+ */
 export function OpportunitiesView() {
   const [statusFilter, setStatusFilter] = useState<OpportunityStatus | "all">("all");
   const [typeFilter, setTypeFilter] = useState<OpportunityType | "all">("all");
-  const [priorityFilter, setPriorityFilter] = useState<OpportunityPriority | "all">("all");
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [impactFilter, setImpactFilter] = useState<ScoreBand | "all">("all");
   const [effortFilter, setEffortFilter] = useState<ScoreBand | "all">("all");
   const [page, setPage] = useState(1);
@@ -82,34 +79,40 @@ export function OpportunitiesView() {
       listOpportunities({
         status: statusFilter === "all" ? undefined : statusFilter,
         type: typeFilter === "all" ? undefined : typeFilter,
-        priority: priorityFilter === "all" ? undefined : priorityFilter,
+        priority: priorityFilter === "all" ? undefined : (Number(priorityFilter) as OpportunityPriority),
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
       }),
     [statusFilter, typeFilter, priorityFilter, page],
   );
 
+  // Headline totals — four `limit=1` reads so each number is the server's
+  // count across every row, not this page's.
+  const { reload: reloadCounts, ...countsState } = useAsyncData(async () => {
+    const [fresh, doing, done, urgent] = await Promise.all([
+      listOpportunities({ status: "new", limit: 1 }),
+      listOpportunities({ status: "in_progress", limit: 1 }),
+      listOpportunities({ status: "completed", limit: 1 }),
+      listOpportunities({ priority: 1, limit: 1 }),
+    ]);
+    return {
+      new: fresh.pagination.total,
+      inProgress: doing.pagination.total,
+      completed: done.pagination.total,
+      highPriority: urgent.pagination.total,
+    };
+  }, []);
+  const counts = countsState.status === "success" ? countsState.data : null;
+
   const { toast } = useToast();
   const [recomputing, setRecomputing] = useState(false);
   const [recomputeError, setRecomputeError] = useState<Error | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  // Epic 10 — the "join by opportunityId" the backend's own completion doc
-  // documents as this frontend's responsibility (see
-  // `docs/epics/10-recommendation-engine-backend.md`'s "known limitations"
-  // #1): one extra list fetch, joined client-side, rather than a per-card
-  // `N+1` fetch or a change to Epic 9's already-verified list route.
-  const { reload: reloadRecommendations, ...recommendationsState } = useAsyncData(
-    () => listRecommendations({ limit: 100 }),
-    [],
-  );
+  const { reload: reloadRecommendations, ...recommendationsState } = useAsyncData(() => listRecommendations({ limit: 100 }), []);
   const [generatingRecommendationId, setGeneratingRecommendationId] = useState<string | null>(null);
   const [updatingRecommendationId, setUpdatingRecommendationId] = useState<string | null>(null);
 
-  // Epic 12 — Level 3's one-click approval, surfaced inline here rather than
-  // a separate approval inbox. See `recommendations-view.tsx`'s identical
-  // join and `listPendingActionsByRecommendationId`'s header comment for the
-  // N+1-over-a-recent-window rationale.
   const { reload: reloadPendingActions, ...pendingActionsState } = useAsyncData(() => listPendingActionsByRecommendationId(), []);
   const pendingActionsByRecommendationId: Map<string, { pendingAction: AgentPendingAction; agentRunId: string }> =
     pendingActionsState.status === "success" ? pendingActionsState.data : new Map();
@@ -145,8 +148,9 @@ export function OpportunitiesView() {
     });
   }, [state, impactFilter, effortFilter]);
 
-  const filtersActive =
-    statusFilter !== "all" || typeFilter !== "all" || priorityFilter !== "all" || impactFilter !== "all" || effortFilter !== "all";
+  const serverFiltersActive = statusFilter !== "all" || typeFilter !== "all" || priorityFilter !== "all";
+  const bandFiltersActive = impactFilter !== "all" || effortFilter !== "all";
+  const filtersActive = serverFiltersActive || bandFiltersActive;
 
   function clearFilters() {
     setStatusFilter("all");
@@ -170,11 +174,10 @@ export function OpportunitiesView() {
       toast({
         title: "Opportunities recomputed",
         description:
-          parts.length > 0
-            ? `${parts.join(", ")} across ${summary.intentsConsidered} intents.`
-            : `No changes across ${summary.intentsConsidered} intents.`,
+          parts.length > 0 ? `${parts.join(", ")} across ${summary.intentsConsidered} intents.` : `No changes across ${summary.intentsConsidered} intents.`,
       });
       reload();
+      reloadCounts();
     } catch (err) {
       if (err instanceof NoActiveQuerySetError || err instanceof NoBrandProfileError) {
         setRecomputeError(err);
@@ -195,6 +198,7 @@ export function OpportunitiesView() {
     try {
       await updateOpportunity(opportunity.id, { status, dismissalReason });
       reload();
+      reloadCounts();
       if (status === "dismissed") {
         toast({ title: "Opportunity dismissed", description: `"${opportunity.title}" won't reappear unless the underlying signal changes.` });
       }
@@ -245,190 +249,238 @@ export function OpportunitiesView() {
     }
   }
 
-  const recomputeButton = (
-    <Button variant="primary" size="sm" loading={recomputing} onClick={handleRecompute}>
-      <RefreshCw size={14} /> Recompute
-    </Button>
-  );
+  const data = state.status === "success" ? state.data : null;
+  const total = data?.pagination.total ?? 0;
+  const firstRun = data !== null && total === 0 && !serverFiltersActive;
 
   return (
     <>
       <PageHeader
-        eyebrow="Intelligence"
         title="Opportunities"
-        description="What should I do next? Search demand and AI-visibility gaps merged into one ranked list — the highest-ROI moves are where both signals line up, each backed by evidence."
-        actions={recomputeButton}
+        description="What to do next. Search demand and AI-visibility gaps merged into one ranked list — the strongest moves are where both signals line up, each backed by evidence."
+        actions={
+          !firstRun ? (
+            <Button variant="outline" size="sm" loading={recomputing} onClick={handleRecompute}>
+              <RefreshCw size={14} aria-hidden="true" /> Recompute
+            </Button>
+          ) : undefined
+        }
       />
 
-      {recomputeError && (
-        <div role="alert" className="mb-5 flex items-start gap-3 rounded-lg border border-danger/30 bg-danger-muted px-4 py-3">
-          <AlertTriangle className="size-4 text-danger shrink-0 mt-0.5" aria-hidden="true" />
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-medium text-foreground">
-              {recomputeError instanceof NoActiveQuerySetError ? "No active query set" : "Brand profile required"}
-            </p>
-            <p className="text-[12.5px] text-muted-foreground mt-0.5">{recomputeError.message}</p>
-            <Button asChild variant="outline" size="sm" className="mt-2">
-              <Link href={recomputeError instanceof NoActiveQuerySetError ? "/query-universe" : "/settings"}>
-                {recomputeError instanceof NoActiveQuerySetError ? "Go to Query Universe" : "Go to Settings"}
-              </Link>
-            </Button>
-          </div>
-        </div>
-      )}
+      <PageStack>
+        {recomputeError && (
+          <Reveal>
+            <Card role="alert" className="flex flex-col gap-3 border-warning/40 p-4 sm:flex-row sm:items-start">
+              <AlertTriangle className="size-4 shrink-0 text-warning sm:mt-0.5" aria-hidden="true" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium text-foreground">
+                  {recomputeError instanceof NoActiveQuerySetError ? "Recompute needs an active query set" : "Recompute needs a brand profile"}
+                </p>
+                <p className="mt-0.5 text-[12.5px] text-muted-foreground">{recomputeError.message}</p>
+              </div>
+              <Button asChild variant="outline" size="sm" className="self-start">
+                <Link href={recomputeError instanceof NoActiveQuerySetError ? "/query-universe" : "/settings"}>
+                  {recomputeError instanceof NoActiveQuerySetError ? "Go to Query Universe" : "Go to Settings"}
+                </Link>
+              </Button>
+            </Card>
+          </Reveal>
+        )}
 
-      <Card>
-        <CardContent className="p-5 flex flex-col gap-4">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <h2 className="font-display text-[16px] font-semibold text-foreground">Ranked opportunities</h2>
-              <p className="text-[12.5px] text-muted-foreground mt-0.5">
-                Sorted by opportunity score
-                {state.status === "success" ? ` — ${state.data.pagination.total} total` : ""}
-                {filtersActive && state.status === "success" ? `, ${visibleOpportunities.length} shown` : ""}.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Select
-                value={typeFilter}
-                onValueChange={(v) => {
-                  setTypeFilter(v as OpportunityType | "all");
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-36 h-8 text-[12.5px]" aria-label="Filter by type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TYPE_FILTERS.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {value === "all" ? "All types" : OPPORTUNITY_TYPE_LABEL[value]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={statusFilter}
-                onValueChange={(v) => {
-                  setStatusFilter(v as OpportunityStatus | "all");
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-36 h-8 text-[12.5px]" aria-label="Filter by status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_FILTERS.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {value === "all" ? "All statuses" : OPPORTUNITY_STATUS_LABEL[value]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={String(priorityFilter)}
-                onValueChange={(v) => {
-                  setPriorityFilter(v === "all" ? "all" : (Number(v) as OpportunityPriority));
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-32 h-8 text-[12.5px]" aria-label="Filter by priority">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PRIORITY_FILTERS.map((value) => (
-                    <SelectItem key={String(value)} value={String(value)}>
-                      {value === "all" ? "All priorities" : PRIORITY_LABEL[value]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={impactFilter} onValueChange={(v) => setImpactFilter(v as ScoreBand | "all")}>
-                <SelectTrigger className="w-32 h-8 text-[12.5px]" aria-label="Filter by impact">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {BAND_FILTERS.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {value === "all" ? "Any impact" : `${BAND_LABEL[value]} impact`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={effortFilter} onValueChange={(v) => setEffortFilter(v as ScoreBand | "all")}>
-                <SelectTrigger className="w-32 h-8 text-[12.5px]" aria-label="Filter by effort">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {BAND_FILTERS.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {value === "all" ? "Any effort" : `${BAND_LABEL[value]} effort`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {state.status === "loading" && <ListSkeleton />}
-
-          {state.status === "error" && <ErrorPanel message={state.error.message} onRetry={reload} />}
-
-          {state.status === "success" && state.data.opportunities.length === 0 && (
-            <EmptyState
-              compact
-              icon={<Target size={18} />}
-              title="No opportunities yet"
-              description="Recompute to merge your search-demand keywords (SEO Intelligence) with your AI-visibility gaps (Competitors) into a ranked list. Needs an active query set with keyword and/or competitor data."
-              action={recomputeButton}
+        {!firstRun && state.status !== "error" && (
+          <StatGrid>
+            <StatTile
+              label="Not started"
+              icon={<Inbox size={13} />}
+              loading={!counts && countsState.status === "loading"}
+              value={counts ? formatNumber(counts.new) : "—"}
+              muted={!counts}
+              hint="Ready to pick up"
             />
-          )}
+            <StatTile
+              label="In progress"
+              icon={<CircleDot size={13} />}
+              loading={!counts && countsState.status === "loading"}
+              value={counts ? formatNumber(counts.inProgress) : "—"}
+              muted={!counts}
+              hint="Being worked on"
+            />
+            <StatTile
+              label="Completed"
+              icon={<CheckCircle2 size={13} />}
+              loading={!counts && countsState.status === "loading"}
+              value={counts ? formatNumber(counts.completed) : "—"}
+              muted={!counts}
+              hint="Marked done"
+            />
+            <StatTile
+              label="High priority"
+              icon={<Flag size={13} />}
+              loading={!counts && countsState.status === "loading"}
+              value={counts ? formatNumber(counts.highPriority) : "—"}
+              muted={!counts}
+              hint="Opportunity score 60+"
+            />
+          </StatGrid>
+        )}
 
-          {state.status === "success" && state.data.opportunities.length > 0 && visibleOpportunities.length === 0 && (
+        {!firstRun && (
+          <Toolbar
+            end={
+              data ? (
+                <>
+                  {bandFiltersActive && (
+                    <span className="text-[12px] text-muted-foreground">{formatNumber(visibleOpportunities.length)} shown on this page ·</span>
+                  )}
+                  <ResultCount count={total} noun="opportunity" pluralNoun="opportunities" />
+                </>
+              ) : undefined
+            }
+          >
+            <FilterSelect
+              value={typeFilter}
+              onValueChange={(v) => {
+                setTypeFilter(v);
+                setPage(1);
+              }}
+              options={TYPE_OPTIONS}
+              label="Filter by type"
+            />
+            <FilterSelect
+              value={statusFilter}
+              onValueChange={(v) => {
+                setStatusFilter(v);
+                setPage(1);
+              }}
+              options={STATUS_OPTIONS}
+              label="Filter by status"
+              className="sm:w-36"
+            />
+            <FilterSelect
+              value={priorityFilter}
+              onValueChange={(v) => {
+                setPriorityFilter(v);
+                setPage(1);
+              }}
+              options={PRIORITY_OPTIONS}
+              label="Filter by priority"
+              className="sm:w-36"
+            />
+            <FilterSelect value={impactFilter} onValueChange={setImpactFilter} options={IMPACT_OPTIONS} label="Filter by impact (this page)" className="sm:w-36" />
+            <FilterSelect value={effortFilter} onValueChange={setEffortFilter} options={EFFORT_OPTIONS} label="Filter by effort (this page)" className="sm:w-36" />
+            {filtersActive && <ClearFiltersButton onClick={clearFilters} />}
+          </Toolbar>
+        )}
+
+        {state.status === "loading" && (
+          <Reveal>
+            <Card className="divide-y divide-border overflow-hidden" aria-busy="true">
+              <span className="sr-only">Loading opportunities…</span>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="flex gap-4 px-5 py-4" aria-hidden="true">
+                  <Skeleton className="h-6 w-10" />
+                  <div className="flex flex-1 flex-col gap-2">
+                    <Skeleton className="h-4 w-2/3" />
+                    <Skeleton className="h-4 w-48 rounded-full" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                  <div className="hidden w-60 flex-col gap-2 md:flex">
+                    {Array.from({ length: 4 }).map((__, j) => (
+                      <Skeleton key={j} className="h-2 w-full" />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </Card>
+          </Reveal>
+        )}
+
+        {state.status === "error" && (
+          <Reveal>
+            <ErrorPanel title="Opportunities didn't load" message={state.error.message} onRetry={reload} />
+          </Reveal>
+        )}
+
+        {firstRun && (
+          <Reveal>
             <EmptyState
-              compact
-              icon={<Target size={18} />}
-              title="No opportunities match these filters"
-              description="Try a different combination, or clear filters to see everything."
+              icon={<Target size={20} />}
+              title="No opportunities yet"
+              description="Recompute merges your search-demand keywords (SEO Intelligence) with your AI-visibility gaps (Competitors) into one ranked list. It needs an active query set with keyword or competitor data — usually ready after your first baseline run."
               action={
-                <Button variant="outline" size="sm" onClick={clearFilters}>
-                  Clear filters
+                <Button variant="primary" size="sm" loading={recomputing} onClick={handleRecompute}>
+                  <RefreshCw size={14} aria-hidden="true" /> Recompute opportunities
+                </Button>
+              }
+              secondaryAction={
+                <Button variant="outline" size="sm" asChild>
+                  <Link href="/seo-intelligence">Add keywords</Link>
                 </Button>
               }
             />
-          )}
+          </Reveal>
+        )}
 
-          {state.status === "success" && visibleOpportunities.length > 0 && (
-            <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
-              {visibleOpportunities.map((opportunity) => {
-                const recommendation = recommendationsByOpportunityId.get(opportunity.id);
-                const pending = recommendation ? pendingActionsByRecommendationId.get(recommendation.id) : undefined;
-                return (
-                  <OpportunityCard
-                    key={opportunity.id}
-                    opportunity={opportunity}
-                    updating={updatingId === opportunity.id}
-                    onStatusChange={handleStatusChange}
-                    recommendation={recommendation}
-                    recommendationLoading={recommendationsState.status === "loading"}
-                    generatingRecommendation={generatingRecommendationId === opportunity.id}
-                    onGenerateRecommendation={handleGenerateRecommendation}
-                    updatingRecommendationStatus={updatingRecommendationId === recommendation?.id}
-                    onRecommendationStatusChange={handleRecommendationStatusChange}
-                    pendingAction={pending?.pendingAction}
-                    onApprovePendingAction={pending ? () => handleApprovePendingAction(pending.agentRunId) : undefined}
-                  />
-                );
-              })}
-            </div>
-          )}
+        {data && !firstRun && (data.opportunities.length === 0 || visibleOpportunities.length === 0) && (
+          <Reveal>
+            <NoResults
+              noun="opportunities"
+              onClear={clearFilters}
+              hint={
+                data.opportunities.length > 0 && bandFiltersActive
+                  ? "Impact and effort filters only narrow the current page. Try another page or clear filters."
+                  : "Try a different type, status or priority, or clear filters to see everything."
+              }
+            />
+          </Reveal>
+        )}
 
-          {state.status === "success" && state.data.opportunities.length > 0 && (
-            <Pagination page={page} pageSize={PAGE_SIZE} total={state.data.pagination.total} onPageChange={setPage} itemLabel="opportunities" />
-          )}
-        </CardContent>
-      </Card>
+        {data && visibleOpportunities.length > 0 && (
+          <Section
+            title="Ranked by opportunity score"
+            description="Highest-return moves first. Open Evidence to see exactly why each one scored the way it did."
+            flush
+          >
+            <RefreshOverlay active={state.isRefreshing}>
+              <ul className="divide-y divide-border">
+                {visibleOpportunities.map((opportunity) => {
+                  const recommendation = recommendationsByOpportunityId.get(opportunity.id);
+                  const pending = recommendation ? pendingActionsByRecommendationId.get(recommendation.id) : undefined;
+                  const rank = (page - 1) * PAGE_SIZE + data.opportunities.indexOf(opportunity) + 1;
+                  return (
+                    <OpportunityCard
+                      key={opportunity.id}
+                      opportunity={opportunity}
+                      rank={rank}
+                      updating={updatingId === opportunity.id}
+                      onStatusChange={handleStatusChange}
+                      recommendation={recommendation}
+                      recommendationLoading={recommendationsState.status === "loading"}
+                      generatingRecommendation={generatingRecommendationId === opportunity.id}
+                      onGenerateRecommendation={handleGenerateRecommendation}
+                      updatingRecommendationStatus={updatingRecommendationId === recommendation?.id}
+                      onRecommendationStatusChange={handleRecommendationStatusChange}
+                      pendingAction={pending?.pendingAction}
+                      onApprovePendingAction={pending ? () => handleApprovePendingAction(pending.agentRunId) : undefined}
+                    />
+                  );
+                })}
+              </ul>
+              {total > PAGE_SIZE && (
+                <div className="border-t border-border px-5 py-3">
+                  <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} itemLabel="opportunities" />
+                </div>
+              )}
+            </RefreshOverlay>
+          </Section>
+        )}
+
+        {data && visibleOpportunities.length === 0 && data.opportunities.length > 0 && total > PAGE_SIZE && (
+          <Reveal>
+            <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} itemLabel="opportunities" />
+          </Reveal>
+        )}
+      </PageStack>
     </>
   );
 }
-

@@ -1,17 +1,15 @@
 import type { Metadata } from "next";
-import { PageHeader } from "@/components/patterns/page-header";
 import { OverviewView } from "@/components/overview/overview-view";
 
 export const metadata: Metadata = { title: "Overview" };
 
+/** No visible page header — the topbar breadcrumb already says "Overview",
+ *  so the dashboard starts straight at the AI Visibility deck. The h1 stays
+ *  for screen readers and document outline. */
 export default function OverviewPage() {
   return (
     <>
-      <PageHeader
-        eyebrow="Workspace"
-        title="Overview"
-        description="How am I doing? Your AI Visibility Score, SEO Health, active opportunities, and the single next thing to do."
-      />
+      <h1 className="sr-only">Overview</h1>
       <OverviewView />
     </>
   );

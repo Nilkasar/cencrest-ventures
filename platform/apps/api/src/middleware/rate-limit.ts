@@ -97,3 +97,22 @@ export const aiQueryRateLimit = rateLimit({
   },
 });
 export const adminRateLimit = rateLimit({ bucket: 'admin', max: 30, windowSeconds: 60 });
+
+/** Per-IP ceiling for requests that present a bearer token. Their real
+ *  limit is `authenticatedRateLimit` (120/min per USER, applied per route
+ *  after `requireAuth`); this only stops one address from flooding with
+ *  tokens, and is sized for several signed-in people behind one NAT, each
+ *  running a dashboard that loads ~30 calls and polls while work is in
+ *  flight. */
+const bearerIpCeiling = rateLimit({ bucket: 'bearer_ip', max: 600, windowSeconds: 60 });
+
+/**
+ * The app-wide baseline. SECURITY.md's 30/min "Public" limit is for
+ * UNAUTHENTICATED traffic — mounted on everything it also capped every
+ * signed-in user at 30 calls/min per IP (shared by all tabs and everyone
+ * on the same network), which a single Overview load exceeds, so most
+ * pages answered 429. Requests carrying a bearer token get the IP ceiling
+ * above instead; anonymous requests keep the public limit.
+ */
+export const baselineRateLimit: MiddlewareHandler<AppEnv> = (c, next) =>
+  /^Bearer\s+\S+/i.test(c.req.header('authorization') ?? '') ? bearerIpCeiling(c, next) : publicRateLimit(c, next);

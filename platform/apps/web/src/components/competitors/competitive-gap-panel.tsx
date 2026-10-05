@@ -1,88 +1,62 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
+import { motion } from "framer-motion";
 import { Target } from "lucide-react";
-import {
-  Badge,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  EmptyState,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Skeleton,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@bebest/ui";
+import { Button, EmptyState, cn, easings } from "@bebest/ui";
+import { Section } from "@/components/patterns/section";
+import { FilterSelect } from "@/components/patterns/toolbar";
+import { SectionSkeleton } from "@/components/patterns/states";
 import { ErrorPanel } from "@/components/patterns/error-panel";
+import { typography } from "@/components/patterns/typography";
+import { SrTable } from "@/components/overview/primitives";
 import type { AsyncState } from "@/lib/use-async-data";
 import { intentTypeLabel } from "@/data/competitive-intelligence/labels";
 import type { Competitor } from "@/data/types";
 import type { CompetitiveGapsResponse, PerQueryBreakdownRow, PerQueryCompetitorRow } from "@/data/competitive-intelligence/types";
+import { GapValue } from "./status-badges";
 
 interface EvidenceRow {
   row: PerQueryBreakdownRow;
   competitor: PerQueryCompetitorRow;
 }
 
-function formatGap(gap: number | null): { text: string; tone: "danger" | "success" | "neutral" } {
-  if (gap === null) return { text: "—", tone: "neutral" };
-  if (gap > 0) return { text: `+${gap.toFixed(1)} ahead of you`, tone: "danger" };
-  if (gap < 0) return { text: `${Math.abs(gap).toFixed(1)} behind you`, tone: "success" };
-  return { text: "Tied", tone: "neutral" };
-}
+const EVIDENCE_PREVIEW = 5;
 
 function positionLabel(position: 1 | 2 | 3 | 4 | null): string {
   return position === null ? "not mentioned" : `position ${position}`;
 }
 
 /**
- * Per-intent comparison table + the signature per-query evidence sentence
- * (`docs/epics/08-competitive-intelligence.md`: "For 'best freight
- * visibility software,' CompetitorA appears in 84% of responses at
- * position 1, you appear in 2%") — the UI surface's two literal
- * requirements for this screen. One competitor is compared at a time (a
- * portfolio can hold up to 20 on the Pro tier; a single table stays
- * readable, a 20-column one would not) via the picker below the headline.
- *
- * Fetched once by the parent view (`CompetitorsView`) and passed down —
- * `GapFindingsPanel` needs the exact same response, so the fetch isn't
- * duplicated per panel.
+ * Head-to-head: you vs. one competitor, per intent (paired bars, gap on
+ * the right) and per query (the signature evidence sentence). One
+ * competitor at a time keeps it readable; on a competitor's own page the
+ * picker is locked to them.
  */
 export function CompetitiveGapPanel({
   competitors,
   state,
   onRetry,
+  lockedCompetitorId,
+  className,
 }: {
   competitors: Competitor[];
   state: AsyncState<CompetitiveGapsResponse | null>;
   onRetry: () => void;
+  lockedCompetitorId?: string;
+  className?: string;
 }) {
-  // `null` means "no explicit choice yet" — the default below is derived
-  // at render time (never via an effect + setState) so there's no
-  // cascading-render risk and no flash of an unselected picker while data
-  // is still loading.
   const [explicitSelectedId, setExplicitSelectedId] = useState<string | null>(null);
+  const [showAllEvidence, setShowAllEvidence] = useState(false);
 
   const gaps = state.status === "success" ? state.data : null;
-
-  // Default to the first competitor that actually has a comparable run,
-  // falling back to the first competitor at all — never overrides a
-  // user's own choice (`explicitSelectedId`) once one has been made.
+  // Derived at render (never effect + setState): the first competitor with
+  // a comparable run, unless the user picked one.
   const defaultSelectedId = gaps
     ? (gaps.competitors.find((c) => c.run !== null)?.competitorId ?? gaps.competitors[0]?.competitorId ?? competitors[0]?.id ?? null)
     : null;
-  const selectedId = explicitSelectedId ?? defaultSelectedId;
-
+  const selectedId = lockedCompetitorId ?? explicitSelectedId ?? defaultSelectedId;
   const selected = gaps?.competitors.find((c) => c.competitorId === selectedId) ?? null;
   const selectedName = selected?.competitorName ?? competitors.find((c) => c.id === selectedId)?.name ?? "this competitor";
 
@@ -93,151 +67,162 @@ export function CompetitiveGapPanel({
       const competitor = row.competitors.find((c) => c.competitorId === selectedId);
       if (competitor) rows.push({ row, competitor });
     }
-    return rows;
+    // Biggest deficits first — the queries worth acting on.
+    return rows.sort((a, b) => b.competitor.stats.mentionRatePct - b.row.yourStats.mentionRatePct - (a.competitor.stats.mentionRatePct - a.row.yourStats.mentionRatePct));
   }, [gaps, selectedId]);
+  const shownEvidence = showAllEvidence ? evidenceRows : evidenceRows.slice(0, EVIDENCE_PREVIEW);
+
+  const picker =
+    !lockedCompetitorId && gaps && gaps.computed && gaps.competitors.length > 1 ? (
+      <FilterSelect
+        value={selectedId ?? ""}
+        onValueChange={(v) => {
+          setExplicitSelectedId(v);
+          setShowAllEvidence(false);
+        }}
+        options={gaps.competitors.map((c) => ({ value: c.competitorId, label: c.run === null ? `${c.competitorName} (not run)` : c.competitorName }))}
+        label="Compare against"
+        className="h-8 sm:w-48"
+      />
+    ) : undefined;
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <CardTitle>Competitive gap</CardTitle>
-          <CardDescription>Where a competitor beats you in AI answers, and by how much — per intent, per query.</CardDescription>
-        </div>
-        {gaps && gaps.competitors.length > 0 && (
-          <Select value={selectedId ?? undefined} onValueChange={setExplicitSelectedId}>
-            <SelectTrigger className="w-full sm:w-56">
-              <SelectValue placeholder="Compare against…" />
-            </SelectTrigger>
-            <SelectContent>
-              {gaps.competitors.map((c) => (
-                <SelectItem key={c.competitorId} value={c.competitorId}>
-                  {c.competitorName}
-                  {c.run === null ? " (no run yet)" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5">
-        {state.status === "loading" && (
-          <div className="flex flex-col gap-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-9 w-full" />
-            ))}
-          </div>
-        )}
+    <Section
+      title={lockedCompetitorId ? "Head-to-head" : "Competitive gap"}
+      description="Where a competitor beats you in AI answers, by intent and by query."
+      icon={<Target size={14} />}
+      actions={picker}
+      className={className}
+      footer={
+        evidenceRows.length > EVIDENCE_PREVIEW ? (
+          <Button variant="ghost" size="sm" onClick={() => setShowAllEvidence((v) => !v)} aria-expanded={showAllEvidence}>
+            {showAllEvidence ? "Show fewer queries" : `Show all ${evidenceRows.length} queries`}
+          </Button>
+        ) : undefined
+      }
+    >
+      {state.status === "loading" && <SectionSkeleton lines={4} className="border-0 p-0 shadow-none" />}
+      {state.status === "error" && <ErrorPanel compact title="Gaps didn't load" message={state.error.message} onRetry={onRetry} />}
 
-        {state.status === "error" && <ErrorPanel compact message={state.error.message} onRetry={onRetry} />}
+      {state.status === "success" && gaps === null && (
+        <GapEmpty
+          title="No active query set"
+          description="Gaps compare your latest run and each competitor's on your active query set. Activate one first."
+          href="/query-universe"
+          label="Open Query Universe"
+        />
+      )}
+      {state.status === "success" && gaps !== null && !gaps.computed && (
+        <GapEmpty
+          title="Run your AI Visibility baseline first"
+          description="Gaps need your own completed run on the active query set to compare against."
+          href="/ai-visibility"
+          label="Go to AI Visibility"
+        />
+      )}
+      {state.status === "success" && gaps !== null && gaps.computed && !selected && (
+        <EmptyState compact icon={<Target size={18} />} title="Nothing to compare yet" description="Run a check on a competitor to see where they beat you." />
+      )}
 
-        {state.status === "success" && gaps === null && (
-          <EmptyState
-            compact
-            icon={<Target size={18} />}
-            title="No active query set"
-            description="Competitive gaps compare your brand's and each competitor's most recent run on your active query set — activate one in Query Universe first."
-          />
-        )}
-
-        {state.status === "success" && gaps !== null && !gaps.computed && (
-          <EmptyState
-            compact
-            icon={<Target size={18} />}
-            title="Run your AI Visibility baseline first"
-            description="Competitive gaps need your own brand's completed run on the active query set to compare against — head to AI Visibility and run a baseline."
-          />
-        )}
-
-        {state.status === "success" && gaps !== null && gaps.computed && gaps.competitors.length === 0 && (
-          <EmptyState
-            compact
-            icon={<Target size={18} />}
-            title="No competitors tracked yet"
-            description="Add a competitor above, then run a check to see the gap."
-          />
-        )}
-
-        {state.status === "success" && gaps !== null && gaps.computed && selected && (
-          <>
-            <div className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3">
-              <p className="text-[13px] text-foreground">
-                <span className="font-medium">{selectedName}</span>{" "}
-                {selected.run === null ? (
-                  <span className="text-muted-foreground">hasn&apos;t been run on this query set yet.</span>
-                ) : (
-                  (() => {
-                    const { text, tone } = formatGap(selected.competitiveGap);
-                    return (
-                      <>
-                        is{" "}
-                        <span
-                          className={
-                            tone === "danger" ? "font-semibold text-danger" : tone === "success" ? "font-semibold text-success" : "font-medium"
-                          }
-                        >
-                          {text}
-                        </span>{" "}
-                        overall.
-                      </>
-                    );
-                  })()
-                )}
-              </p>
-            </div>
-
-            {selected.perIntentTypeGap.length > 0 && (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Intent</TableHead>
-                    <TableHead>Queries</TableHead>
-                    <TableHead>Your score</TableHead>
-                    <TableHead>{selectedName}</TableHead>
-                    <TableHead>Gap</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {selected.perIntentTypeGap.map((row) => {
-                    const { text, tone } = formatGap(row.gap);
-                    return (
-                      <TableRow key={row.intentType}>
-                        <TableCell className="font-medium">{intentTypeLabel(row.intentType)}</TableCell>
-                        <TableCell className="font-mono text-muted-foreground">{row.queryCount}</TableCell>
-                        <TableCell className="font-mono">{row.yourScore.toFixed(1)}</TableCell>
-                        <TableCell className="font-mono">{row.competitorScore.toFixed(1)}</TableCell>
-                        <TableCell>
-                          <Badge variant={tone === "danger" ? "danger" : tone === "success" ? "success" : "neutral"} size="sm">
-                            {text}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+      {state.status === "success" && gaps !== null && gaps.computed && selected && (
+        <div className="flex flex-col gap-5">
+          <p className={typography.body}>
+            <span className="font-medium">{selectedName}</span>{" "}
+            {selected.run === null ? (
+              <span className="text-muted-foreground">hasn&apos;t been run on this query set yet — run a check to compare.</span>
+            ) : (
+              <>
+                is <GapValue gap={selected.competitiveGap} className="text-[13.5px]" /> you overall.
+              </>
             )}
+          </p>
 
-            {evidenceRows.length > 0 && (
-              <div className="flex flex-col gap-1">
-                <p className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-subtle-foreground mb-1">
-                  Query-level evidence ({evidenceRows.length})
-                </p>
-                <div className="flex flex-col divide-y divide-border rounded-lg border border-border overflow-hidden">
-                  {evidenceRows.map(({ row, competitor }) => (
-                    <div key={row.queryId} className="px-4 py-3 flex flex-col gap-1">
-                      <p className="text-[11.5px] text-subtle-foreground">
-                        {row.intentType ? intentTypeLabel(row.intentType) : "Uncategorized"} · your position:{" "}
-                        {positionLabel(row.yourStats.position)}
-                      </p>
-                      <p className="text-[13px] text-foreground leading-relaxed">{competitor.sentence}</p>
-                    </div>
-                  ))}
-                </div>
+          {selected.perIntentTypeGap.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-4 text-[12px] text-muted-foreground" aria-hidden="true">
+                <span className="flex items-center gap-1.5">
+                  <span className="size-2.5 rounded-full bg-accent" /> You
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="size-2.5 rounded-full bg-border-strong" /> {selectedName}
+                </span>
               </div>
-            )}
-          </>
-        )}
-      </CardContent>
-    </Card>
+              <ul className="flex flex-col divide-y divide-border">
+                {selected.perIntentTypeGap.map((row, i) => (
+                  <li key={row.intentType} className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)_auto] items-center gap-x-4 py-2.5 first:pt-0">
+                    <div className="min-w-0">
+                      <p className="truncate text-[13px] font-medium text-foreground">{intentTypeLabel(row.intentType)}</p>
+                      <p className="text-[12px] text-muted-foreground">
+                        {row.queryCount} {row.queryCount === 1 ? "query" : "queries"}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-1.5" aria-hidden="true">
+                      <PairBar value={row.yourScore} you delay={i * 0.06} />
+                      <PairBar value={row.competitorScore} delay={i * 0.06 + 0.03} />
+                    </div>
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span className="font-mono text-[11.5px] tabular-nums text-muted-foreground">
+                        {row.yourScore.toFixed(1)} · {row.competitorScore.toFixed(1)}
+                      </span>
+                      <GapValue gap={row.gap} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <SrTable
+                caption={`Score by intent, you versus ${selectedName}`}
+                head={["Intent", "Queries", "Your score", `${selectedName} score`, "Gap"]}
+                rows={selected.perIntentTypeGap.map((r) => [intentTypeLabel(r.intentType), r.queryCount, r.yourScore.toFixed(1), r.competitorScore.toFixed(1), r.gap.toFixed(1)])}
+              />
+            </div>
+          )}
+
+          {evidenceRows.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <p className={typography.eyebrow}>Query evidence · biggest gaps first</p>
+              <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border">
+                {shownEvidence.map(({ row, competitor }) => (
+                  <li key={row.queryId} className="flex flex-col gap-1 px-4 py-3">
+                    <p className="text-[13px] leading-relaxed text-foreground">{competitor.sentence}</p>
+                    <p className="text-[12px] text-muted-foreground">
+                      {row.intentType ? intentTypeLabel(row.intentType) : "Uncategorized"} · you: {positionLabel(row.yourStats.position)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function PairBar({ value, you = false, delay }: { value: number; you?: boolean; delay: number }) {
+  return (
+    <span className="h-1.5 overflow-hidden rounded-full bg-surface">
+      <motion.span
+        className={cn("block h-full w-full origin-left rounded-full", you ? "bg-accent" : "bg-border-strong")}
+        initial={{ scaleX: 0 }}
+        animate={{ scaleX: Math.max(0, Math.min(100, value)) / 100 }}
+        transition={{ duration: 0.8, delay: 0.1 + delay, ease: easings.emphasized }}
+      />
+    </span>
+  );
+}
+
+function GapEmpty({ title, description, href, label }: { title: string; description: string; href: string; label: string }) {
+  return (
+    <EmptyState
+      compact
+      icon={<Target size={18} />}
+      title={title}
+      description={description}
+      action={
+        <Button asChild variant="outline" size="sm">
+          <Link href={href}>{label}</Link>
+        </Button>
+      }
+    />
   );
 }

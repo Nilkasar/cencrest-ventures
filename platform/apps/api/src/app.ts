@@ -3,9 +3,10 @@ import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
 import { requestId } from './middleware/request-id.js';
 import { requestLogger } from './middleware/logger.js';
-import { publicRateLimit } from './middleware/rate-limit.js';
+import { baselineRateLimit } from './middleware/rate-limit.js';
 import health from './routes/health.js';
 import { createAuthRoutes } from './routes/auth.js';
+import authGoogle from './routes/auth-google.js';
 import { createOrgsRoutes } from './routes/orgs.js';
 import leads from './routes/leads.js';
 import deals from './routes/deals.js';
@@ -52,6 +53,10 @@ import apply from './routes/apply.js';
 import agency from './routes/agency.js';
 import whiteLabel from './routes/white-label.js';
 import integrations from './routes/integrations.js';
+import platformSession from './routes/platform/session.js';
+// `createEmailSenderFromEnv` replaces main's direct Console/Resend imports: the
+// choice between them now lives in one factory in `lib/email.ts`, so a missing
+// RESEND_API_KEY cannot silently pick the console sender in production.
 import { createEmailSenderFromEnv } from './lib/email.js';
 import { getDefaultErrorTracker } from './lib/observability/default-error-tracker.js';
 import { clientFaultResponse } from './lib/db-errors.js';
@@ -105,17 +110,20 @@ app.use(
 app.use('*', requestId);
 app.use('*', requestLogger);
 
-// Baseline public rate limit on everything (SECURITY.md: "Public
-// (unauthenticated): 30 requests / 1 minute"). Routes needing a stricter
+// Baseline rate limit on everything: anonymous requests get SECURITY.md's
+// "Public (unauthenticated): 30 requests / 1 minute"; requests with a
+// bearer token get a 600/min per-IP ceiling instead, since their real
+// limit is the per-user `authenticatedRateLimit`. Routes needing a stricter
 // or authenticated-aware limit apply their own on top — Hono runs
 // middleware in registration order, so the more specific limiter still
 // executes and can reject before the handler runs.
-app.use('*', publicRateLimit);
+app.use('*', baselineRateLimit);
 
 app.route('/api/health', health);
 
 
 app.route('/api/auth', createAuthRoutes(emailSender));
+app.route('/api/auth/google', authGoogle);
 app.route('/api/orgs', createOrgsRoutes(emailSender));
 
 // Epic 1 — CRM. Internal-ops tool (docs/epics/01-crm.md's Entitlements
@@ -326,6 +334,15 @@ app.route('/api/apply', apply);
 app.route('/api/agency', agency);
 app.route('/api/orgs/me/settings/white-label', whiteLabel);
 app.route('/api/integrations', integrations);
+
+// Epic 22 — Workspace Views: the cross-tenant Platform API. Every route
+// under `/api/platform` sits behind `requirePlatformRole`
+// (middleware/platform-role.ts), which re-reads `users.platform_role` from
+// the database and writes a `platform_access_events` row before the handler
+// runs. Only files under `routes/platform/` may import `platformDb` (ESLint
+// `no-restricted-imports`, apps/api/eslint.config.mjs). Phase 0 ships only
+// `/session`, the route that proves the guard is wired end to end.
+app.route('/api/platform/session', platformSession);
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 

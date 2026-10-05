@@ -1,86 +1,84 @@
 "use client";
 
 import Link from "next/link";
-import { Plug, PlugZap, ExternalLink } from "lucide-react";
-import { Badge, Button, Card, CardContent, Skeleton } from "@bebest/ui";
+import { ArrowRight, BarChart3, Search } from "lucide-react";
+import { Button, Skeleton } from "@bebest/ui";
 import { ErrorPanel } from "@/components/patterns/error-panel";
+import { PageStack } from "@/components/patterns/motion";
+import { Section } from "@/components/patterns/section";
+import { typography } from "@/components/patterns/typography";
+import { IntegrationStatusBadge } from "@/components/connectors/status-badges";
 import { useAsyncData } from "@/lib/use-async-data";
-import { formatDateTime } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { listIntegrations } from "@/data/integrations/client";
 import { SUPPORTED_PROVIDERS, type Integration, type IntegrationStatus } from "@/data/integrations/types";
 
-const STATUS_LABEL: Record<IntegrationStatus, string> = {
-  connected: "Connected",
-  disconnected: "Not connected",
-  error: "Error",
-};
-
-const STATUS_VARIANT: Record<IntegrationStatus, "success" | "neutral" | "danger"> = {
-  connected: "success",
-  disconnected: "neutral",
-  error: "danger",
-};
-
+/**
+ * Settings > Integrations — a read-only summary of which data sources are
+ * connected. Connecting, disconnecting and the data itself live on
+ * Connectors; this tab only answers "what's plugged in?" and links there.
+ */
 export function IntegrationsPanel() {
   const { reload, ...state } = useAsyncData(listIntegrations, []);
 
-  if (state.status === "loading") {
-    return <Skeleton className="h-48 w-full rounded-xl" />;
-  }
+  const manageLink = (
+    <Button variant="secondary" size="sm" asChild>
+      <Link href="/connectors">
+        Manage in Connectors <ArrowRight size={13} aria-hidden="true" />
+      </Link>
+    </Button>
+  );
 
   if (state.status === "error") {
-    return <ErrorPanel message={state.error.message} onRetry={reload} />;
+    return <ErrorPanel title="Integrations didn't load" message={state.error.message} onRetry={reload} />;
   }
 
-  const byProvider = new Map<string, Integration>(state.data.map((row) => [row.provider, row]));
+  const byProvider =
+    state.status === "success" ? new Map<string, Integration>(state.data.map((row) => [row.provider, row])) : null;
 
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-[12.5px] text-muted-foreground">
-        Connect Google Search Console and Google Analytics 4 from the Connectors page to see your site&apos;s real
-        performance data.
-      </p>
-      {SUPPORTED_PROVIDERS.map((provider) => {
-        const row = byProvider.get(provider.slug);
-        const status: IntegrationStatus = row?.status ?? "disconnected";
-        const connected = status === "connected";
-        return (
-          <Card key={provider.slug}>
-            <CardContent className="flex items-center justify-between gap-4 p-5">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="flex items-center justify-center size-9 rounded-lg border border-border bg-surface text-muted-foreground shrink-0">
-                  {connected ? <PlugZap size={16} /> : <Plug size={16} />}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+    <PageStack>
+      <Section title="Data sources" description="First-party data BeBest reads to replace its own estimates." actions={manageLink} flush>
+        <ul className="divide-y divide-border" aria-busy={!byProvider || undefined}>
+          {SUPPORTED_PROVIDERS.map((provider) => {
+            const row = byProvider?.get(provider.slug);
+            const status: IntegrationStatus = row?.status ?? "disconnected";
+            const Icon = provider.slug === "google_search_console" ? Search : BarChart3;
+            const when =
+              status === "connected" && row?.connectedAt
+                ? `Connected ${formatDate(row.connectedAt)}`
+                : status === "disconnected" && row?.disconnectedAt
+                  ? `Disconnected ${formatDate(row.disconnectedAt)}`
+                  : null;
+            return (
+              <li key={provider.slug} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:gap-4">
+                <div className="flex min-w-0 flex-1 items-start gap-3">
+                  <span
+                    className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground"
+                    aria-hidden="true"
+                  >
+                    <Icon size={15} />
+                  </span>
+                  <div className="min-w-0">
                     <p className="text-[13.5px] font-medium text-foreground">{provider.label}</p>
-                    <Badge variant={STATUS_VARIANT[status]} size="sm" dot>
-                      {STATUS_LABEL[status]}
-                    </Badge>
+                    <p className={typography.meta}>{provider.description}</p>
                   </div>
-                  <p className="text-[12.5px] text-muted-foreground mt-0.5">{provider.description}</p>
-                  {row?.connectedAt && connected && (
-                    <p className="text-[11.5px] text-subtle-foreground mt-1">
-                      Connected {formatDateTime(row.connectedAt)}
-                    </p>
-                  )}
-                  {row?.disconnectedAt && !connected && (
-                    <p className="text-[11.5px] text-subtle-foreground mt-1">
-                      Disconnected {formatDateTime(row.disconnectedAt)}
-                    </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-3 pl-12 sm:pl-0">
+                  {byProvider ? (
+                    <>
+                      {when && <span className={typography.meta}>{when}</span>}
+                      <IntegrationStatusBadge status={status} size="sm" />
+                    </>
+                  ) : (
+                    <Skeleton className="h-5 w-24 rounded-full" />
                   )}
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
-      <Button variant="outline" size="sm" className="self-start" asChild>
-        <Link href="/connectors">
-          Manage in Connectors
-          <ExternalLink size={12} className="ml-1.5" />
-        </Link>
-      </Button>
-    </div>
+              </li>
+            );
+          })}
+        </ul>
+      </Section>
+    </PageStack>
   );
 }

@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import { db, withUserContext } from '@bebest/database';
+import { db, withOrgContext, withUserContext } from '@bebest/database';
 import {
   signAccessToken,
   generateRefreshToken,
@@ -12,6 +12,7 @@ import type { EmailSender } from '../lib/email.js';
 import { requireAuth } from '../middleware/auth.js';
 import { authRateLimit, authenticatedRateLimit } from '../middleware/rate-limit.js';
 import { auditLog } from '../middleware/audit-log.js';
+import { parsePlatformRole } from '../middleware/platform-role.js';
 import { resolveAgencyAccess } from '../lib/agency-access.js';
 import { clientIp } from '../lib/client-ip.js';
 import type { AppEnv } from '../types/context.js';
@@ -270,27 +271,76 @@ export function createAuthRoutes(emailSender: EmailSender) {
     // consistency with every other list endpoint in this codebase, though
     // this one is naturally small (memberships for a single user), same as
     // routes/orgs.ts's GET / list.
-    const memberships = await withUserContext(authUser.id, (tx) =>
-      tx.memberships.findMany({
-        where: { user_id: authUser.id },
-        include: {
-          organizations: { select: { id: true, name: true, slug: true, deleted_at: true } },
-        },
-        take: 100,
-      }),
+    //
+    // Epic 22 (Workspace Views) — `platformRole`, each organization's `kind`
+    // and `agencyClients` were added so the web app can work out which views
+    // (Platform / Agency / Organization) to offer. All three are additive;
+    // nothing existing changed shape. `platformRole` is read fresh from
+    // `users` (no RLS — same as `requireAuth`), never from the token, and is
+    // a UI hint only: every `/api/platform/*` route re-checks it server-side
+    // (`middleware/platform-role.ts`).
+    const [userRow, memberships] = await Promise.all([
+      db.users.findUnique({ where: { id: authUser.id }, select: { platform_role: true } }),
+      withUserContext(authUser.id, (tx) =>
+        tx.memberships.findMany({
+          where: { user_id: authUser.id },
+          include: {
+            organizations: { select: { id: true, name: true, slug: true, kind: true, deleted_at: true } },
+          },
+          take: 100,
+        }),
+      ),
+    ]);
+
+    const liveMemberships = memberships.filter((m) => !m.organizations.deleted_at);
+
+    // Active client links of every agency org the caller belongs to. Read
+    // under each agency org's own context — `agency_clients`' policy names
+    // both parties of a link (migration 0022), so this sees exactly that
+    // agency's links and nothing else. Only `active` links: a pending,
+    // paused, revoked or terminated link grants no access
+    // (`lib/agency-access.ts`), so offering it in a switcher would only
+    // produce a 403 on selection.
+    const agencyOrgIds = liveMemberships
+      .filter((m) => m.organizations.kind === 'agency')
+      .map((m) => m.organizations.id);
+    const agencyLinks = await Promise.all(
+      agencyOrgIds.map((agencyOrgId) =>
+        withOrgContext(agencyOrgId, (tx) =>
+          tx.agency_clients.findMany({
+            where: { agency_org_id: agencyOrgId, status: 'active', deleted_at: null },
+            include: {
+              organizations_client: { select: { id: true, name: true, slug: true, deleted_at: true } },
+            },
+            orderBy: { created_at: 'asc' },
+            take: 200,
+          }),
+        ),
+      ),
     );
 
     return c.json({
       id: authUser.id,
       email: authUser.email,
       name: authUser.name,
-      organizations: memberships
-        .filter((m) => !m.organizations.deleted_at)
-        .map((m) => ({
-          id: m.organizations.id,
-          name: m.organizations.name,
-          slug: m.organizations.slug,
-          role: m.role,
+      platformRole: parsePlatformRole(userRow?.platform_role),
+      organizations: liveMemberships.map((m) => ({
+        id: m.organizations.id,
+        name: m.organizations.name,
+        slug: m.organizations.slug,
+        role: m.role,
+        kind: m.organizations.kind,
+      })),
+      agencyClients: agencyLinks
+        .flat()
+        .filter((link) => !link.organizations_client.deleted_at)
+        .map((link) => ({
+          organizationId: link.organizations_client.id,
+          slug: link.organizations_client.slug,
+          name: link.organizations_client.name,
+          accessLevel: link.access_level,
+          status: link.status,
+          agencyOrganizationId: link.agency_org_id,
         })),
     });
   });

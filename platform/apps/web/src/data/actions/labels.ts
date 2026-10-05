@@ -14,7 +14,7 @@ export const ACTION_STATUS_LABEL: Record<ActionStatus, string> = {
 
 export const ACTION_STATUS_BADGE_VARIANT: Record<ActionStatus, NonNullable<BadgeProps["variant"]>> = {
   pending: "warning",
-  approved: "accent",
+  approved: "info",
   completed: "success",
   rolled_back: "neutral",
 };

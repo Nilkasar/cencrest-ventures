@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "seed:plans": "tsx src/scripts/seed-plans.ts",
     "seed:dev": "tsx src/scripts/seed-dev.ts",
-    "smoke:crm": "tsx scripts/crm-smoke.ts"
+    "smoke:crm": "tsx scripts/crm-smoke.ts",
+    "smoke:workspaces": "tsx scripts/workspace-views-smoke.ts"
   },
   "dependencies": {
     "@bebest/ai-provider": "workspace:*",

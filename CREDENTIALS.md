@@ -69,8 +69,8 @@ healthy while a core promise to the customer is quietly broken.
 | `PERPLEXITY_API_KEY` | **Required** | perplexity.ai → Settings → API | AI visibility queries (Perplexity) |
 | `GOOGLE_API_KEY` | **Required** | Google Cloud Console → Credentials → API Key | AI visibility queries (Gemini). This exact name — the code reads `GOOGLE_API_KEY`, and a Gemini key under any other name means the score is computed from 3 models while the site advertises 4 |
 | `EMAIL_FROM` | Recommended | — | Defaults to `BeBest <hello@bebestwithai.com>`. Must be a domain verified in Resend or magic links will not deliver |
-| `GOOGLE_CLIENT_ID` | For GSC/GA | Google Cloud Console → Credentials → OAuth 2.0 Client ID | Web Application credential; register the redirect URI below |
-| `GOOGLE_CLIENT_SECRET` | For GSC/GA | Same credential as above | Keep secret — never commit |
+| `GOOGLE_CLIENT_ID` | For GSC/GA + Google sign-in | ✅ **Set in Vercel 2026-10-02** (`664252236076-kh88lqo856ggf3nob9lkv97mvvfu7pnl.apps.googleusercontent.com`) | Web Application credential; register the redirect URI below |
+| `GOOGLE_CLIENT_SECRET` | For GSC/GA + Google sign-in | ✅ **Set in Vercel 2026-10-02** | Same credential as above. Keep secret — stored in Vercel only, never committed |
 | `STRIPE_SECRET_KEY` | For real billing | Stripe Dashboard → Developers → API keys | **Its presence is the switch** that selects the real `StripeProvider` over the deterministic no-network default (`payment-provider.ts`). Absent = nobody is charged |
 | `STRIPE_WEBHOOK_SECRET` | For real billing | Stripe Dashboard → Webhooks → Signing secret | Preferred name. `BILLING_WEBHOOK_SECRET` is honoured as a fallback for the same purpose — set one, not both |
 | `SENTRY_DSN` | Optional | sentry.io → Project → Settings → Client Keys | Error monitoring — recommended |

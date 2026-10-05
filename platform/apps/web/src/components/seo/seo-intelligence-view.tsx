@@ -2,68 +2,99 @@
 
 import { useCallback, useState } from "react";
 import Link from "next/link";
-import { Card, CardContent, Skeleton, Button } from "@bebest/ui";
+import { RefreshCw, UserRoundCog } from "lucide-react";
+import { Button, EmptyState } from "@bebest/ui";
+import { PageHeader } from "@/components/patterns/page-header";
+import { PageStack, Reveal } from "@/components/patterns/motion";
+import { SectionSkeleton } from "@/components/patterns/states";
 import { useBrandProfile } from "@/hooks/use-brand-profile";
 import { useCurrentOrg } from "@/lib/session-context";
-import { TechnicalHealthPanel } from "./technical-health-panel";
+import { TechnicalHealthSections, useSeoAnalysis } from "./technical-health-panel";
 import { KeywordCoveragePanel } from "./keyword-coverage-panel";
 import { OpportunitiesPanel } from "./opportunities-panel";
 
+const TITLE = "SEO Intelligence";
+const DESCRIPTION = "Where you stand in search: how well your pages are built, which keywords you cover, and the content worth creating next.";
+
 /**
- * Top-level orchestrator for the SEO Intelligence screen ("Where do I stand
- * in search?" — `docs/09-ux/CUSTOMER_JOURNEY.md`). Three independent
- * sections, each wired straight to `data/seo/client.ts` (real
- * `/brands/me/seo/*` routes, no fixture layer):
+ * SEO Intelligence — "Where do I stand in search?"
+ * (`docs/09-ux/CUSTOMER_JOURNEY.md`). Three independent blocks, each wired
+ * straight to `data/seo/client.ts` (real `/brands/me/seo/*` routes):
  *
- *   1. Technical health — score + drill-down to page-level issues.
- *   2. Keyword coverage — keyword_groups/keywords, generated or manual.
- *   3. Opportunities — server-sorted by score, evidence one click away.
+ *   1. Technical health — the hero: content score (with the findings
+ *      behind it), page-score distribution, most-failed checks, pages
+ *      worst-first with their checklist.
+ *   2. Keyword coverage — groups and keywords, generated or manual.
+ *   3. Content opportunities — server-ranked, scoring inputs one click away.
  *
- * Gated on the brand profile existing at all (same check
- * `components/website/website-intelligence-view.tsx` implicitly relies on
- * via `useBrandProfile`) — every section below 404s the same documented way
- * without a brand, so this avoids showing three redundant "complete your
- * brand profile" empty states at once.
+ * Gated once on the brand profile existing (every block 404s the same way
+ * without one) instead of three redundant empty states.
  */
 export function SeoIntelligenceView() {
   const org = useCurrentOrg();
   const { profile, loading } = useBrandProfile(org?.id ?? "");
   const [opportunitiesRefreshKey, setOpportunitiesRefreshKey] = useState(0);
+  const analysis = useSeoAnalysis();
 
   const bumpOpportunities = useCallback(() => setOpportunitiesRefreshKey((k) => k + 1), []);
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-6">
-        <Skeleton className="h-40 w-full rounded-xl" />
-        <Skeleton className="h-32 w-full rounded-xl" />
-        <Skeleton className="h-32 w-full rounded-xl" />
-      </div>
+      <>
+        <PageHeader title={TITLE} description={DESCRIPTION} />
+        <PageStack>
+          <Reveal>
+            <SectionSkeleton lines={5} titleWidth="w-36" />
+          </Reveal>
+          <Reveal>
+            <SectionSkeleton lines={3} titleWidth="w-40" />
+          </Reveal>
+          <Reveal>
+            <SectionSkeleton lines={4} titleWidth="w-44" />
+          </Reveal>
+        </PageStack>
+      </>
     );
   }
 
   if (!profile || profile.status === "not_started") {
     return (
-      <Card>
-        <CardContent className="p-10 flex flex-col items-center text-center gap-3">
-          <p className="font-display text-[17px] font-semibold text-foreground">Complete your brand profile first</p>
-          <p className="text-[13.5px] text-muted-foreground max-w-[440px]">
-            SEO Intelligence scores your brand&rsquo;s crawled pages and generates keywords from its categories and
-            use cases — set those up in onboarding first.
-          </p>
-          <Button variant="primary" size="sm" asChild>
-            <Link href="/onboarding">Complete brand profile</Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <>
+        <PageHeader title={TITLE} description={DESCRIPTION} />
+        <EmptyState
+          icon={<UserRoundCog size={20} />}
+          title="Complete your brand profile first"
+          description="SEO Intelligence scores your brand's crawled pages and generates keywords from its categories and use cases. Set those up in onboarding — it takes a few minutes."
+          action={
+            <Button variant="primary" size="sm" asChild>
+              <Link href="/onboarding">Complete brand profile</Link>
+            </Button>
+          }
+        />
+      </>
     );
   }
 
+  const canRerun = analysis.state.status === "ready" || analysis.state.status === "error";
+
   return (
-    <div className="flex flex-col gap-6">
-      <TechnicalHealthPanel />
-      <KeywordCoveragePanel onGenerated={bumpOpportunities} />
-      <OpportunitiesPanel refreshKey={opportunitiesRefreshKey} />
-    </div>
+    <>
+      <PageHeader
+        title={TITLE}
+        description={DESCRIPTION}
+        actions={
+          canRerun ? (
+            <Button variant="outline" size="sm" loading={analysis.running} onClick={() => void analysis.run()}>
+              <RefreshCw size={13} aria-hidden="true" /> Re-run analysis
+            </Button>
+          ) : undefined
+        }
+      />
+      <PageStack>
+        <TechnicalHealthSections state={analysis.state} running={analysis.running} onRun={() => void analysis.run()} />
+        <KeywordCoveragePanel onGenerated={bumpOpportunities} />
+        <OpportunitiesPanel refreshKey={opportunitiesRefreshKey} />
+      </PageStack>
+    </>
   );
 }

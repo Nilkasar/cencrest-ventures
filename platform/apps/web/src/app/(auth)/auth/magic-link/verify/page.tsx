@@ -12,7 +12,6 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@bebest/ui";
 import { apiClient, ApiError } from "@/lib/api-client";
@@ -149,40 +148,39 @@ function VerifyContent() {
 
   if (status.kind === "verifying" || status.kind === "success") {
     return (
-      <div className="flex flex-col items-center text-center gap-5">
-        <div className="flex items-center justify-center size-12 rounded-full border border-border bg-surface text-accent">
-          <Loader2 size={20} className="animate-spin" />
+      <div className="flex flex-col items-center text-center gap-7">
+        <div className="flex items-center justify-center size-16 rounded-full bg-accent-muted text-accent">
+          <Loader2 size={24} className="animate-spin" />
         </div>
-        <div className="flex flex-col gap-1.5">
-          <h1 className="font-display text-[22px] font-semibold text-foreground tracking-[-0.015em]">
+        <div className="flex flex-col gap-3">
+          <h1 className="font-display text-[28px] font-semibold leading-[1.1] text-foreground tracking-[-0.02em]">
             Signing you in…
           </h1>
-          <p className="text-[13.5px] text-muted-foreground max-w-[36ch]">One moment while we verify your link.</p>
+          <p className="text-pretty text-[14.5px] leading-relaxed text-muted-foreground">One moment while we verify your link.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-center text-center gap-5">
-      <div className="flex items-center justify-center size-12 rounded-full border border-border bg-surface text-danger">
-        <AlertTriangle size={20} />
+    <div className="flex flex-col items-center text-center gap-7">
+      <div className="flex items-center justify-center size-16 rounded-full bg-danger-muted text-danger">
+        <AlertTriangle size={24} />
       </div>
-      <div className="flex flex-col gap-1.5">
-        <h1 className="font-display text-[22px] font-semibold text-foreground tracking-[-0.015em]">
+      <div className="flex flex-col gap-3">
+        <h1 className="font-display text-[28px] font-semibold leading-[1.1] text-foreground tracking-[-0.02em]">
           Couldn&apos;t sign you in
         </h1>
-        <p className="text-[13.5px] text-muted-foreground max-w-[36ch]">{status.message}</p>
+        <p className="text-pretty text-[14.5px] leading-relaxed text-muted-foreground">{status.message}</p>
       </div>
-      <Button variant="primary" size="sm" onClick={() => router.push("/login")}>
-        Back to sign in
-      </Button>
-      <Link
-        href="/login"
-        className="text-[12.5px] text-muted-foreground hover:text-foreground underline underline-offset-4"
+      <Button
+        variant="primary"
+        size="lg"
+        className="h-12 w-full rounded-xl text-[15px] shadow-md"
+        onClick={() => router.push("/login")}
       >
-        Use a different email
-      </Link>
+        Request a new link
+      </Button>
     </div>
   );
 }

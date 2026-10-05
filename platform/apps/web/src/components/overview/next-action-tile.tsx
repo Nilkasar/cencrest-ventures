@@ -1,14 +1,15 @@
 "use client";
 
-import { AlertTriangle, ListChecks, Sparkles } from "lucide-react";
-import { Badge } from "@bebest/ui";
-import { useAsyncData } from "@/lib/use-async-data";
-import { getActionsOverview } from "@/data/actions/client";
-import type { ActionPriority, ActionWithContext } from "@/data/actions/types";
+import Link from "next/link";
+import { motion } from "framer-motion";
+import { ArrowRight, ListChecks, Sparkles } from "lucide-react";
+import { Badge, Card, Skeleton } from "@bebest/ui";
+import { useAsyncData, type AsyncState } from "@/lib/use-async-data";
+import type { ActionPriority, ActionWithContext, ActionsOverview } from "@/data/actions/types";
 import { ACTION_PRIORITY_BADGE_VARIANT, ACTION_PRIORITY_LABEL } from "@/data/actions/labels";
 import { listRecommendations } from "@/data/recommendations/client";
 import { ACTION_TYPE_BADGE_VARIANT, ACTION_TYPE_LABEL } from "@/data/recommendations/labels";
-import { StatTile, StatTileSkeleton } from "./stat-tile";
+import { PanelError, panelVariants } from "./primitives";
 
 /** `ActionPriority`'s real 1-3-plus-critical ladder, ranked so "highest
  *  priority" has an unambiguous answer — `GET /brands/me/actions` sorts its
@@ -28,86 +29,130 @@ function topPendingAction(pending: ActionWithContext[]): ActionWithContext | nul
 }
 
 /**
- * "What should I do next?" (singular) — the Overview's headline next step.
- * Reuses `getActionsOverview()` (`data/actions/client.ts`) and
- * `listRecommendations()` (`data/recommendations/client.ts`) — the same
- * real routes the `/actions` and `/recommendations` screens call, no
- * parallel fetch logic.
- *
+ * "What should I do next?" (singular) — the Overview's one call to action.
  * Precedence: a PENDING APPROVAL wins over a plain recommendation whenever
- * one exists — it's already been turned into a concrete, reviewed action
- * waiting on a single click (approve), the most "shovel-ready" thing a
- * user can do, versus a recommendation that hasn't been actioned into
- * anything yet. Within pending approvals, the highest `priority` wins
- * (`topPendingAction` above). Only when nothing is pending does this fall
- * back to the single highest-`priorityRank` open recommendation — fetched
- * with `status: "new", limit: 1` so the API's own real sort
- * (`priorityRank` desc, `routes/recommendations.ts`) picks the top one,
- * never re-derived client-side.
+ * one exists — it's already a concrete, reviewed action waiting on a single
+ * click, the most "shovel-ready" thing a user can do. Within pending
+ * approvals, the highest `priority` wins. Only when nothing is pending does
+ * this fall back to the single highest-`priorityRank` open recommendation
+ * — fetched with `status: "new", limit: 1` so the API's own sort picks it.
+ *
+ * The actions overview is fetched once by the view (it also feeds the KPI
+ * strip and the growth loop) and passed in; only the recommendation fetch
+ * lives here.
  */
-export function NextActionTile() {
-  const state = useAsyncData(async () => {
-    const [overview, recPage] = await Promise.all([
-      getActionsOverview(),
-      listRecommendations({ status: "new", limit: 1 }),
-    ]);
-    return {
-      pendingAction: topPendingAction(overview.pending),
-      recommendation: recPage.recommendations[0] ?? null,
-    };
-  }, []);
+export function NextActionTile({ actions }: { actions: AsyncState<ActionsOverview> & { reload: () => void } }) {
+  const rec = useAsyncData(() => listRecommendations({ status: "new", limit: 1 }), []);
 
-  if (state.status === "loading") return <StatTileSkeleton />;
+  const loading = actions.status === "loading" || rec.status === "loading";
+  const pendingAction = actions.status === "success" ? topPendingAction(actions.data.pending) : null;
+  const recommendation = rec.status === "success" ? (rec.data.recommendations[0] ?? null) : null;
 
-  if (state.status === "error") {
-    return (
-      <StatTile href="/actions" eyebrow="Next action" icon={<ListChecks size={13} />}>
-        <div className="flex items-center gap-2 text-danger">
-          <AlertTriangle size={16} aria-hidden="true" />
-          <p className="text-[12.5px]">Couldn&rsquo;t load — tap to view</p>
-        </div>
-      </StatTile>
+  let content: React.ReactNode;
+  if (loading) {
+    content = (
+      <div className="flex flex-col gap-3" aria-busy="true">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-5 w-full" />
+        <Skeleton className="h-5 w-2/3" />
+        <Skeleton className="h-9 w-32 mt-2" />
+      </div>
     );
-  }
-
-  const { pendingAction, recommendation } = state.data;
-
-  if (pendingAction) {
-    return (
-      <StatTile href="/actions" eyebrow="Next action" icon={<ListChecks size={13} />}>
-        <div className="flex items-center gap-1.5 flex-wrap mb-2">
-          <Badge variant={ACTION_PRIORITY_BADGE_VARIANT[pendingAction.priority]} size="sm">
-            {ACTION_PRIORITY_LABEL[pendingAction.priority]}
-          </Badge>
-          <Badge variant="warning" size="sm">
-            Awaiting your approval
-          </Badge>
-        </div>
-        <p className="text-[13.5px] font-medium text-foreground leading-snug line-clamp-2">{pendingAction.title}</p>
-      </StatTile>
+  } else if (pendingAction) {
+    content = (
+      <Cta
+        href="/actions"
+        cta="Review and approve"
+        icon={<ListChecks size={14} />}
+        badges={
+          <>
+            <Badge variant={ACTION_PRIORITY_BADGE_VARIANT[pendingAction.priority]} size="sm">
+              {ACTION_PRIORITY_LABEL[pendingAction.priority]}
+            </Badge>
+            <Badge variant="warning" size="sm">
+              Awaiting your approval
+            </Badge>
+          </>
+        }
+        title={pendingAction.title}
+        body={pendingAction.description}
+      />
     );
-  }
-
-  if (recommendation) {
-    return (
-      <StatTile href="/recommendations" eyebrow="Next action" icon={<Sparkles size={13} />}>
-        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+  } else if (recommendation) {
+    content = (
+      <Cta
+        href="/recommendations"
+        cta="Open recommendation"
+        icon={<Sparkles size={14} />}
+        badges={
           <Badge variant={ACTION_TYPE_BADGE_VARIANT[recommendation.actionType]} size="sm">
             {ACTION_TYPE_LABEL[recommendation.actionType]}
           </Badge>
-        </div>
-        <p className="text-[13.5px] font-medium text-foreground leading-snug line-clamp-2">{recommendation.title}</p>
-      </StatTile>
+        }
+        title={recommendation.title}
+        body={recommendation.evidenceSummary}
+      />
+    );
+  } else if (actions.status === "error" && rec.status === "error") {
+    content = <PanelError onRetry={() => {
+          actions.reload();
+          rec.reload();
+        }} />;
+  } else {
+    content = (
+      <Cta
+        href="/opportunities"
+        cta="Open Opportunities"
+        icon={<Sparkles size={14} />}
+        title="Nothing queued yet"
+        body="Recommendations are generated from an opportunity’s evidence — open one and generate its next action to see it here."
+      />
     );
   }
 
   return (
-    <StatTile href="/opportunities" eyebrow="Next action" icon={<Sparkles size={13} />}>
-      <p className="font-mono text-[18px] font-semibold text-muted-foreground leading-none">Nothing yet</p>
-      <p className="text-[12px] text-muted-foreground mt-2 leading-relaxed">
-        Recommendations are generated from an opportunity&rsquo;s evidence — open Opportunities and generate a next
-        action to see it here.
-      </p>
-    </StatTile>
+    <motion.section variants={panelVariants} aria-label="Next action">
+      <Card className="relative overflow-hidden border-accent/40 p-5">
+        <div
+          className="pointer-events-none absolute -right-16 -top-20 size-56 rounded-full ov-breathe"
+          style={{ background: "radial-gradient(circle, color-mix(in oklab, var(--accent) 22%, transparent), transparent 70%)" }}
+          aria-hidden="true"
+        />
+        <p className="relative font-mono text-[10.5px] font-medium uppercase tracking-[0.12em] text-accent mb-3">Do this next</p>
+        <div className="relative">{content}</div>
+      </Card>
+    </motion.section>
+  );
+}
+
+function Cta({
+  href,
+  cta,
+  icon,
+  badges,
+  title,
+  body,
+}: {
+  href: string;
+  cta: string;
+  icon: React.ReactNode;
+  badges?: React.ReactNode;
+  title: string;
+  body?: string | null;
+}) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      {badges && <div className="flex items-center gap-1.5 flex-wrap">{badges}</div>}
+      <p className="font-display text-[17px] font-semibold text-foreground leading-snug line-clamp-2">{title}</p>
+      {body && <p className="text-[12.5px] text-muted-foreground leading-relaxed line-clamp-2">{body}</p>}
+      <Link
+        href={href}
+        className="group mt-1 inline-flex items-center gap-2 self-start h-10 rounded-lg bg-accent px-4 text-[13px] font-medium text-accent-foreground hover:bg-accent-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised"
+      >
+        <span aria-hidden="true">{icon}</span>
+        {cta}
+        <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+      </Link>
+    </div>
   );
 }

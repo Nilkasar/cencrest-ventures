@@ -8,9 +8,8 @@ export default function AccountsPage() {
   return (
     <>
       <PageHeader
-        eyebrow="CRM"
         title="Accounts"
-        description="Companies you sell to and serve — separate from the Brand Intelligence workspace they use once they're a customer."
+        description="Companies that converted from a lead, with their open pipeline, won revenue and history in one place."
       />
       <AccountsView />
     </>
