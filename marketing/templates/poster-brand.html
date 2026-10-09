@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>BeBest — brand poster</title>
+<!--
+  poster-brand.html — BeBest's own poster language. Two formats:
+  1080×1350 (feed portrait, the default) and 1080×1080 (feed square).
+
+  Why a second poster template: `poster.html` is the kit's demo style — a
+  handwritten Caveat callout, a "SNEAK PEEK 👀" ribbon, a tilted phone. That
+  reads as a consumer app launch. BeBest positions itself as an instrument
+  company ("evidence over opinion", about.html), and its site is editorial:
+  Fraunces display on a warm-dark ground, ember used only to mark machine
+  speech. This template follows the site, not the kit.
+
+  Honesty rules (MARKETING-STUDIO.md §0 and BEBEST-MARKETING.md's do-not-say
+  list): no client counts, no scores, no invented measurements. The answer
+  panel is an ILLUSTRATION OF THE FORMAT — the competing brands are redacted
+  bars rather than invented names, and the footnote says so in the frame.
+  Every claim in the footer is published on pricing.html.
+
+  Renders through the kit: `?k=<key>` picks a concept, `window.ready` resolves
+  once fonts and images have settled. The page measures its own viewport and
+  re-composes for a square rather than squeezing the portrait layout into it —
+  the square drops the method strip, shortens the lede and tightens the panel,
+  because 270px of height has to come from somewhere and a feed square is read
+  at thumbnail size. Pass the size as the renderer's 5th argument:
+    node marketing/tools/render.cjs poster marketing/templates/poster-brand.html marketing/out/posters invisible
+    node marketing/tools/render.cjs poster marketing/templates/poster-brand.html marketing/out/posters-sq invisible 1080x1080
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Spectral:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 100vw; height: 100vh; overflow: hidden; position: relative;
+    background: var(--pitch); color: var(--paper);
+    -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision;
+  }
+  /* The ember wash sits top-right, behind everything, at the edge of visible —
+     it warms the ground without becoming a gradient "design element". */
+  .wash { position: absolute; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(900px 620px at 86% -6%, color-mix(in srgb, var(--ember) 16%, transparent), transparent 62%),
+      radial-gradient(760px 520px at 8% 104%, color-mix(in srgb, var(--ember) 7%, transparent), transparent 60%);
+  }
+  /* A 1px grid, barely there: the instrument-panel reference. */
+  .grid { position: absolute; inset: 0; pointer-events: none; opacity: .5;
+    background-image: linear-gradient(var(--hair) 1px, transparent 1px), linear-gradient(90deg, var(--hair) 1px, transparent 1px);
+    background-size: 90px 90px; mask-image: radial-gradient(760px 700px at 50% 42%, #000 20%, transparent 78%);
+  }
+  .frame { position: relative; height: 100%; padding: 84px; display: flex; flex-direction: column; }
+
+  .rule { height: 1px; background: var(--hair-2); }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-bottom: 26px; }
+  .mark { display: flex; align-items: center; gap: 14px; }
+  .mark img { width: 42px; height: 42px; object-fit: contain; }
+  .mark span { font-family: var(--fd); font-size: 33px; font-weight: 600; letter-spacing: -.02em; }
+  .eyebrow { font-family: var(--fm); font-size: 13px; font-weight: 500; letter-spacing: .22em; color: var(--smoke); text-transform: uppercase; }
+
+  h1 { margin: 0; font-family: var(--fd); font-weight: 600; font-size: 94px; line-height: 1.015; letter-spacing: -.035em; }
+  h1 .em { color: var(--ember); }
+  .lede { margin: 28px 0 0; max-width: 33ch; font-family: var(--fr); font-weight: 300; font-size: 29px; line-height: 1.46; color: var(--pebble); }
+  /* The method strip fills what was a dead band between the lede and the
+     panel, and fills it with the site's own four phases (index.html #method)
+     rather than with air. */
+  .method { display: flex; gap: 0; margin-top: 52px; border-top: 1px solid var(--hair); }
+  .phase { flex: 1; padding: 20px 0 0; display: flex; flex-direction: column; gap: 9px; position: relative; }
+  .phase + .phase { padding-left: 26px; }
+  .phase + .phase::before { content: ""; position: absolute; left: 0; top: 0; width: 1px; height: 58px; background: var(--hair); }
+  .phase .n { font-family: var(--fm); font-size: 11.5px; font-weight: 500; letter-spacing: .18em; color: var(--ember); }
+  .phase .t { font-family: var(--fs); font-size: 20px; font-weight: 500; color: var(--pebble); letter-spacing: -.005em; }
+
+  /* ── the answer panel ─────────────────────────────────────────────── */
+  .panel { margin-top: auto; border: 1px solid var(--hair-2); border-radius: 22px; background: color-mix(in srgb, var(--ink-2) 86%, transparent); padding: 38px 40px 32px; backdrop-filter: blur(2px); }
+  .panel-label { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-family: var(--fm); font-size: 11px; letter-spacing: .2em; color: var(--smoke); text-transform: uppercase; }
+  .tag { border: 1px solid var(--hair-2); border-radius: 999px; padding: 5px 12px; letter-spacing: .14em; color: var(--dim); }
+  .q { margin: 18px 0 30px; font-family: var(--fm); font-size: 25px; font-weight: 500; color: var(--ember); letter-spacing: -.01em; }
+  .q .caret { display: inline-block; width: 11px; height: 26px; margin-left: 8px; vertical-align: -5px; background: var(--ember); opacity: .75; }
+
+  .rows { display: flex; flex-direction: column; gap: 15px; }
+  .row { display: flex; align-items: center; gap: 22px; }
+  .model { width: 148px; flex: none; font-family: var(--fs); font-size: 19px; font-weight: 500; color: var(--pebble); }
+  .bars { display: flex; align-items: center; gap: 9px; flex: 1; }
+  .bar { height: 11px; border-radius: 999px; background: color-mix(in srgb, var(--paper) 13%, transparent); }
+  .you { margin-top: 26px; padding-top: 24px; border-top: 1px solid var(--hair-2); display: flex; align-items: center; gap: 22px; }
+  .you .model { color: var(--paper); font-weight: 600; }
+  .absent { font-family: var(--fs); font-size: 19px; font-weight: 500; color: var(--danger); letter-spacing: .005em; }
+  .absent::before { content: ""; display: inline-block; width: 26px; height: 1px; background: var(--danger); vertical-align: 5px; margin-right: 14px; opacity: .8; }
+  .note { margin: 26px 0 0; font-family: var(--fs); font-size: 13.5px; line-height: 1.5; color: var(--smoke); }
+
+  /* ── footer ───────────────────────────────────────────────────────── */
+  footer { margin-top: 34px; }
+  .facts { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-top: 26px; }
+  .chips { display: flex; gap: 10px; }
+  .chip { font-family: var(--fm); font-size: 12.5px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); border: 1px solid var(--hair-2); border-radius: 999px; padding: 9px 15px; }
+  .chip.lead { color: var(--pitch); background: var(--ember); border-color: var(--ember); font-weight: 600; }
+  .url { font-family: var(--fm); font-size: 14px; font-weight: 500; letter-spacing: .16em; color: var(--ember); }
+
+  /* ── square (1080×1080) ───────────────────────────────────────────────
+     Not a scaled portrait: the method strip goes (four phases are unreadable
+     at thumbnail size and the panel is the thing worth seeing), the headline
+     and lede come down a step, and the panel's internal rhythm tightens. */
+  [data-f="sq"] .frame { padding: 68px; }
+  [data-f="sq"] header { padding-bottom: 22px; }
+  [data-f="sq"] .mark img { width: 38px; height: 38px; }
+  [data-f="sq"] .mark span { font-size: 30px; }
+  [data-f="sq"] .eyebrow { font-size: 12px; }
+  [data-f="sq"] .top { padding-top: 40px !important; }
+  [data-f="sq"] h1 { font-size: 76px; letter-spacing: -.034em; }
+  [data-f="sq"] .lede { margin-top: 22px; font-size: 25px; line-height: 1.42; max-width: 30ch; }
+  /* The square keeps the method, but as one compact rail instead of four
+     columns — dropping it outright left a ~100px band of air above the
+     panel, which reads as a mistake rather than as space. */
+  [data-f="sq"] .method { margin-top: 32px; padding-top: 15px; border-top: 1px solid var(--hair); gap: 30px; }
+  [data-f="sq"] .phase { flex: 0 0 auto; flex-direction: row; align-items: baseline; gap: 9px; padding: 0; }
+  [data-f="sq"] .phase + .phase { padding-left: 0; }
+  [data-f="sq"] .phase + .phase::before { display: none; }
+  [data-f="sq"] .phase .n { font-size: 10.5px; }
+  [data-f="sq"] .phase .t { font-size: 17px; }
+  [data-f="sq"] .panel { padding: 30px 32px 26px; border-radius: 18px; }
+  [data-f="sq"] .q { margin: 15px 0 24px; font-size: 22px; }
+  [data-f="sq"] .q .caret { height: 23px; width: 10px; }
+  [data-f="sq"] .rows { gap: 12px; }
+  [data-f="sq"] .model { width: 132px; font-size: 17.5px; }
+  [data-f="sq"] .bar { height: 10px; }
+  [data-f="sq"] .you { margin-top: 20px; padding-top: 19px; }
+  [data-f="sq"] .absent { font-size: 17.5px; }
+  [data-f="sq"] .note { margin-top: 20px; font-size: 12.5px; }
+  [data-f="sq"] footer { margin-top: 26px; }
+  [data-f="sq"] .facts { padding-top: 22px; }
+  [data-f="sq"] .chip { font-size: 11.5px; padding: 8px 13px; }
+  [data-f="sq"] .url { font-size: 13px; }
+</style>
+
+<div class="wash"></div>
+<div class="grid"></div>
+
+<div class="frame">
+  <header>
+    <div class="mark"><img id="logo" alt=""><span id="wordmark"></span></div>
+    <div class="eyebrow" id="eyebrow"></div>
+  </header>
+  <div class="rule"></div>
+
+  <div class="top" style="padding-top:58px">
+    <h1 id="headline"></h1>
+    <p class="lede" id="lede"></p>
+    <div class="method" id="method"></div>
+  </div>
+
+  <section class="panel">
+    <div class="panel-label">
+      <span id="panel-label"></span>
+      <span class="tag">Illustration</span>
+    </div>
+    <p class="q"><span id="question"></span><span class="caret"></span></p>
+    <div class="rows" id="rows"></div>
+    <div class="you">
+      <div class="model">Your brand</div>
+      <div class="absent" id="absent"></div>
+    </div>
+    <p class="note" id="note"></p>
+  </section>
+
+  <footer>
+    <div class="rule"></div>
+    <div class="facts">
+      <div class="chips" id="chips"></div>
+      <div class="url" id="url"></div>
+    </div>
+  </footer>
+</div>
+
+<script src="./brand.js"></script>
+<script>
+  // One template, two formats: measure the viewport the renderer set rather
+  // than taking a flag, so `render.cjs ... 1080x1080` is all that's needed.
+  document.documentElement.dataset.f =
+    Math.abs(innerWidth / innerHeight - 1) < 0.05 ? 'sq' : 'portrait';
+
+  const B = window.BRAND;
+  const root = document.documentElement.style;
+  root.setProperty('--pitch', B.dark);
+  root.setProperty('--paper', B.cream);
+  root.setProperty('--ink-2', '#131829');
+  root.setProperty('--ember', B.accent);
+  root.setProperty('--danger', B.warn);
+  root.setProperty('--smoke', '#7B819A');
+  root.setProperty('--pebble', '#B6BACB');
+  root.setProperty('--dim', '#A9AEC2');
+  root.setProperty('--hair', 'rgba(242,238,230,.13)');
+  root.setProperty('--hair-2', 'rgba(242,238,230,.26)');
+  root.setProperty('--fd', `'${B.fontDisplay}', Georgia, serif`);
+  root.setProperty('--fs', `'${B.fontUI}', system-ui, sans-serif`);
+  root.setProperty('--fr', `'Spectral', Georgia, serif`);
+  root.setProperty('--fm', `'JetBrains Mono', ui-monospace, monospace`);
+
+  /**
+   * Concepts. Every line is either the site's own copy or a plain statement of
+   * what the product does — see BEBEST-MARKETING.md for the sources. Add a
+   * concept here, log it in that file's concept ledger, and never repeat one.
+   */
+  const CONCEPTS = {
+    // The product's core fact: an AI answer is a shortlist, and you are on it
+    // or you are not. Headline is the site's own tagline (index.html).
+    invisible: {
+      eyebrow: 'AI Brand Intelligence',
+      headline: ['Become the brand', 'AI recommends.'],
+      lede: 'Buyers ask an assistant before they ask you. We measure whether it says your name.',
+      panelLabel: 'A buying question in your category',
+      question: 'best <your category> for mid-market teams',
+      models: [
+        { name: 'ChatGPT', bars: [168, 124, 96] },
+        { name: 'Claude', bars: [142, 180, 88] },
+        { name: 'Gemini', bars: [196, 104, 132] },
+        { name: 'Perplexity', bars: [120, 156, 172] },
+      ],
+      absent: 'not mentioned',
+      note: 'Illustration of the format, not a measurement: the redacted bars stand for whichever brands each model actually names. Your Snapshot reports your own result, computed from queries we run.',
+      phases: ['Analyze', 'Measure', 'Optimize', 'Monitor'],
+      chips: ['Free snapshot', '4 models', '24 hours', 'No card'],
+    },
+  };
+
+  const key = new URLSearchParams(location.search).get('k') || 'invisible';
+  const C = CONCEPTS[key];
+  if (!C) throw new Error(`unknown concept "${key}" — add it to CONCEPTS in poster-brand.html`);
+
+  document.getElementById('logo').src = B.logo;
+  document.getElementById('wordmark').textContent = B.name;
+  document.getElementById('eyebrow').textContent = C.eyebrow;
+  document.getElementById('headline').innerHTML =
+    `${C.headline[0]}<br><span class="em">${C.headline[1]}</span>`;
+  document.getElementById('lede').textContent = C.lede;
+  document.getElementById('panel-label').textContent = C.panelLabel;
+  document.getElementById('question').textContent = `› ${C.question}`;
+  document.getElementById('absent').textContent = C.absent;
+  document.getElementById('note').textContent = C.note;
+  document.getElementById('url').textContent = B.url;
+
+  document.getElementById('rows').innerHTML = C.models.map((m) => `
+    <div class="row">
+      <div class="model">${m.name}</div>
+      <div class="bars">${m.bars.map((w) => `<span class="bar" style="width:${w}px"></span>`).join('')}</div>
+    </div>`).join('');
+
+  document.getElementById('method').innerHTML = C.phases.map((t, i) => `
+    <div class="phase"><span class="n">0${i + 1}</span><span class="t">${t}</span></div>`).join('');
+
+  document.getElementById('chips').innerHTML = C.chips
+    .map((c, i) => `<span class="chip${i === 0 ? ' lead' : ''}">${c}</span>`).join('');
+
+  window.ready = Promise.all([
+    document.fonts.load(`600 94px "${B.fontDisplay}"`),
+    document.fonts.load(`500 19px "${B.fontUI}"`),
+    document.fonts.load('500 25px "JetBrains Mono"'),
+    document.fonts.load('300 27px "Spectral"'),
+    document.fonts.ready,
+    ...[...document.images].map((i) => i.decode().catch(() => 0)),
+  ]);
+</script>
+</html>

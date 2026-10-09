@@ -12,8 +12,11 @@ export interface PerplexityProviderOptions {
 
 interface PerplexityChatResponse {
   model?: string;
-  choices: Array<{ message: { content: string } }>;
-  usage?: { prompt_tokens: number; completion_tokens: number };
+  choices: Array<{ message: { content: string }; finish_reason?: string | null }>;
+  /** OpenAI-compatible `usage` block. Perplexity additionally bills a flat
+   * per-request search fee that appears in NO response field — it is priced
+   * from `pricing.ts`'s `perRequestUsd`, not from anything here. */
+  usage?: { prompt_tokens: number; completion_tokens: number; reasoning_tokens?: number };
 }
 
 export class PerplexityProvider extends BaseAIProvider {
@@ -61,6 +64,7 @@ export class PerplexityProvider extends BaseAIProvider {
 
     const data = (await res.json()) as PerplexityChatResponse;
     const usage = data.usage ?? { prompt_tokens: 0, completion_tokens: 0 };
+    const reasoningTokens = usage.reasoning_tokens;
 
     return {
       provider: this.name,
@@ -71,7 +75,9 @@ export class PerplexityProvider extends BaseAIProvider {
         promptTokens: usage.prompt_tokens,
         completionTokens: usage.completion_tokens,
         totalTokens: usage.prompt_tokens + usage.completion_tokens,
+        ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
       },
+      finishReason: data.choices[0]?.finish_reason ?? null,
       latencyMs,
       ...buildRequestMeta(),
     };

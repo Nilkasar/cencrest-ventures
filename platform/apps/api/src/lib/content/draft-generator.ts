@@ -7,7 +7,6 @@
  * fan-out, so this runs synchronously inside the route handler rather than
  * scheduled through the `JobQueue` (`lib/queue/job-queue.ts`).
  */
-import path from 'node:path';
 import {
   loadPromptTemplate,
   renderPrompt,
@@ -15,6 +14,7 @@ import {
   type AIProviderRegistry,
 } from '@bebest/ai-provider';
 import type { BrandClaimForBrief } from './brief-builder.js';
+import { resolvePromptsBaseDir } from '../prompts-dir.js';
 
 export interface GenerateDraftInput {
   brandName: string;
@@ -51,7 +51,7 @@ export interface DraftGeneratorDeps {
 }
 
 function defaultPromptsBaseDir(): string {
-  return path.join(import.meta.dirname, '../../prompts');
+  return resolvePromptsBaseDir();
 }
 
 /**
@@ -89,7 +89,7 @@ export function countWords(text: string): number {
 
 /**
  * Runs the ACTUAL generation call. `deps.registry` defaults to
- * `getDefaultAiProviderRegistry()` in the route (never constructed here —
+ * `getMeteredAiProviderRegistry()` in the route (never constructed here —
  * same "tests inject a hand-rolled fake `AIProvider`, never a real network
  * call" discipline `pipeline.ts` documents), routed via
  * `taskDefaults['content.generation']` (`['openai', 'ollama']` per Epic 6 —

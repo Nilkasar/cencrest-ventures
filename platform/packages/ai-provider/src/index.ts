@@ -43,6 +43,24 @@ export {
 } from './providers/index.js';
 
 export {
+  MODEL_PRICING,
+  PRICING_TABLE_VERSION,
+  PRICING_LAST_VERIFIED,
+  MAX_COST_MICRO_USD,
+  InvalidPriceStringError,
+  computeAiCallCost,
+  estimateCost,
+  formatMicroUsd,
+  parseDecimalToScaled,
+  resolveModelPricing,
+  sumMicroUsd,
+  type ModelPricing,
+  type AiCallCost,
+  type AiCallCostInput,
+  type MicroUsd,
+} from './pricing.js';
+
+export {
   AIProviderRegistry,
   DEFAULT_TASK_DEFAULTS,
   type AIProviderRegistryOptions,

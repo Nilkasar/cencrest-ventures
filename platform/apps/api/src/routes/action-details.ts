@@ -213,7 +213,10 @@ actionDetailsRoute.post('/:id/execute', requireAuth, authenticatedRateLimit, req
   // on the idempotent `alreadyExecuted` branch above, which would otherwise
   // schedule a second, redundant re-measurement timer for the same action
   // on every repeated call.
-  scheduleRemeasurement(action.id, org.organizationId);
+  //
+  // Awaited: the enqueue is a real INSERT and this route runs on serverless,
+  // where returning before it lands loses the re-measurement silently.
+  await scheduleRemeasurement(action.id, org.organizationId);
 
   return c.json({ alreadyExecuted: false, action: serializeAction(updated), publishedContent: serializePublishedContent(publishedContent) }, 201);
 });

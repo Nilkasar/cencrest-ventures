@@ -10,27 +10,55 @@
  * `getDefaultJobQueue()` (see `default-job-queue.ts`) instead of calling
  * `setImmediate` directly.
  *
+ * Since the HTTP/worker split (see `src/worker.ts` and
+ * `platform/GO_LIVE.md` §5), `PgBossJobQueue` IS started — by the worker
+ * process, not by the HTTP process. The paragraphs below describing it as
+ * "never constructed or `.start()`-ed anywhere" were true for Epic 19 only;
+ * `default-job-queue.ts` now selects it whenever `JOB_QUEUE_DATABASE_URL`
+ * is configured, exactly the way `lib/email.ts`/`payment-provider.ts` select
+ * a real provider from the environment.
+ *
  * Two implementations exist:
  * - `InMemoryJobQueue` — functionally equivalent to the `setImmediate`
  *   behavior every call site had before this epic. Remains the default
  *   (see `default-job-queue.ts`), so nothing changes behaviorally without
  *   a real Postgres connection being wired in.
- * - `PgBossJobQueue` — a real, complete implementation on top of the
- *   `pg-boss` package (added as a dependency in this epic). Correct code,
- *   but never constructed or `.start()`-ed anywhere in this build — same
- *   `NullXProvider` discipline every prior epic's external integration
- *   (email, payments) uses. Swapping to it is a config change: construct
- *   `new PgBossJobQueue(connectionString)` instead of `new
- *   InMemoryJobQueue()` in `default-job-queue.ts`, call `.start()` once at
- *   server boot, and register every handler the same way — no call-site
- *   changes, because every call site already goes through the `JobQueue`
- *   interface, never a concrete class.
+ * - `PgBossJobQueue` — the real, durable implementation on top of the
+ *   `pg-boss` package. Selected by `default-job-queue.ts` whenever
+ *   `JOB_QUEUE_DATABASE_URL` is configured, enqueued onto by the HTTP
+ *   process and `.start()`-ed by the worker process (`src/worker.ts`), which
+ *   registers every handler through `job-registry.ts`. No call site needed
+ *   changing for any of it, because every call site already went through
+ *   this interface rather than a concrete class.
  *
- * A process restart losing whatever `InMemoryJobQueue` had in flight is an
- * honestly-documented gap — the same one every one of the four call sites'
- * own `// TODO` comments already named, now centralized in one place
- * instead of four.
+ * A process restart losing whatever `InMemoryJobQueue` had in flight remains
+ * true of `InMemoryJobQueue` — which is why it is now the dev/test-only
+ * choice rather than the production default.
  */
+
+/**
+ * A job type, its handler, and what to do about an in-flight instance of it
+ * when the process is shutting down.
+ *
+ * `JobDefinition` is what the worker's registry (`job-registry.ts`) hands to
+ * the queue, and what `register-in-process.ts` registers in single-process
+ * dev/test. `releaseOnShutdown` is the part that only matters once a real
+ * worker exists: a handler that is still mid-run when the host sends SIGTERM
+ * would otherwise leave its domain row (`ai_runs`, `crawl_jobs`,
+ * `agent_runs`, `snapshot_requests`) stuck in `running`/`processing`
+ * forever — the exact failure `lib/ai-visibility/schedule-run.ts`'s header
+ * comment has always admitted to. It must move that row OUT of the
+ * in-progress state, using the same "mark it failed, best effort" shape each
+ * handler's own error path already uses.
+ */
+export interface JobDefinition<TPayload> {
+  jobType: string;
+  handler: JobHandler<TPayload>;
+  /** Called at most once per in-flight payload, during graceful shutdown,
+   * after the queue has stopped accepting work and the grace period has
+   * expired. Must never throw (the caller catches and logs regardless). */
+  releaseOnShutdown?: (payload: TPayload) => Promise<void>;
+}
 
 /** A job's handler. Must never throw past its own internal error handling
  * for InMemoryJobQueue callers that want a specific on-failure side effect

@@ -96,7 +96,11 @@ export function SnapshotIntakeForm({ onSubmitted }: { onSubmitted: (response: Sn
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
-      <div className="grid gap-4 sm:grid-cols-2">
+      {/* Two-up while the card is full-width, back to one column at `lg`,
+          where the card sits in a ~5/12 sidebar: two inputs in ~170px each
+          clipped their placeholders ("jane@company.corr", "e.g. Project
+          manage"). */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
         <Input
           label="Name"
           name="name"

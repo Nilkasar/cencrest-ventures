@@ -1,0 +1,12 @@
+{
+  "name": "marketing-studio",
+  "private": true,
+  "description": "Render kit for MARKETING-STUDIO.md — posters, carousels, reels and music from real product screens.",
+  "scripts": {
+    "setup": "node setup.mjs",
+    "smoke": "node setup.mjs --smoke"
+  },
+  "dependencies": {
+    "puppeteer-core": "^23.11.1"
+  }
+}

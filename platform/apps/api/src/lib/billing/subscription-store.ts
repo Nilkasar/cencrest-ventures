@@ -7,7 +7,7 @@
  * per the epic's non-negotiable, NOT ONE `.delete()` call anywhere in it.
  */
 
-import { db, withOrgContext, type plans, type subscriptions } from '@bebest/database';
+import { db, withOrgContext, type Prisma, type plans, type subscriptions } from '@bebest/database';
 import { PLAN_TIERS, type PlanTier } from './plan-catalog.js';
 
 const DEFAULT_PLAN: PlanTier = 'free';
@@ -74,31 +74,73 @@ export async function getOrCreateSubscription(organizationId: string): Promise<S
  * needs to set (status, cancelled_at, external ids, period dates) — a plain
  * `.update()`, never `.delete()`.
  */
+export type SubscriptionOverrides = Partial<{
+  status: subscriptions['status'];
+  cancelled_at: Date | null;
+  trial_ends_at: Date | null;
+  current_period_start: Date | null;
+  current_period_end: Date | null;
+  external_customer_id: string | null;
+  external_id: string | null;
+  /** Webhook ordering — see `subscriptions.last_billing_event_at` in
+   * schema.prisma and `routes/billing-webhooks.ts`. Written in the SAME
+   * statement as the state it authorizes, so a row can never record a state
+   * without recording which event produced it. */
+  last_billing_event_at: Date | null;
+  last_billing_event_id: string | null;
+}>;
+
 export async function setSubscriptionPlan(
   organizationId: string,
   subscriptionId: string,
   planSlug: PlanTier,
-  overrides: Partial<{
-    status: subscriptions['status'];
-    cancelled_at: Date | null;
-    trial_ends_at: Date | null;
-    current_period_start: Date | null;
-    current_period_end: Date | null;
-    external_customer_id: string | null;
-    external_id: string | null;
-  }> = {},
+  overrides: SubscriptionOverrides = {},
 ): Promise<SubscriptionWithPlan> {
+  const plan = await requirePlan(planSlug);
+  const updated = await withOrgContext(organizationId, (tx) =>
+    setSubscriptionPlanWithin(tx, subscriptionId, plan, overrides),
+  );
+  return { ...updated, plans: plan };
+}
+
+/**
+ * The same single `.update()` as `setSubscriptionPlan`, but inside a
+ * transaction the CALLER owns.
+ *
+ * It exists for `routes/billing-webhooks.ts`, which must write the subscription
+ * state, the org status, the audit rows and the webhook's `processed_at` marker
+ * all-or-nothing: a crash after the state change but before `processed_at` left
+ * the event looking unprocessed, so Stripe's retry re-ran every effect against
+ * a subscription that had already moved on. `setSubscriptionPlan` above opens
+ * its own transaction, which cannot be joined — hence this variant rather than
+ * a second copy of the plan_id/plan sync rule, which must stay in exactly one
+ * place (see this module's header).
+ *
+ * Takes the resolved `plans` ROW, not a slug: `plans` is global reference data
+ * with no RLS, so it is read on the plain client BEFORE the transaction opens
+ * rather than borrowing a second connection from inside it.
+ */
+export function setSubscriptionPlanWithin(
+  tx: Prisma.TransactionClient,
+  subscriptionId: string,
+  plan: plans,
+  overrides: SubscriptionOverrides = {},
+): Promise<subscriptions> {
+  return tx.subscriptions.update({
+    where: { id: subscriptionId },
+    data: { plan_id: plan.id, plan: plan.slug, updated_at: new Date(), ...overrides },
+  });
+}
+
+/** Resolves a slug to its `plans` row, rejecting an unknown tier the same way
+ * `setSubscriptionPlan` always has. Exported so a caller that needs the row
+ * before opening a transaction (see `setSubscriptionPlanWithin`) gets the
+ * identical validation rather than its own `findUnique`. */
+export async function requirePlan(planSlug: PlanTier): Promise<plans> {
   if (!isPlanTier(planSlug)) throw new Error(`Unknown plan slug: ${planSlug}`);
   const plan = await getPlanBySlug(planSlug);
   if (!plan) throw new Error(`No '${planSlug}' plan row exists in the plans table.`);
-
-  const updated = await withOrgContext(organizationId, (tx) =>
-    tx.subscriptions.update({
-      where: { id: subscriptionId },
-      data: { plan_id: plan.id, plan: plan.slug, updated_at: new Date(), ...overrides },
-    }),
-  );
-  return { ...updated, plans: plan };
+  return plan;
 }
 
 /** Finds the subscription a webhook's external customer/subscription id

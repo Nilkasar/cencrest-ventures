@@ -1,0 +1,81 @@
+<!doctype html>
+<!-- poster.html — 1080×1350 posters. Keys: peek-<featureKey> (sneak-peek series), giant, faceoff.
+     node tools/render.cjs poster templates/poster.html out/posters peek-home,peek-feature1,giant,faceoff -->
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700;9..144,900&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Caveat:wght@700&family=Bebas+Neue&display=swap" rel="stylesheet">
+<script src="brand.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1080px;height:1350px;overflow:hidden}
+#p{position:absolute;inset:0;overflow:hidden}
+.a{position:absolute}
+.J{font-weight:800;letter-spacing:-.045em;line-height:1}
+.I{font-weight:700}
+.H{font-family:Caveat;font-weight:700;line-height:1.02}
+.B{font-family:'Bebas Neue';line-height:.85}
+</style></head>
+<body><div id="p"></div>
+<script>
+const Bd = BRAND, k = new URLSearchParams(location.search).get('k') || 'peek-' + FEATURES[0].key;
+document.querySelectorAll('style')[0].textContent += `.J{font-family:'${Bd.fontDisplay}'}.I{font-family:'${Bd.fontUI}'}`;
+const gradText = `background:linear-gradient(90deg,${Bd.grad.join(',')});-webkit-background-clip:text;background-clip:text;color:transparent`;
+const grain = `<svg class="a" width="1080" height="1350" style="left:0;top:0;opacity:.07;mix-blend-mode:overlay;pointer-events:none;z-index:60"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="3" stitchTiles="stitch"/></filter><rect width="1080" height="1350" filter="url(#n)"/></svg>`;
+const bar = (c) => `<div class="a" style="left:60px;right:60px;bottom:46px;display:flex;justify-content:space-between;align-items:center;z-index:40"><div style="display:flex;align-items:center;gap:12px"><img src="${Bd.logo}" style="width:44px;height:44px"><span class="J" style="font-size:30px;color:${c};letter-spacing:-.02em">${Bd.name}</span></div><div class="I" style="font-size:22px;letter-spacing:.2em;color:${c};opacity:.75">${Bd.url}</div></div>`;
+const planTag = (p) => p === 'PREMIUM' ? `<span class="I" style="font-size:22px;font-weight:900;letter-spacing:.14em;color:#16131f;background:linear-gradient(90deg,#FFD27A,#FF9F1C);padding:6px 14px;border-radius:16px">PREMIUM</span>`
+  : p === 'FREE' ? `<span class="I" style="font-size:22px;font-weight:900;letter-spacing:.14em;color:#fff;background:#16A34A;padding:6px 14px;border-radius:16px">FREE</span>` : '';
+
+// ── SNEAK PEEK: tilted phone rising from the bottom, handwritten note + arrow + ring on the key number
+function peek(f, idx, n) {
+  const PX = 350, PY = 470, PW = 700, BZ = 18, S = (PW - 2 * BZ) / 780, [tx, ty] = f.target, noteY = 600;
+  const a = 3 * Math.PI / 180, lx = BZ + tx * S, ly = BZ + (ty - f.sy) * S;
+  const gx = PX + lx * Math.cos(a) - ly * Math.sin(a), gy = PY + lx * Math.sin(a) + ly * Math.cos(a);
+  const sx0 = 290, sy0 = noteY + 120, cx = (sx0 + gx) / 2, cy = Math.max(sy0, gy) + 90, R0 = 62;
+  const a0 = Math.atan2(gy - cy, gx - cx), ex = gx - R0 * Math.cos(a0), ey = gy - R0 * Math.sin(a0), an = Math.atan2(ey - cy, ex - cx), hl = 28;
+  const dark = ['#0E0B14', '#16131f', '#1F2937'].includes(f.bg), num = String(idx + 1).padStart(2, '0');
+  return `<div class="a" style="inset:0;background:${f.bg}"></div>
+   <div class="a" style="inset:0;background:radial-gradient(800px 700px at 85% 90%,rgba(255,255,255,${dark ? .08 : .22}),transparent 70%)"></div>
+   <div class="B a" style="right:-20px;top:-60px;font-size:560px;color:transparent;-webkit-text-stroke:3px ${f.ink};opacity:.16">${num}</div>
+   <div class="a" style="left:60px;top:56px;display:flex;align-items:center;gap:12px"><img src="${Bd.logo}" style="width:52px;height:52px"><span class="J" style="font-size:34px;color:${f.ink};letter-spacing:-.02em">${Bd.name}</span></div>
+   <div class="I a" style="right:46px;top:52px;transform:rotate(4deg);background:${f.acc};color:#16131f;font-size:26px;font-weight:900;letter-spacing:.16em;padding:12px 22px;box-shadow:0 8px 20px rgba(0,0,0,.18)">SNEAK PEEK 👀 ${num}/${String(n).padStart(2, '0')}</div>
+   <div class="J a" style="left:60px;top:160px;font-size:94px;color:${f.ink}">${f.title}</div>
+   <div class="a" style="left:60px;right:60px;top:360px;display:flex;gap:16px;align-items:flex-start">${planTag(f.plan)}<div class="I" style="font-size:27px;color:${f.ink};opacity:.85;font-weight:600;line-height:1.35">${f.sub}</div></div>
+   <div class="a" style="left:${PX}px;top:${PY}px;width:${PW}px;height:1300px;border-radius:92px;background:#16131f;padding:${BZ}px;transform:rotate(3deg);transform-origin:0 0;box-shadow:0 50px 100px rgba(0,0,0,.35),inset 0 0 0 3px #3a3446;z-index:10">
+    <div style="position:relative;width:100%;height:100%;border-radius:76px;overflow:hidden;background:${Bd.cream}"><img src="../shots/${f.screen}_screen.png" style="position:absolute;left:0;top:0;width:780px;transform-origin:0 0;transform:scale(${S}) translateY(${-f.sy}px)"></div></div>
+   <div class="H a" style="left:56px;top:${noteY}px;width:300px;font-size:54px;color:${f.acc};transform:rotate(-4deg);z-index:31">${f.note}</div>
+   <svg class="a" width="1080" height="1350" style="left:0;top:0;z-index:30;filter:drop-shadow(0 3px 4px rgba(0,0,0,.35))">
+    <path d="M${sx0} ${sy0} Q ${cx} ${cy} ${ex} ${ey}" fill="none" stroke="${f.acc}" stroke-width="7" stroke-linecap="round"/>
+    <path d="M${ex - hl * Math.cos(an - .45)} ${ey - hl * Math.sin(an - .45)} L${ex} ${ey} L${ex - hl * Math.cos(an + .45)} ${ey - hl * Math.sin(an + .45)}" fill="none" stroke="${f.acc}" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <ellipse cx="${gx}" cy="${gy}" rx="${R0 + 20}" ry="${R0 - 6}" fill="none" stroke="${f.acc}" stroke-width="6" transform="rotate(-6 ${gx} ${gy})"/></svg>
+   <div class="I a" style="left:60px;bottom:52px;font-size:18px;letter-spacing:.14em;color:${f.ink};opacity:.75;z-index:31">${Bd.url}</div>`;
+}
+
+// ── GIANT NUMBER: one huge number + the math underneath
+function giant() { const H = HERO;
+  return `<div class="a" style="inset:0;background:#0B3B2E"></div>
+   <div class="I a" style="left:70px;top:100px;font-size:28px;letter-spacing:.22em;color:#86EFAC">${H.kicker}</div>
+   <div class="J a" style="left:70px;top:160px;font-size:72px;color:#fff">${H.question}</div>
+   <div class="I a" style="left:70px;top:250px;font-size:34px;color:#BBF7D0;font-weight:600">${H.lead}</div>
+   <div class="B a" style="left:40px;top:300px;font-size:760px;color:#86EFAC;text-shadow:0 30px 80px rgba(0,0,0,.4)">${H.big}</div>
+   <div class="a" style="left:70px;right:70px;top:960px;display:flex;gap:16px">${H.steps.map(([a, b]) => `<div style="flex:1;border-radius:24px;background:rgba(134,239,172,.1);border:1.5px solid rgba(134,239,172,.3);padding:16px 18px"><div class="I" style="font-size:19px;color:#BBF7D0">${a}</div><div class="J" style="font-size:30px;color:#fff;margin-top:8px;letter-spacing:-.02em">${b}</div></div>`).join('')}</div>
+   <div class="I a" style="left:70px;right:70px;top:1140px;font-size:21px;color:#86EFAC;opacity:.8;font-weight:600;line-height:1.45">${H.fine}</div>${bar('#fff')}`; }
+
+// ── FACE-OFF: two cards, loser greyed, winner dark with the saving
+function faceoff() { const [L, R] = [HERO.vs.left, HERO.vs.right];
+  return `<div class="a" style="inset:0;background:#FFF7ED"></div>
+   <div class="I a" style="left:70px;top:100px;font-size:28px;letter-spacing:.22em;color:#C2410C">${HERO.kicker}</div>
+   <div class="J a" style="left:70px;top:160px;font-size:96px;color:#16131f">Which one<br>wins? <span style="color:#C2410C">Ask ${Bd.name}.</span></div>
+   <div class="a" style="left:70px;top:470px;width:450px;height:520px;border-radius:40px;background:#fff;box-shadow:0 20px 40px rgba(194,65,12,.1);padding:40px">
+    <div class="I" style="font-size:26px;letter-spacing:.2em;color:#9CA3AF">${L[0]}</div><div class="J" style="font-size:78px;color:#9CA3AF;margin-top:40px">${L[1]}</div><div class="I" style="font-size:24px;color:#6B7280;margin-top:30px;font-weight:600">${L[2]}</div></div>
+   <div class="a" style="left:560px;top:450px;width:450px;height:560px;border-radius:40px;background:#16131f;box-shadow:0 30px 60px rgba(0,0,0,.25);padding:40px">
+    <div class="I" style="font-size:26px;letter-spacing:.2em;color:#86EFAC">${R[0]}</div><div class="J" style="font-size:96px;color:#fff;margin-top:34px">${R[1]}</div><div class="I" style="font-size:24px;color:#cfc8dc;margin-top:30px;font-weight:600">${R[2]}</div>
+    <div class="J a" style="left:40px;bottom:36px;font-size:40px;color:#86EFAC">${HERO.vs.saves}</div></div>
+   <div class="I a" style="left:70px;right:70px;top:1060px;font-size:21px;color:#78350F;font-weight:600;line-height:1.45">${HERO.fine}</div>${bar('#16131f')}`; }
+
+let html;
+if (k.startsWith('peek-')) { const i = FEATURES.findIndex((f) => 'peek-' + f.key === k); html = peek(FEATURES[i], i, FEATURES.length); }
+else html = { giant, faceoff }[k]();
+document.getElementById('p').innerHTML = html + grain;
+window.ready = Promise.all([document.fonts.load(`800 40px "${Bd.fontDisplay}"`), document.fonts.load(`700 40px "${Bd.fontUI}"`), document.fonts.load('700 40px Caveat'), document.fonts.load('40px "Bebas Neue"'), document.fonts.ready,
+  ...[...document.images].map((i) => i.decode().catch(() => 0))]).then(() => 1);
+</script>
+</body></html>

@@ -59,14 +59,14 @@ export class InMemoryJobQueue implements JobQueue {
     if (!handler) {
       // `enqueue()` is an `async` function, so a `throw` here would NOT be a
       // synchronous throw to the caller — JS turns a throw inside an async
-      // function body into a REJECTED PROMISE. None of the 4 real call
-      // sites (`routes/crawl.ts`, `lib/ai-visibility/schedule-run.ts`,
-      // `lib/agents/runner.ts`, `routes/snapshot.ts`) `.catch()` the bare
-      // `void enqueue(...)` they call this with, so a rejection here would
-      // become an unhandled promise rejection rather than staying inside
-      // this "fire-and-forget" boundary. Every real call site currently
-      // registers its handler at module load before any route can fire, so
-      // this path is inert today — but catching it here and logging it the
+      // function body into a REJECTED PROMISE. The 4 real call sites
+      // (`lib/crawler/crawl-job.ts`, `lib/ai-visibility/schedule-run.ts`,
+      // `lib/agents/runner.ts`, `lib/free-snapshot/snapshot-job.ts`) now
+      // await `enqueue()` inside a request handler, so a rejection here
+      // would surface as a 500 on a request whose real work was merely
+      // scheduled. Every one of them registers its handler at module load
+      // (via `register-in-process.ts`) before any route can fire, so this
+      // path is inert in-process — but catching it here and logging it the
       // same way `fire()`'s own handler-failure catch below does (see
       // `logHandlerFailure`) makes that safe by construction instead of
       // merely safe-by-current-invariant.
