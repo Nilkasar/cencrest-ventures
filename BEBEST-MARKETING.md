@@ -103,7 +103,7 @@ under "BLOCKED ON A LIVE DATABASE" — uncomment them once the screens exist.
 | Date | Set | Concept | Output |
 |---|---|---|---|
 | 2026-10-05 | poster | `peek-snapshot` — kit's sneak-peek series, phone-as-hero, handwritten callout on the real /snapshot page | `marketing/out/posters/peek-snapshot.png` (pipeline proof only — the kit's playful style is off-brand for an instrument company) |
-| 2026-10-05 | poster | `invisible` — the answer is a shortlist and you are on it or you are not. Own template (`templates/poster-brand.html`) in the site's language: Fraunces on pitch, ember marking machine speech, the four-phase method strip, and an answer panel whose competing brands are redacted bars under an `Illustration` tag | `marketing/deliverables/poster-invisible-1080x1350.png` |
+| 2026-10-05 | poster | `invisible` — the answer is a shortlist and you are on it or you are not. Own template (`templates/poster-brand.html`) in the site's language: Fraunces on pitch, ember marking machine speech, the four-phase method strip, and an answer panel whose competing brands are redacted bars under an `Illustration` tag | `marketing/deliverables/poster-invisible-1080x1350.png` · `…-1080x1080.png` (feed square: method shown as a one-line rail, panel tightened — a re-composition, not a scaled portrait) |
 
 ## Genre ledger
 

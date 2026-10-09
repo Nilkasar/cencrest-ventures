@@ -3,7 +3,8 @@
 <meta charset="utf-8">
 <title>BeBest — brand poster</title>
 <!--
-  poster-brand.html — BeBest's own poster language, 1080×1350.
+  poster-brand.html — BeBest's own poster language. Two formats:
+  1080×1350 (feed portrait, the default) and 1080×1080 (feed square).
 
   Why a second poster template: `poster.html` is the kit's demo style — a
   handwritten Caveat callout, a "SNEAK PEEK 👀" ribbon, a tilted phone. That
@@ -19,8 +20,13 @@
   Every claim in the footer is published on pricing.html.
 
   Renders through the kit: `?k=<key>` picks a concept, `window.ready` resolves
-  once fonts and images have settled.
+  once fonts and images have settled. The page measures its own viewport and
+  re-composes for a square rather than squeezing the portrait layout into it —
+  the square drops the method strip, shortens the lede and tightens the panel,
+  because 270px of height has to come from somewhere and a feed square is read
+  at thumbnail size. Pass the size as the renderer's 5th argument:
     node marketing/tools/render.cjs poster marketing/templates/poster-brand.html marketing/out/posters invisible
+    node marketing/tools/render.cjs poster marketing/templates/poster-brand.html marketing/out/posters-sq invisible 1080x1080
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -29,7 +35,7 @@
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
-    width: 1080px; height: 1350px; overflow: hidden; position: relative;
+    width: 100vw; height: 100vh; overflow: hidden; position: relative;
     background: var(--pitch); color: var(--paper);
     -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision;
   }
@@ -93,6 +99,41 @@
   .chip { font-family: var(--fm); font-size: 12.5px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); border: 1px solid var(--hair-2); border-radius: 999px; padding: 9px 15px; }
   .chip.lead { color: var(--pitch); background: var(--ember); border-color: var(--ember); font-weight: 600; }
   .url { font-family: var(--fm); font-size: 14px; font-weight: 500; letter-spacing: .16em; color: var(--ember); }
+
+  /* ── square (1080×1080) ───────────────────────────────────────────────
+     Not a scaled portrait: the method strip goes (four phases are unreadable
+     at thumbnail size and the panel is the thing worth seeing), the headline
+     and lede come down a step, and the panel's internal rhythm tightens. */
+  [data-f="sq"] .frame { padding: 68px; }
+  [data-f="sq"] header { padding-bottom: 22px; }
+  [data-f="sq"] .mark img { width: 38px; height: 38px; }
+  [data-f="sq"] .mark span { font-size: 30px; }
+  [data-f="sq"] .eyebrow { font-size: 12px; }
+  [data-f="sq"] .top { padding-top: 40px !important; }
+  [data-f="sq"] h1 { font-size: 76px; letter-spacing: -.034em; }
+  [data-f="sq"] .lede { margin-top: 22px; font-size: 25px; line-height: 1.42; max-width: 30ch; }
+  /* The square keeps the method, but as one compact rail instead of four
+     columns — dropping it outright left a ~100px band of air above the
+     panel, which reads as a mistake rather than as space. */
+  [data-f="sq"] .method { margin-top: 32px; padding-top: 15px; border-top: 1px solid var(--hair); gap: 30px; }
+  [data-f="sq"] .phase { flex: 0 0 auto; flex-direction: row; align-items: baseline; gap: 9px; padding: 0; }
+  [data-f="sq"] .phase + .phase { padding-left: 0; }
+  [data-f="sq"] .phase + .phase::before { display: none; }
+  [data-f="sq"] .phase .n { font-size: 10.5px; }
+  [data-f="sq"] .phase .t { font-size: 17px; }
+  [data-f="sq"] .panel { padding: 30px 32px 26px; border-radius: 18px; }
+  [data-f="sq"] .q { margin: 15px 0 24px; font-size: 22px; }
+  [data-f="sq"] .q .caret { height: 23px; width: 10px; }
+  [data-f="sq"] .rows { gap: 12px; }
+  [data-f="sq"] .model { width: 132px; font-size: 17.5px; }
+  [data-f="sq"] .bar { height: 10px; }
+  [data-f="sq"] .you { margin-top: 20px; padding-top: 19px; }
+  [data-f="sq"] .absent { font-size: 17.5px; }
+  [data-f="sq"] .note { margin-top: 20px; font-size: 12.5px; }
+  [data-f="sq"] footer { margin-top: 26px; }
+  [data-f="sq"] .facts { padding-top: 22px; }
+  [data-f="sq"] .chip { font-size: 11.5px; padding: 8px 13px; }
+  [data-f="sq"] .url { font-size: 13px; }
 </style>
 
 <div class="wash"></div>
@@ -105,7 +146,7 @@
   </header>
   <div class="rule"></div>
 
-  <div style="padding-top:58px">
+  <div class="top" style="padding-top:58px">
     <h1 id="headline"></h1>
     <p class="lede" id="lede"></p>
     <div class="method" id="method"></div>
@@ -136,6 +177,11 @@
 
 <script src="./brand.js"></script>
 <script>
+  // One template, two formats: measure the viewport the renderer set rather
+  // than taking a flag, so `render.cjs ... 1080x1080` is all that's needed.
+  document.documentElement.dataset.f =
+    Math.abs(innerWidth / innerHeight - 1) < 0.05 ? 'sq' : 'portrait';
+
   const B = window.BRAND;
   const root = document.documentElement.style;
   root.setProperty('--pitch', B.dark);
